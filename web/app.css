@@ -1,0 +1,228 @@
+/* Minor Pentatonic Practice Desk — styles.
+   Served from the binary alongside index.html; see main.go's go:embed. */
+
+/* The two typefaces the design asks for, carried in the binary rather than fetched
+   at load time. Nothing here touches the network: a copied executable renders as
+   intended on a machine that has never seen these fonts and has no connection.
+
+   Both are SIL Open Font License 1.1, which permits redistribution provided the
+   licence travels with the font — so web/assets/fonts/ carries a copy of each, and
+   those ship inside the binary too.
+
+   Latin and latin-ext only. Characters outside those ranges — the ♭ and ♯ the
+   diagrams are full of — fall through to the next font in each stack, one glyph at
+   a time, which is exactly what happened before these were embedded.
+
+   DM Mono stops at weight 500, so the few rules asking for 600 or 700 still get a
+   synthesised bold. */
+
+@font-face{
+  font-family:"Bricolage Grotesque";font-style:normal;font-weight:600 800;font-display:swap;
+  src:url(assets/fonts/bricolage-grotesque-600800-latin-ext.woff2) format("woff2");
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face{
+  font-family:"Bricolage Grotesque";font-style:normal;font-weight:600 800;font-display:swap;
+  src:url(assets/fonts/bricolage-grotesque-600800-latin.woff2) format("woff2");
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:"DM Mono";font-style:normal;font-weight:400;font-display:swap;
+  src:url(assets/fonts/dm-mono-400-latin-ext.woff2) format("woff2");
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face{
+  font-family:"DM Mono";font-style:normal;font-weight:400;font-display:swap;
+  src:url(assets/fonts/dm-mono-400-latin.woff2) format("woff2");
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face{
+  font-family:"DM Mono";font-style:normal;font-weight:500;font-display:swap;
+  src:url(assets/fonts/dm-mono-500-latin-ext.woff2) format("woff2");
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face{
+  font-family:"DM Mono";font-style:normal;font-weight:500;font-display:swap;
+  src:url(assets/fonts/dm-mono-500-latin.woff2) format("woff2");
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+  :root{--paper:#F2EFE6;--card:#FFFDF7;--ink:#15161A;--pink:#FF48B0;--blue:#0F6FC5;--gold:#E0A100;--rule:#15161A22}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:"DM Mono",ui-monospace,Menlo,monospace;padding:22px 16px 70px;
+    background-image:radial-gradient(var(--rule) .5px,transparent .5px);background-size:4px 4px}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;
+    font-size:clamp(28px,7.5vw,50px);line-height:.95;margin:0 0 4px;letter-spacing:-.02em;
+    text-transform:uppercase;color:var(--blue);text-shadow:2px 2px 0 var(--pink)}
+  .sub{font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin:0 0 18px}
+  .hero{margin:0 0 18px;max-width:380px;border:1px solid var(--rule);background:var(--card)}
+  .hero img{display:block;width:100%;height:auto}
+  .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+  .row>span.lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.55;margin-right:4px}
+  button{font-family:inherit;font-size:13px;padding:6px 10px;cursor:pointer;background:transparent;
+    color:var(--ink);border:1px solid var(--rule);border-radius:0}
+  button:hover{border-color:var(--blue);color:var(--blue)}
+  button[aria-pressed="true"]{background:var(--blue);color:var(--paper);border-color:var(--blue)}
+  button:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+  nav button{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:600;
+    text-transform:uppercase;letter-spacing:.04em;font-size:13px;padding:8px 12px}
+  nav button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink)}
+  /* The nav is five labelled bands rather than one strip of twenty-one buttons.
+     The headings share a width so they form a column the eye can run down. */
+  #views{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+    padding:10px 0 4px;margin:0 0 12px}
+  #views .row>span.lbl{min-width:92px}
+  /* A control the current view ignores: still there, still readable, plainly off. */
+  .row.off{opacity:.34}
+  button:disabled{cursor:not-allowed}
+  .row.off button:hover{border-color:var(--rule);color:var(--ink)}
+  .bar{border:1px solid var(--rule);background:var(--card);padding:10px 12px;margin:10px 0 18px}
+  .bar .row{margin:0}
+  .bar .row+.row{margin-top:8px}
+  input[type=range]{accent-color:var(--blue);width:130px}
+  /* What is left after Quit, when the browser will not close the tab. */
+  .wrap.gone{padding:18vh 0 0;max-width:46ch}
+  .wrap.gone .tip{margin-top:14px;font-size:13px}
+  .legend{display:flex;gap:16px;font-size:12px;margin:12px 0 22px;opacity:.75;flex-wrap:wrap}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px;margin-right:5px}
+  .hollow{background:transparent;border:2px solid var(--ink);width:9px;height:9px}
+  .dashed{background:var(--card);border:2px dashed var(--gold);width:9px;height:9px}
+  g.pn{cursor:pointer}
+  g.pn:hover circle{stroke:var(--pink);stroke-width:2.4}
+  g.pn:focus-visible{outline:2px solid var(--pink);outline-offset:1px}
+  .ringed{background:var(--blue);box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--gold)}
+  /* Switching modes moves one or two notes; the gold dot slides in from the note it
+     replaced and the hollow ring it left behind fades. Only on an actual change —
+     a redraw in the same mode animates nothing. */
+  @keyframes modeslide{from{transform:translateX(var(--dx));opacity:.25}to{transform:translateX(0);opacity:1}}
+  @keyframes modefade{from{opacity:.85}to{opacity:.35}}
+  .modewas{opacity:.35}
+  .modemove.anim{animation:modeslide .55s cubic-bezier(.22,.9,.3,1) both}
+  .modewas.anim{animation:modefade .55s ease both}
+  @media (prefers-reduced-motion:reduce){.modemove.anim,.modewas.anim{animation:none}}
+  .map{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:16px 0;margin-bottom:26px;overflow-x:auto}
+  .maplabel{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin-bottom:10px}
+  .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .grid.wide{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .card{border:1px solid var(--rule);padding:14px 14px 12px;background:var(--card);overflow-x:auto}
+  .card:hover,.card:focus-within{border-color:var(--blue)}
+  .card h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-size:15px;
+    margin:0;letter-spacing:.02em;text-transform:uppercase;display:flex;justify-content:space-between;
+    align-items:baseline;gap:8px}
+  .card h2 em{font-style:normal;font-family:"DM Mono",monospace;font-weight:400;font-size:11px;opacity:.55;letter-spacing:.06em}
+  .tip{font-size:11.5px;line-height:1.55;opacity:.72;margin:8px 0 0}
+  .tip b{color:var(--blue);font-weight:500}
+  .tip a{color:var(--blue);text-decoration:underline;text-underline-offset:2px}
+  .tip a:hover{color:var(--pink)}
+  .tip+.tip{margin-top:10px}
+  pre{font-family:"DM Mono",monospace;font-size:11.5px;line-height:1.45;margin:10px 0 0;padding:9px 10px;
+    background:#15161A08;border-left:2px solid var(--gold);overflow-x:auto}
+  table{border-collapse:collapse;font-size:12px;margin-top:10px;width:100%}
+  th,td{border:1px solid var(--rule);padding:4px 8px;text-align:left}
+  th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.6;font-weight:400}
+  tr.me{background:var(--blue);color:var(--paper)}
+  .strip{cursor:pointer}
+  .strip.open{grid-column:1/-1;border-color:var(--blue);border-width:2px}
+  #boxes .card{cursor:pointer}
+  #boxes .card.now{border-color:var(--pink);border-width:2px}
+  .strip.now{border-color:var(--pink);border-width:2px}
+  .strip h2 em{opacity:.4}
+  tr.me td{border-color:var(--blue)}
+  svg{display:block;max-width:100%;height:auto;margin-top:10px}
+  .qn{cursor:pointer}
+  .qn:focus-visible{outline:2px solid var(--pink)}
+  ol{padding-left:18px;font-size:12.5px;line-height:1.7;margin:10px 0 0}
+  ol b{color:var(--blue);font-weight:500}
+  section[hidden]{display:none}
+  .status{font-size:12px;margin-top:10px;min-height:18px}
+  .status b{color:var(--pink)}
+  .timerface{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:34px;font-weight:800;
+    color:var(--blue);letter-spacing:.04em;margin:12px 0 8px}
+  .loglist{list-style:none;padding:0;margin:10px 0 0}
+  .loglist li{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--rule);
+    padding:7px 0;font-size:11.5px}
+  .bars{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:12px 0}
+  g.pn.playing circle{stroke:var(--pink);stroke-width:3.2}
+  #solomap g.pn{cursor:copy}
+  .tip.stayed{border-left:2px solid var(--gold);padding-left:8px;font-size:11.5px;opacity:.75}
+  .badge{display:inline-block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    background:var(--gold);color:var(--ink);padding:2px 6px;margin:0 0 8px}
+  .card.fromguide{border-left:3px solid var(--gold)}
+  .routine{padding-left:18px}
+  .routine li{margin-bottom:14px}
+  .routine .tip{display:block;margin:4px 0 0}
+  .seghead{display:flex;gap:10px;align-items:baseline;justify-content:space-between;flex-wrap:wrap}
+  .seghead b{color:var(--blue);font-weight:600}
+  .segrun{font-size:11px;padding:3px 8px;white-space:nowrap}
+  .checklist{list-style:none;padding:0;margin:0}
+  .checklist li{border-top:1px solid var(--rule);padding:7px 0;font-size:13px}
+  .checklist label{display:flex;gap:9px;align-items:flex-start;cursor:pointer}
+  .checklist input{accent-color:var(--blue);margin-top:2px;flex:none}
+  .formstrip{display:flex;gap:2px;width:100%;min-height:54px;border:1px solid var(--rule)}
+  .formblk{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    min-width:0;padding:6px 2px;color:var(--paper);text-align:center;overflow:hidden}
+  .formblk b{font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1.15;
+    overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .formblk i{font-size:10px;font-style:normal;opacity:.75;font-family:"DM Mono",monospace}
+  .card.wide{grid-column:1/-1}
+  #power table td:last-child,#form table td:last-child{font-weight:400}
+  .credit{border-top:1px solid var(--rule);margin-top:40px;padding:16px 0 28px;
+    display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    font-size:11.5px;letter-spacing:.06em;opacity:.6}
+  .credit p{margin:0}
+  .credit a{color:var(--blue);text-decoration:underline;text-underline-offset:2px}
+  .credit a:hover{color:var(--pink)}
+  .bluesbar{border:1px solid var(--rule);padding:10px 4px;text-align:center;font-size:12px;background:var(--card)}
+  .bluesbar b{display:block;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:18px;color:var(--blue)}
+  .bluesbar.now{background:var(--blue);color:var(--paper);border-color:var(--blue)}
+  .bluesbar.now b{color:var(--paper)}
+  .rot{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 4px}
+  .rot>div{min-width:0}
+  .rotname{font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.6;margin-bottom:6px;text-align:center}
+  .stack{display:flex;flex-direction:column;gap:4px}
+  .chip{padding:9px 4px;text-align:center;font-size:16px;font-weight:700;color:var(--paper);
+    font-family:"Bricolage Grotesque",system-ui,sans-serif;line-height:1.1}
+  .chip i{display:block;font-size:10px;font-style:normal;opacity:.85;font-weight:400;
+    font-family:"DM Mono",monospace;letter-spacing:.04em}
+  .chip.root{background:var(--pink)}
+  .chip.third{background:var(--blue)}
+  .chip.fifth{background:var(--gold);color:var(--ink)}
+  .chip.moved{outline:2px dashed var(--ink);outline-offset:2px}
+  .rotfoot{font-size:11px;text-align:center;opacity:.6;margin-top:6px}
+
+  /* The move, animated. Each chip is rendered where it has just arrived, and the
+     keyframes start it at --from, which is where it was a moment ago. Slots are one
+     chip plus the 4px .stack gap, so the distances hold at any font size.
+     The note leaving the bottom swings out to the side on its way up, so it is seen
+     passing the other two rather than through them. */
+  .bigstack{max-width:230px;margin:0 auto}
+  .bigstack .chip{font-size:21px;padding:14px 6px}
+  .bigstack .chip i{font-size:11px}
+  @keyframes invsettle{from{transform:translateY(calc(-100% - 4px))}to{transform:none}}
+  @keyframes invfly{
+    0%{transform:translateY(calc(200% + 8px))}
+    45%{transform:translateY(calc(90% + 4px)) translateX(62%) scale(1.07)}
+    75%{transform:translateY(calc(-8% - 1px)) translateX(18%) scale(1.03)}
+    100%{transform:none}
+  }
+  .bigstack .settle{animation:invsettle .52s cubic-bezier(.4,0,.2,1) both}
+  .bigstack .fly{animation:invfly .78s cubic-bezier(.45,.02,.25,1) both;z-index:3;position:relative;
+    box-shadow:0 6px 18px #15161A33}
+  @media(prefers-reduced-motion:reduce){
+    .bigstack .settle,.bigstack .fly{animation:none}
+  }
+  .movesay{min-height:40px;font-size:13px;line-height:1.55;margin:14px 0 0;text-align:center}
+  .movesay b{color:var(--pink)}
+  .notthis{border-left:3px solid var(--pink);padding:8px 0 8px 12px;margin:0 0 12px}
+  .notthis b{color:var(--pink);font-weight:600}
+  .bluesbar.split{display:flex;flex-direction:column;justify-content:center}
+  .bluesbar.split b{font-size:14px;line-height:1.25}
+  .beatgrid{display:grid;grid-template-columns:repeat(16,1fr);gap:4px;margin:14px 0}
+  .beat{min-height:48px;border:1px solid var(--rule);display:grid;place-items:center;font-size:15px;background:var(--card)}
+  .beat:nth-child(4n+1){border-left:3px solid var(--ink)}
+  .beat.hit{background:#0F6FC512;color:var(--blue);font-weight:700}
+  .beat.now{background:var(--pink);color:var(--paper);border-color:var(--pink)}
+  select{font:inherit;background:var(--card);border:1px solid var(--rule);padding:6px 8px;color:var(--ink)}
+  @media(max-width:620px){.bars{grid-template-columns:repeat(4,1fr)}.beatgrid{gap:2px}.beat{min-height:40px;font-size:12px}}

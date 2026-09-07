@@ -1,0 +1,7 @@
+# Build output
+/minor-pentatonic
+/minor-pentatonic.exe
+dist/
+
+# macOS
+.DS_Store

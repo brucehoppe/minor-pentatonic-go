@@ -38,6 +38,7 @@ The app listens only on localhost, chooses an available port, and opens your def
 
 The revised practice desk includes:
 
+- **Phrygian dominant:** a guided lesson under Playing, starting from the minor pentatonic boxes. Compare shared notes, replace the minor third, add the flat second and flat sixth, and practise short phrases over suitable backing. Five interactive diagrams follow the selected root and register; an E-example button and the original standalone reference are included. The lesson distinguishes equal-tempered guitar practice from Hijaz in maqam music and provides a slow ten-minute routine.
 - **Box 1 and Box 4 landmarks:** low/high anchor shapes, root locations, relationship notes, and call-and-answer practice.
 - **All 12 keys:** an interactive whole-neck chart showing both landmarks, the connecting scale tones, and slide paths.
 - **Major pentatonic — the diagonal shape:** the companion scale as one continuous run up the neck, root on the A string, drawn on a vertical fretboard where the run reads as a single diagonal. Two notes on E, three on A, two on D, three on G, two on B, three on high e; arrows mark the stretch note that moves you up a position. Its own 12-key picker keeps the flat spellings (D♭ major, not C♯), and it can label the dots as note names or scale degrees. Each key names the relative minor whose box the same notes make.

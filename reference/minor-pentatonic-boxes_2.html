@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minor Pentatonic — practice desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F2EFE6;--card:#FFFDF7;--ink:#15161A;--pink:#FF48B0;--blue:#0F6FC5;--gold:#E0A100;--rule:#15161A22}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:"DM Mono",ui-monospace,Menlo,monospace;padding:22px 16px 70px;
+    background-image:radial-gradient(var(--rule) .5px,transparent .5px);background-size:4px 4px}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;
+    font-size:clamp(28px,7.5vw,50px);line-height:.95;margin:0 0 4px;letter-spacing:-.02em;
+    text-transform:uppercase;color:var(--blue);text-shadow:2px 2px 0 var(--pink)}
+  .sub{font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin:0 0 18px}
+  .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+  .row>span.lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.55;margin-right:4px}
+  button{font-family:inherit;font-size:13px;padding:6px 10px;cursor:pointer;background:transparent;
+    color:var(--ink);border:1px solid var(--rule);border-radius:0}
+  button:hover{border-color:var(--blue);color:var(--blue)}
+  button[aria-pressed="true"]{background:var(--blue);color:var(--paper);border-color:var(--blue)}
+  button:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+  nav button{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:600;
+    text-transform:uppercase;letter-spacing:.04em;font-size:13px;padding:8px 12px}
+  nav button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink)}
+  .bar{border:1px solid var(--rule);background:var(--card);padding:10px 12px;margin:10px 0 18px}
+  .bar .row{margin:0}
+  .bar .row+.row{margin-top:8px}
+  input[type=range]{accent-color:var(--blue);width:130px}
+  .legend{display:flex;gap:16px;font-size:12px;margin:12px 0 22px;opacity:.75;flex-wrap:wrap}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px;margin-right:5px}
+  .hollow{background:transparent;border:2px solid var(--ink);width:9px;height:9px}
+  .ringed{background:var(--blue);box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--gold)}
+  .map{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:16px 0;margin-bottom:26px;overflow-x:auto}
+  .maplabel{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin-bottom:10px}
+  .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .grid.wide{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .card{border:1px solid var(--rule);padding:14px 14px 12px;background:var(--card);overflow-x:auto}
+  .card:hover,.card:focus-within{border-color:var(--blue)}
+  .card h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-size:15px;
+    margin:0;letter-spacing:.02em;text-transform:uppercase;display:flex;justify-content:space-between;
+    align-items:baseline;gap:8px}
+  .card h2 em{font-style:normal;font-family:"DM Mono",monospace;font-weight:400;font-size:11px;opacity:.55;letter-spacing:.06em}
+  .tip{font-size:11.5px;line-height:1.55;opacity:.72;margin:8px 0 0}
+  .tip b{color:var(--blue);font-weight:500}
+  .tip a{color:var(--blue);text-decoration:underline;text-underline-offset:2px}
+  .tip a:hover{color:var(--pink)}
+  .tip+.tip{margin-top:10px}
+  pre{font-family:"DM Mono",monospace;font-size:11.5px;line-height:1.45;margin:10px 0 0;padding:9px 10px;
+    background:#15161A08;border-left:2px solid var(--gold);overflow-x:auto}
+  table{border-collapse:collapse;font-size:12px;margin-top:10px;width:100%}
+  th,td{border:1px solid var(--rule);padding:4px 8px;text-align:left}
+  th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.6;font-weight:400}
+  tr.me{background:var(--blue);color:var(--paper)}
+  .strip{cursor:pointer}
+  .strip.open{grid-column:1/-1;border-color:var(--blue);border-width:2px}
+  #boxes .card{cursor:pointer}
+  #boxes .card.now{border-color:var(--pink);border-width:2px}
+  .strip.now{border-color:var(--pink);border-width:2px}
+  .strip h2 em{opacity:.4}
+  tr.me td{border-color:var(--blue)}
+  svg{display:block;max-width:100%;height:auto;margin-top:10px}
+  .qn{cursor:pointer}
+  .qn:focus-visible{outline:2px solid var(--pink)}
+  ol{padding-left:18px;font-size:12.5px;line-height:1.7;margin:10px 0 0}
+  ol b{color:var(--blue);font-weight:500}
+  section[hidden]{display:none}
+  .status{font-size:12px;margin-top:10px;min-height:18px}
+  .status b{color:var(--pink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Minor pentatonic<br>practice desk</h1>
+  <p class="sub">One scale, five shapes, whole neck</p>
+
+  <div class="row" id="keys"><span class="lbl">Key</span></div>
+  <nav class="row" id="views"><span class="lbl">View</span></nav>
+
+  <div class="bar">
+    <div class="row" id="labels"><span class="lbl">Dots</span></div>
+    <div class="row" id="chords"><span class="lbl">Chord tones</span></div>
+    <div class="row" id="regs"><span class="lbl">Register</span></div>
+    <div class="row">
+      <span class="lbl">Play along</span>
+      <button id="drone">Root drone</button>
+      <button id="click">Metronome</button>
+      <input type="range" id="bpm" min="40" max="220" value="90" aria-label="Tempo">
+      <span id="bpmv" style="font-size:12px;opacity:.6">90 bpm</span>
+      <span id="audiomsg" style="font-size:11.5px;color:var(--pink)"></span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div><i class="swatch" style="background:var(--pink)"></i>Root</div>
+    <div><i class="swatch" style="background:var(--blue)"></i>Scale tone</div>
+    <div><i class="swatch" style="background:var(--gold)"></i>Shared / pivot</div>
+    <div><i class="swatch ringed"></i>Chord tone</div>
+    <div><i class="swatch hollow"></i>Optional colour tone</div>
+  </div>
+
+  <section id="v-path">
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      There's far more here than anyone should try to absorb at once. This is the order to take it in.
+      Each stage has one job and a test you can actually fail — <b>don't move on until you pass it</b>.
+      The timings are indicative; the tests aren't.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      The single most common mistake is treating soloing as a scale problem. It isn't. It's a
+      rhythm-and-phrasing problem played with scale notes, which is why stages 1 and 3 matter more
+      than everything after them.</p>
+    <div class="grid wide" id="path"></div>
+  </section>
+
+  <section id="v-song" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      The missing piece is almost always this: <b>the scale comes from the song, not from the guitar.</b>
+      You don't decide to play A minor pentatonic — the song decides, and your job is to find out what it
+      already chose. Here's the whole procedure.</p>
+    <div class="grid wide" id="song"></div>
+  </section>
+
+  <section id="v-melody" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Melody is a <b>shape over time</b>. Scale playing is a sequence of notes. These four things
+      convert one into the other.</p>
+    <div class="grid wide" id="melody"></div>
+  </section>
+
+  <section id="v-boxes">
+    <div class="map"><div class="maplabel" id="maplabel">Full neck — tap a box to isolate it</div><div id="fullmap"></div></div>
+    <div class="grid" id="boxes"></div>
+  </section>
+
+  <section id="v-connect" hidden>
+    <p class="tip" style="max-width:60ch;margin:0 0 18px;font-size:12.5px">
+      Every box overlaps the next by exactly one note per string: <b>the higher note of a box is the
+      lower note of the box above it</b>. Those gold notes are your doors.</p>
+    <div class="grid wide" id="connect"></div>
+  </section>
+
+  <section id="v-land" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      You don't need five shapes to cover the neck. <b>Box 1 and Box 4 are the two landmarks</b> —
+      between them they give you a root under the index finger in two different places, and almost
+      everything most players do lives in one or the other.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Learn these two cold and treat 2, 3 and 5 as the connective tissue between them.</p>
+    <div class="grid wide" id="land"></div>
+  </section>
+
+  <section id="v-chart" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      Every key at once. <b style="color:var(--blue)">Blue = Box 1</b>,
+      <b style="color:#9a6f00">gold = Box 4</b>, pink rings are roots. Labels under each zone read
+      <i>shape · starting fret</i>. Where a shape fits twice on a 22-fret neck it's drawn twice —
+      that's the same shape an octave apart, not a new one.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Notice the pattern: <b>the gold zone is always seven frets right of the blue one</b>, in every
+      key, without exception. That gap never changes — only where the pair sits on the neck.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      <b style="color:var(--pink)">The pink path is the slide run</b> from Box 1 up into Box 4 — every
+      note of it, with arrows on the two slides. It's the same run in every key; only the fret numbers
+      move.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      The faint grey dots are the rest of the scale. <b>There's no empty ground between the two
+      landmarks</b> — Boxes 2 and 3 fill it, and the slide run walks straight through them. Tap any key
+      to load it into the rest of the app.</p>
+    <div class="grid" id="chart" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))"></div>
+  </section>
+
+  <section id="v-blues" hidden>
+    <p class="tip" style="max-width:60ch;margin:0 0 18px;font-size:12.5px">
+      Not separate scales — small, high-value neighbourhoods carved out of the boxes you already know.</p>
+    <div class="grid" id="blues"></div>
+
+    <div class="grid wide" style="margin-top:20px">
+      <div class="card">
+        <h2>How B.B. used it<em>economy</em></h2>
+        <p class="tip">His root sits on the <b>B string under the index finger</b> — that's the anchor the
+        whole box is built around, and it's why you so often saw him planted in one place, barely moving.
+        The box is small on purpose. Nothing is there to run through; every note has to earn its place,
+        so the expression comes from touch, vibrato and the exact timing of a bend rather than from
+        speed.</p>
+        <p class="tip">The theory move that makes it sound like him: he leans on the <b>major 6th</b>
+        — the dashed note above — often in place of the ♭7. That single swap tilts a minor-sounding
+        shape toward major, which is why his playing sounds sweet and vocal rather than dark. Keep the
+        ♭7 as seasoning, not a foundation. One caution: over a genuinely minor blues the 6th clashes,
+        so the sweet note belongs in major/dominant blues.</p>
+        <p class="tip">And the vibrato. His was fast, wide and generated from the wrist, applied to a
+        held note as the destination of a phrase. Practise it alone: one note, thirty seconds, no
+        other notes allowed.</p>
+      </div>
+      <div class="card">
+        <h2>How Albert used it<em>violence</em></h2>
+        <p class="tip">Five notes off the top of Box 2 and almost nothing else — he reused the same
+        small vocabulary constantly. What makes it enormous is the bending. He <b>overbent</b>: not
+        just a whole step, but a step and a half or two full steps, bending one note up to the pitch
+        of a note three or four frets higher, then dropping it in stages rather than releasing cleanly.
+        He also stacked bends — hitting the same fret with a half-step, then a whole step, then further
+        — so one note produced several pitches.</p>
+        <p class="tip">Phrasing tells: he came in <b>late</b>, often on beat two rather than beat one,
+        which gives the lines their slinky, behind-the-beat drag. And he liked resolving to the
+        <b>5th</b> instead of the root — less final, more suspended.</p>
+        <p class="tip">Worth knowing before you try to match him: he was a left-hander playing a
+        right-handed Flying V flipped over, so the treble strings were nearest the floor and he
+        <i>pulled</i> them downward instead of pushing up. He tuned well below standard, used very
+        light strings, and played with thumb and fingers, no pick. The bends aren't superhuman —
+        the setup was doing a lot of the work. On your SG in standard tuning, a step and a half is
+        a realistic ceiling; go for the sound of the phrasing, not the exact interval.</p>
+      </div>
+      <div class="card">
+        <h2>Where to hear and read it<em>links</em></h2>
+        <p class="tip"><b>Listen first.</b> B.B.: <i>Live at the Regal</i> (1965) — the whole record is
+        the box in action. Albert: <i>Born Under a Bad Sign</i> (1967), and <i>Blues Power</i> from
+        <i>Live Wire/Blues Power</i> for the bending at full stretch.</p>
+        <p class="tip"><b>B.B. box lessons</b><br>
+        <a href="https://www.guitarworld.com/lessons/bb-king-lesson-soloing-movable-bb-box">Guitar World — the movable B.B. box</a><br>
+        <a href="https://www.premierguitar.com/deep-blues-the-b-b-king-box">Premier Guitar — Deep Blues, with notation and a backing track</a><br>
+        <a href="https://happybluesman.com/b-b-king-box-what-how-use/">Happy Bluesman — what it is and how to use it</a><br>
+        <a href="https://www.activemelody.com/lesson/b-b-king-guitar-lesson-understanding-his-approach/">Active Melody — his approach to a solo</a></p>
+        <p class="tip"><b>Albert King lessons</b><br>
+        <a href="https://happybluesman.com/lessons/albert-king-box/">Happy Bluesman — the Albert King box</a><br>
+        <a href="https://happybluesman.com/lessons/bend-stacking-in-the-albert-king-box/">Happy Bluesman — bend stacking</a><br>
+        <a href="https://www.guitarworld.com/lessons/artist-lessons/jared-james-nichols-albert-king-fingerstyle-blues-guitar">Guitar World — Jared James Nichols on Albert's fingerstyle</a><br>
+        <a href="https://riffjournal.com/king-albert-getting-a-grip-on-the-expressive-signature-bending-techniques-of-legendary-blues-great-albert-king/">Riff Journal — his upside-down setup and bending technique</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="v-licks" hidden>
+    <p class="tip" style="max-width:60ch;margin:0 0 18px;font-size:12.5px">
+      Numbers are playing order. <b>b</b> bend, <b>r</b> release, <b>/</b> slide, <b>~</b> vibrato.</p>
+    <div class="grid wide" id="licks"></div>
+  </section>
+
+  <section id="v-cross" hidden>
+    <p class="tip" style="max-width:62ch;margin:0 0 18px;font-size:12.5px">
+      There is only one connection rule, repeated four times: <b>on every string, the upper note of a
+      box is the lower note of the box above it</b>. Work these four drills in order — each one is a
+      prerequisite for the next.</p>
+    <div class="grid wide" id="cross"></div>
+  </section>
+
+  <section id="v-practice" hidden>
+    <div class="grid wide">
+      <div class="card">
+        <h2>Find the note<em>tap the dots</em></h2>
+        <div id="quizboard"></div>
+        <div class="status" id="quizstatus"></div>
+        <div class="row" style="margin-top:10px"><button id="newquiz">New drill</button></div>
+      </div>
+      <div class="card">
+        <h2>Session<em>interleaved, ~25 min</em></h2>
+        <ol id="session"></ol>
+        <div class="row" style="margin-top:12px"><button id="newsession">Build another</button></div>
+        <p class="tip">Say the shape's name out loud before you play it, and record one take at the end.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const NOTES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const IV={0:"1",2:"2",3:"♭3",5:"4",6:"♭5",7:"5",9:"6",10:"♭7"};
+const OPEN=[4,11,7,2,9,4], SL=["e","B","G","D","A","E"];
+const BOXES=[
+  {n:1,off:[[0,3],[0,3],[0,2],[0,2],[0,2],[0,3]],tip:"Home base. Root under the first finger on both E strings."},
+  {n:2,off:[[3,5],[3,5],[2,4],[2,5],[2,5],[3,5]],tip:"The stretchy one. Roots land on the D and high-e strings."},
+  {n:3,off:[[5,7],[5,8],[4,7],[5,7],[5,7],[5,7]],tip:"Roots on the A and G strings. Top half is the B.B. box."},
+  {n:4,off:[[7,10],[8,10],[7,9],[7,9],[7,10],[7,10]],tip:"Box 1's shape moved across a string set."},
+  {n:5,off:[[10,12],[10,12],[9,12],[9,12],[10,12],[10,12]],tip:"Closes the loop — its top edge is Box 1, an octave up."}
+];
+let key=9, view="path", labelMode="name", chord=null, reg=0, chartOpen=null, boxLock=null;
+
+const baseFret=()=>{const f=(key-OPEN[5]+12)%12;return f===0?12:f;};
+const rootFret=()=>baseFret()+reg;
+const validBoxes=()=>BOXES.filter(b=>Math.min(...b.off.flat())+rootFret()>=0);
+const noteAt=(s,f)=>(OPEN[s]+f)%12;
+const deg=pc=>(pc-key+12)%12;
+const isScale=pc=>[0,3,5,7,10].includes(deg(pc));
+const CHORDS={i:[0,3,7],iv:[5,8,0],v:[7,10,2]};
+const isChordTone=pc=>chord?CHORDS[chord].includes(deg(pc)):false;
+function boxNotes(b){const R=rootFret(),o=[];b.off.forEach((p,s)=>p.forEach(x=>o.push({s,f:x+R})));return o;}
+const kindOf=n=>noteAt(n.s,n.f)===key?"root":"tone";
+function dotText(n){
+  if(n.ord!==undefined)return n.ord;
+  if(labelMode==="none")return "";
+  const pc=noteAt(n.s,n.f);
+  return labelMode==="interval"?(IV[deg(pc)]||""):NOTES[pc];
+}
+
+function fretboard(notes,{w=52,h=26,pad=30,quiz=false}={}){
+  const fs=notes.map(n=>n.f),lo=Math.min(...fs),hi=Math.max(...fs);
+  const open=lo===0, P=pad+(open?24:0);
+  const start=Math.max(lo-1,0),cols=hi-start,W=P+cols*w+16,H=pad+5*h+26;
+  const xOf=f=>f===0?P-20:P+(f-start-.5)*w;
+  const labelX=open?9:P-13;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="fretboard diagram">`;
+  for(let i=0;i<=cols;i++){const x=P+i*w;
+    s+=`<line x1="${x}" y1="${pad}" x2="${x}" y2="${pad+5*h}" stroke="#15161A" stroke-width="${i===0&&start===0?4:1.2}" opacity="${i===0&&start===0?1:.42}"/>`;
+    if(i>0)s+=`<text x="${x-w/2}" y="${pad+5*h+18}" font-size="10.5" fill="#15161A" opacity=".5" text-anchor="middle" font-family="DM Mono,monospace">${start+i}</text>`;}
+  for(let r=0;r<6;r++){const y=pad+r*h;
+    s+=`<line x1="${P}" y1="${y}" x2="${P+cols*w}" y2="${y}" stroke="#15161A" stroke-width="${.7+r*.28}" opacity=".55"/>`;
+    s+=`<text x="${labelX}" y="${y+4}" font-size="11" fill="#15161A" opacity=".45" text-anchor="middle" font-family="DM Mono,monospace">${SL[r]}</text>`;}
+  notes.forEach((n,i)=>{
+    const x=xOf(n.f),y=pad+n.s*h,k=n.kind||kindOf(n),pc=noteAt(n.s,n.f);
+    const fill=quiz?"var(--blue)":k==="root"?"var(--pink)":k==="pivot"?"var(--gold)":k==="ghost"?"var(--card)":"var(--blue)";
+    s+=`<g class="${quiz?"qn":""}" ${quiz?`data-pc="${pc}" data-i="${i}" tabindex="0" role="button" aria-label="fret ${n.f} on ${SL[n.s]} string"`:""}>`;
+    if(k!=="ghost"&&!quiz)s+=`<circle cx="${x+1.5}" cy="${y+1.5}" r="10.5" fill="${k==="root"?'var(--blue)':'var(--pink)'}" opacity=".2"/>`;
+    if(!quiz&&(n.ring||isChordTone(pc)))s+=`<circle cx="${x}" cy="${y}" r="13.5" fill="none" stroke="var(--gold)" stroke-width="2.2"/>`;
+    s+=`<circle cx="${x}" cy="${y}" r="10.5" fill="${fill}" stroke="#15161A" stroke-width="${k==="ghost"?1.6:0}" stroke-dasharray="${k==="ghost"?"3 2":""}"/>`;
+    s+=`<text x="${x}" y="${y+3.6}" font-size="9.5" font-weight="500" fill="${k==="ghost"&&!quiz?"#15161A":"#FFFDF7"}" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${quiz?"":dotText(n)}</text></g>`;});
+  notes.filter(n=>n.to!==undefined).forEach(n=>{
+    const y=pad+n.s*h,up=n.to>n.f,r=11.5;
+    const x1=xOf(n.f)+(up?r:-r), x2=xOf(n.to)+(up?-r:r), d=up?1:-1;
+    s+=`<line x1="${x1}" y1="${y}" x2="${x2-d*6}" y2="${y}" stroke="var(--pink)" stroke-width="2.2"/>`;
+    s+=`<polygon points="${x2},${y} ${x2-d*7},${y-4} ${x2-d*7},${y+4}" fill="var(--pink)"/>`;});
+  return s+"</svg>";
+}
+
+function fullMap(hl=null){
+  const R=rootFret(),w=36,h=23,pad=30,last=22,cols=last+1,W=pad+cols*w+14,H=pad+5*h+24;
+  const inBox=(s,f)=>BOXES.some(b=>b.n===hl&&b.off[s].some(o=>(o+R-f)%12===0));
+  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="full neck map">`;
+  for(let i=0;i<=cols;i++){const x=pad+i*w;
+    o+=`<line x1="${x}" y1="${pad}" x2="${x}" y2="${pad+5*h}" stroke="#15161A" stroke-width="${i===0?4:1.1}" opacity="${i===0?1:.32}"/>`;
+    if(i>0)o+=`<text x="${x-w/2}" y="${pad+5*h+17}" font-size="10" fill="#15161A" opacity=".45" text-anchor="middle" font-family="DM Mono,monospace">${i}</text>`;}
+  for(let r=0;r<6;r++)o+=`<line x1="${pad}" y1="${pad+r*h}" x2="${pad+cols*w}" y2="${pad+r*h}" stroke="#15161A" stroke-width="${.7+r*.25}" opacity=".5"/>`;
+  for(let r=0;r<6;r++)for(let f=0;f<=last;f++){const pc=noteAt(r,f);if(!isScale(pc))continue;
+    const cx=f===0?pad-11:pad+(f-.5)*w,y=pad+r*h,on=hl===null||inBox(r,f);
+    if(isChordTone(pc)&&on)o+=`<circle cx="${cx}" cy="${y}" r="11" fill="none" stroke="var(--gold)" stroke-width="2"/>`;
+    o+=`<circle cx="${cx}" cy="${y}" r="8.5" fill="${pc===key?'var(--pink)':'var(--blue)'}" opacity="${on?1:.12}"/>`;}
+  return o+"</svg>";
+}
+
+function renderBoxes(){
+  document.getElementById("fullmap").innerHTML=fullMap();
+  document.getElementById("boxes").innerHTML=validBoxes().map(b=>{
+    const R=rootFret(),fl=b.off.flat();
+    return `<div class="card" data-box="${b.n}" tabindex="0"><h2>Box ${b.n}<em>fret ${Math.min(...fl)+R}–${Math.max(...fl)+R}</em></h2>${fretboard(boxNotes(b))}<p class="tip">${b.tip}</p></div>`;}).join("");
+  const ml=document.getElementById("maplabel");
+  const show=n=>{document.getElementById("fullmap").innerHTML=fullMap(n);
+    ml.textContent=n===null?"Full neck — tap a box to isolate it":`Full neck — Box ${n} isolated`;};
+  show(boxLock);
+  document.querySelectorAll("#boxes .card").forEach(c=>{
+    const n=+c.dataset.box;
+    c.classList.toggle("now",boxLock===n);
+    c.addEventListener("mouseenter",()=>{if(boxLock===null)show(n);});
+    c.addEventListener("mouseleave",()=>{if(boxLock===null)show(null);});
+    const tap=()=>{boxLock=(boxLock===n)?null:n;renderBoxes();
+      document.getElementById("fullmap").scrollIntoView({block:"nearest",behavior:"smooth"});};
+    c.addEventListener("click",tap);
+    c.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();tap();}});});
+}
+
+const SLIDE=["Slide the two top strings with your first finger — Box 1's fourth-finger note becomes Box 2's first-finger note.",
+"Pivot on the G string: the note you stretched for in Box 2 sits under finger one in Box 3.",
+"The B string is the smoothest door here.",
+"Slide on the two E strings and you land on the Box 1 shape an octave up."];
+
+function renderConnect(){
+  const R=rootFret();
+  const vb=validBoxes();
+  document.getElementById("connect").innerHTML=[0,1,2,3].filter(i=>vb.includes(BOXES[i])&&vb.includes(BOXES[i+1])).map(i=>{
+    const a=BOXES[i],b=BOXES[i+1],map=new Map();
+    const add=(s,f)=>{const k=s+":"+f;
+      if(map.has(k))map.get(k).kind="pivot";
+      else map.set(k,{s,f,kind:noteAt(s,f)===key?"root":"tone"});};
+    a.off.forEach((p,s)=>p.forEach(o=>add(s,o+R)));
+    b.off.forEach((p,s)=>p.forEach(o=>add(s,o+R)));
+    const notes=[...map.values()].map(n=>({...n,ring:n.kind==="pivot"&&noteAt(n.s,n.f)===key}));
+    // arrow on the high e: slide out of the lower box into the upper one
+    const from=notes.find(n=>n.s===0&&n.f===a.off[0][1]+R), toF=b.off[0][1]+R;
+    if(from&&toF>from.f)from.to=toF;
+    return `<div class="card"><h2>Box ${a.n} → Box ${b.n}<em>${notes.filter(n=>n.kind==="pivot").length} shared notes</em></h2>${fretboard(notes,{w:44})}<p class="tip">${SLIDE[i]} The pink arrow marks the slide on the high e; the same move is available on every string.</p></div>`;}).join("");
+}
+
+function renderBlues(){
+  const R=rootFret(),c=[],vb=validBoxes(),host=document.getElementById("blues");
+  if(!vb.length){host.innerHTML=`<p class="tip">Nothing here an octave down in this key — the standard register already reaches the nut.</p>`;return;}
+  if(vb.includes(BOXES[0])){
+  let n1=boxNotes(BOXES[0]).map(n=>({...n,kind:kindOf(n)})),b5=(key+6)%12;
+  for(let s=0;s<6;s++)for(let f=R;f<=R+3;f++)if(noteAt(s,f)===b5)n1.push({s,f,kind:"ghost"});
+  c.push({t:"Blues box",e:"Box 1 + ♭5",n:n1,tip:"Box 1 with the flat five dropped in. Pass <b>through</b> it — the classic move is the chromatic walk from the 4th up to the 5th on the G string."});}
+  if(vb.includes(BOXES[2])){
+  let bb=boxNotes(BOXES[2]).filter(n=>n.s<3).map(n=>({...n,kind:kindOf(n)}));
+  bb.push({s:0,f:R+9,kind:"ghost"});
+  c.push({t:"B.B. King box",e:`fret ${R+4}–${R+9}`,n:bb,tip:"Top three strings of Box 3, sat around the root on the B string, everything phrased with heavy vibrato. The dashed note is the major 6th — the sweet note that makes this box sound happier than the rest."});}
+  if(vb.includes(BOXES[1])){
+  let ak=boxNotes(BOXES[1]).filter(n=>n.s<3).map(n=>({...n,kind:kindOf(n)}));
+  c.push({t:"Albert King box",e:`fret ${R+2}–${R+5}`,n:ak,tip:"Top three strings of Box 2, built for bending. Signature move: the high-e's upper note bent a whole step, then dropped in pitch by degrees rather than released all at once."});}
+  host.innerHTML=c.map(x=>
+    `<div class="card"><h2>${x.t}<em>${x.e}</em></h2>${fretboard(x.n)}<p class="tip">${x.tip}</p></div>`).join("");
+}
+
+const LICKS=[
+  {t:"Descending cascade",e:"Box 1",tip:"The workhorse. Two notes per string, straight down. Then start it from the B string so it stops sounding like a scale.",n:[[0,3],[0,0],[1,3],[1,0],[2,2],[2,0],[3,2],[3,0],[4,2],[4,0],[5,3],[5,0]]},
+  {t:"Rolling triplets",e:"Box 1",tip:"Three notes looped as triplets. Speed comes from repetition, not from new notes.",n:[[0,0],[1,3],[2,2],[0,0],[1,3],[2,2],[0,0]]},
+  {t:"Bend and answer",e:"Box 1",tip:"Bend the G string a full step so it matches the pitch two frets up, hold, then answer with the notes above it. Check the bend against the target note first.",n:[[2,2,"b"],[2,2,"r"],[1,3],[0,0],[0,3]]},
+  {t:"Sequenced fours",e:"Box 1",tip:"Four up, back one, four up. Sounds composed rather than run.",n:[[5,0],[5,3],[4,0],[4,2],[5,3],[4,0],[4,2],[3,0],[4,0],[4,2],[3,0],[3,2]]},
+  {t:"B.B. descent",e:"B.B. box",tip:"Land on the root on the B string and hold it with wide, slow vibrato. The lick is mostly the last note.",n:[[0,7],[0,5],[1,8],[1,5,"~"]]},
+  {t:"Albert King bend",e:"Albert King box",tip:"Bend the top note of the high e a whole step, then let it fall in stages. Vocal, not mechanical.",n:[[0,5,"b"],[0,5,"r"],[0,3],[1,5],[1,3]]},
+  {t:"Blue note walk",e:"Blues box",tip:"The chromatic 4–♭5–5 climb on the G string. Keep it moving.",n:[[3,0],[3,2],[2,0],[2,2],[2,3],[2,4]]},
+  {t:"Box 1 to Box 2 slide",e:"Connection",tip:"Ends on the shared note and slides into the next shape. Make it your standard way out of Box 1.",n:[[3,0],[3,2],[2,0],[2,2],[1,0],[1,3,"/"],[1,5],[0,3]]}
+];
+function tab(n){const R=rootFret(),rows=SL.map(l=>l+"|-");
+  n.forEach(([s,o,tk])=>{const cell=String(o+R)+(tk||"");
+    for(let i=0;i<6;i++)rows[i]+=(i===s?cell:"-".repeat(cell.length))+"--";});
+  return rows.map(r=>r+"|").join("\n");}
+function renderLicks(){
+  const R=rootFret();
+  document.getElementById("licks").innerHTML=LICKS.filter(l=>Math.min(...l.n.map(e=>e[1]))+R>=0).map(l=>{
+    const map=new Map();
+    l.n.forEach(([s,o],i)=>{const k=s+":"+o;
+      if(map.has(k))map.get(k).ord+="·"+(i+1);
+      else map.set(k,{s,f:o+R,ord:String(i+1),kind:noteAt(s,o+R)===key?"root":"tone"});});
+    return `<div class="card"><h2>${l.t}<em>${l.e}</em></h2>${fretboard([...map.values()],{w:44})}<pre>${tab(l.n)}</pre><p class="tip">${l.tip}</p></div>`;}).join("");
+}
+
+
+// ---------- learning path ----------
+const PATH=[
+ {n:1,t:"Time, before notes",d:"about a week",go:null,
+  goal:"Play <b>one note</b> over the metronome and drone for twelve bars without drifting. Then two notes. Then a note on beat one of every bar, nothing else.",
+  why:"Everything that makes a solo sound good is rhythmic. A player with perfect time and five notes sounds better than a player with bad time and fifty. Starting here is not a warm-up, it's the foundation.",
+  test:"Twelve bars, one note, click on — you land on beat one every time and can feel the bar turn over without counting out loud."},
+ {n:2,t:"One shape, no map",d:"1–2 weeks",go:"boxes",
+  goal:"Box 1 only, in one key. Up and down, eyes off the neck, naming the degrees as you go. Use the Find-the-note drill until the ♭3, 4, 5 and ♭7 are instant.",
+  why:"You need one shape that's utterly automatic before a second one helps. Five half-known shapes is worse than one known cold.",
+  test:"Play Box 1 both directions without looking at your hands, naming every degree aloud, with no hesitation."},
+ {n:3,t:"Phrasing and space",d:"2–4 weeks — the big one",go:null,
+  goal:"Four notes maximum per phrase, then silence for as long as the phrase lasted. Ask a question, answer it. Sing a line first, then find it.",
+  why:"This is what separates playing a scale from playing music, and it's the stage almost everyone skips in a hurry to learn more notes. Space is what makes the notes mean anything.",
+  test:"Record twelve bars using no more than four notes that you'd be willing to play to another person. That's the bar. It's harder than it sounds."},
+ {n:4,t:"The sound: bends and vibrato",d:"start now, never stops",go:"blues",
+  goal:"Play the target note, hold it in your head, then bend to it and check. Vibrato from the wrist, even in speed and width, on a held note.",
+  why:"Bad bends and shaky vibrato make good note choices sound amateur. Good ones make three notes sound professional. This is the highest-return technical work in blues playing.",
+  test:"A recorded bend that lands in tune, held with vibrato that doesn't wobble in speed. Listen back — recording is the only honest judge here."},
+ {n:5,t:"Vocabulary — three licks, not thirty",d:"2–4 weeks",go:"licks",
+  goal:"Take three licks. Learn each in three keys. Then break each into fragments and rearrange them — first half of one, second half of another.",
+  why:"Licks are raw material, not finished sentences. Players who collect fifty licks play fifty licks; players who own three recombine them into hundreds.",
+  test:"Play each from memory at two tempos, and use half of one inside an improvisation without planning it first."},
+ {n:6,t:"Movement",d:"3–6 weeks",go:"cross",
+  goal:"Work the crossing drills in order: one string whole neck, then the two-box zones, then one motif through every position.",
+  why:"Now the other four boxes earn their place — as somewhere to go, not as more shapes to memorise. Position changes should be inaudible.",
+  test:"Solo over twelve bars visiting at least three positions, with no audible seam where you shifted."},
+ {n:7,t:"Playing the changes",d:"ongoing",go:"connect",
+  goal:"Turn on the chord-tone rings. Land on a chord tone on beat one of each chord change — especially the 3rd. Everything between changes can stay pentatonic.",
+  why:"This is the jump from 'soloing in a key' to 'soloing over a song', and it's where most self-taught players plateau for years without noticing.",
+  test:"Play your line unaccompanied to someone and they can hear where the chord changed."},
+ {n:8,t:"Colour and voice",d:"open-ended",go:"blues",
+  goal:"Add the ♭5 as a passing note, the B.B. major 6th for sweetness, Albert-style overbends for aggression. Then steal two solos by ear — no tab.",
+  why:"Transcribing by ear is the single most effective thing a soloist can do, and it's last on this list only because it's miserable before the earlier stages are solid.",
+  test:"You can play two solos you learned entirely by ear, and you can hear which of the two Kings someone is borrowing from on a record."}
+];
+const HOWTO=[
+ {t:"How to practise this",items:[
+  "<b>Slow enough to be perfect.</b> Speed is a by-product of accuracy, never a goal. If you can't play it clean, you're not practising it, you're rehearsing your mistakes.",
+  "<b>One focus per session.</b> Decide the single thing you're working on before you plug in.",
+  "<b>Interleave three items</b>, don't drill one for an hour. Cycling between three things feels worse and works better.",
+  "<b>Record one take every session.</b> You cannot hear your own time and vibrato while playing. You'll hate it for a month, then it becomes the most useful minute of the day.",
+  "<b>Always play with something.</b> Drone, click, or a backing track. Soloing in silence teaches habits that fall apart the moment there's a band.",
+  "<b>Twenty minutes daily beats two hours on Sunday.</b> This is motor learning; frequency wins."]},
+ {t:"What usually goes wrong",items:[
+  "Collecting shapes instead of developing phrasing — five boxes, nothing to say.",
+  "Every phrase starting on the root, on beat one. Start on the ♭7 or mid-bar and the same notes sound different.",
+  "Playing at the speed you wish you had rather than the one you own.",
+  "Never recording, so bad time and uneven vibrato go unnoticed for years.",
+  "Practising only alone and unaccompanied.",
+  "Moving on from a stage because it got boring rather than because you passed the test."]}
+];
+function renderPath(){
+  document.getElementById("path").innerHTML=
+    PATH.map(p=>`<div class="card"><h2>${p.n} · ${p.t}<em>${p.d}</em></h2>
+      <p class="tip"><b>Do this.</b> ${p.goal}</p>
+      <p class="tip"><b>Why here.</b> ${p.why}</p>
+      <p class="tip"><b>Move on when.</b> ${p.test}</p>
+      ${p.go?`<div class="row" style="margin-top:10px"><button data-goto="${p.go}">Open the drills</button></div>`:""}
+      </div>`).join("")
+   +HOWTO.map(h=>`<div class="card"><h2>${h.t}</h2><ol>${h.items.map(i=>`<li>${i}</li>`).join("")}</ol></div>`).join("");
+  document.querySelectorAll("#path button[data-goto]").forEach(b=>
+    b.onclick=()=>{view=b.dataset.goto;render();window.scrollTo({top:0,behavior:"smooth"});});
+}
+
+// ---------- over a song ----------
+function renderSong(){
+  const rel=NOTES[(key+3)%12], k=NOTES[key];
+  const steps=[
+   {n:"1",t:"Find the home note",
+    b:`Play the song and hum the note it keeps wanting to settle on — usually the chord it starts and ends on. Now find that note on the low E string. That's your root, and everything else follows from it. <b>Test it:</b> hold that one note through the whole progression. If it sounds settled and at rest, you're right. If it fights the chords, try the note a fret or two either side until one stops fighting.`},
+   {n:"2",t:"Minor or major?",
+    b:`If the home chord is minor, use the minor pentatonic of that note — the shapes in this app, unchanged. If the home chord is major, you have two options and they sound completely different. <b>Blues/rock</b>: use the minor pentatonic of the home note anyway. That grind of the ♭3 against the major chord <i>is</i> the blues sound. <b>Sweet/melodic</b>: use the major pentatonic, which is the same five shapes moved <b>three frets lower</b>.`},
+   {n:"3",t:"The trick that unlocks it",
+    b:`Minor and major pentatonic are the same shapes. You're looking at <b>${k} minor pentatonic</b> right now — those identical dots are also <b>${rel} major pentatonic</b>. Nothing moves; only the home note changes, from ${k} to ${rel}. So for a song in <b>${rel} major</b>, play exactly what's on screen but resolve your phrases to ${rel} instead of ${k}. Going the other way: a song in G major wants E minor pentatonic shapes, three frets below G.`},
+   {n:"4",t:"Where on the neck",
+    b:`Anywhere the shapes fit — the neck repeats every twelve frets, so a low-position and a high-position answer are both correct. Start with Box 1 sitting on your root, and use the Register toggle if the song's key puts it awkwardly high or low. Pick the position where the bends are comfortable; that matters more than which box it is.`},
+   {n:"5",t:"When to play",
+    b:`Solo over the <b>chords</b>, not over the singing. In most songs your slots are the intro, the instrumental section, the outro, and the gaps between vocal phrases — that last one is where the Kings did most of their work, answering the voice rather than competing with it. Learn where the sections start by counting bars, not by feel.`},
+   {n:"6",t:"Follow the chords",
+    b:`Pentatonic is forgiving: one scale works across a whole progression, which is why it's where everyone starts. But the line only sounds like it's <i>about</i> the song when you land on a note belonging to the chord that just arrived. Turn on the chord-tone rings, and aim to arrive on one at each change. Between changes, play anything in the scale.`}];
+  const trouble=[
+   ["It sounds like a scale, not a solo","That's a phrasing problem, not a note problem. Fewer notes, more space, and land somewhere on purpose. Stage 3 of the path."],
+   ["It sounds fine except over one chord","Your key is right; that chord just contains a note the scale doesn't. Land on a chord tone when it arrives and pass through the rest."],
+   ["Everything sounds wrong, in every position","Usually one of three things: wrong home note, the record is tuned down a half step (very common in rock), or the original uses a capo. Find the home note by ear against the record rather than trusting a chord sheet."],
+   ["It's correct but dull","No contour and no repetition. One high point per solo, hit once, and one idea that comes back changed."]];
+  const songs=[
+   ["Sympathy for the Devil","E · chords E–D–A","Home note E. The chords are major but the sound is raunchy, so E minor pentatonic is the right call — Box 1 at fret 12, or use Register: octave down for the open position. Land on E when the E chord comes back around; it does constantly, which makes this an unusually forgiving song to learn on."],
+   ["Hotel California","B minor","Home note B, minor chord, so B minor pentatonic straight off. Box 1 at fret 7. The chords move a lot here, so this is the one where chord-tone targeting pays off — pentatonic alone will sound vague."],
+   ["Wish You Were Here","G major","Home note G, major chord, sweet rather than bluesy — so major pentatonic: the E minor pentatonic shapes, three frets below G, resolving to G instead of E. Exactly the swap in step 3."]];
+  document.getElementById("song").innerHTML=
+    steps.map(x=>`<div class="card"><h2>${x.n} · ${x.t}</h2><p class="tip">${x.b}</p></div>`).join("")
+   +`<div class="card"><h2>Worked examples<em>from your list</em></h2>`
+   +songs.map(([a,b,c])=>`<p class="tip"><b>${a}</b> — ${b}<br>${c}</p>`).join("")
+   +`<p class="tip" style="opacity:.55">Check these against the recording you actually play along to — versions get transposed, capoed and tuned down.</p></div>`
+   +`<div class="card"><h2>When it doesn't work</h2>`
+   +trouble.map(([a,b])=>`<p class="tip"><b>${a}.</b> ${b}</p>`).join("")+`</div>`;
+}
+
+// ---------- melody ----------
+const MELODY=[
+ {t:"Sing it first",e:"the whole trick",
+  b:"Sing a phrase, then find it on the neck. This isn't a warm-up — it's the test. Your voice won't sing sixteen notes in a row, won't start on beat one every time, and won't run up a scale in order. It does the melodic things automatically because it's constrained by breath and by what actually sounds like something. <b>If you can't sing what you just played, it wasn't a melody.</b> It's brutal the first few times and it fixes more than any amount of scale practice."},
+ {t:"Land somewhere on purpose",e:"targets",
+  b:"What makes a line sound intentional isn't the middle, it's where it stops. Choose the target before the phrase starts. The <b>♭3 and the 5th</b> are your strongest landing spots; the root is the most final, and therefore the dullest if you use it every time. Ending on the 4th or ♭7 sounds deliberately unfinished, which makes the listener wait for the next phrase — and that waiting is what melody feels like from outside."},
+ {t:"Repeat yourself",e:"the embarrassing one",
+  b:"A melody is a recognisable idea that comes back changed. Play a three-note figure; play it again higher; play it a third time with a different ending. That's how memorable solos are built, and it feels almost too simple while you're doing it. Constantly new notes give the listener nothing to hold. <b>Repetition is the difference between a solo someone can hum afterwards and one they can't.</b>"},
+ {t:"Give it a contour",e:"one peak",
+  b:"A solo needs a single high point, hit once. Start low, work up, peak, come down. If your highest note turns up in bar two and again in bar four and again in bar seven, there's no peak — and the whole thing sits flat no matter what's in it."}];
+const MELDRILLS=["<b>One note, twelve bars.</b> Rhythm only. When one note sounds musical, everything else is decoration.",
+ "<b>Play the vocal melody</b> of a song you know over its chords. Then decorate it slightly. Then more. You arrive at a solo that sounds melodic because it descends from an actual melody — which is essentially what B.B. was doing.",
+ "<b>Three-note motif, twelve bars.</b> No new material allowed. Change the rhythm, the register, the ending.",
+ "<b>Chord tones on beat one only.</b> Land on the ♭3 of whatever chord just arrived, then do as you like until the next change.",
+ "<b>Call and response.</b> Play a phrase, leave a silence exactly as long, then answer it. Two bars on, two bars off, for the whole song."];
+function renderMelody(){
+  document.getElementById("melody").innerHTML=
+    MELODY.map(m=>`<div class="card"><h2>${m.t}<em>${m.e}</em></h2><p class="tip">${m.b}</p></div>`).join("")
+   +`<div class="card"><h2>Drills<em>pick one per session</em></h2><ol>${MELDRILLS.map(d=>`<li>${d}</li>`).join("")}</ol></div>`
+   +`<div class="card"><h2>For your material<em>atmospheric, not busy</em></h2>
+     <p class="tip">Given what you actually listen to — Gary Jules, SQÜRL, Love and Rockets — melodic in that
+     world means <b>sustain and space</b> far more than note choice. Long notes with vibrato, a lot of silence,
+     and the amp doing half the work. Those players aren't playing many notes at all, and the P-90 into a clean
+     Princeton-style setting will hold a note longer than you think if you let it.</p>
+     <p class="tip">The thing that'll hold you back longest is playing faster than you can hear. Melody requires
+     listening to the note you just played while choosing the next one, and above a certain tempo that's simply
+     not possible yet.</p></div>`;
+}
+
+// ---------- landmark shapes: box 1 & 4 ----------
+// [string, offset, slideToOffset?]
+const RUN_UP=[[5,0],[5,3,5],[5,5],[4,2],[4,5,7],[4,7],[3,7],[3,9],[2,7],[2,9]];
+const RUN_DN=[[2,9],[2,7],[3,9],[3,7],[4,7,5],[4,5],[4,2],[5,5,3],[5,3],[5,0]];
+function runNotes(run){const R=rootFret(),m=new Map();
+  run.forEach(([st,o,to],i)=>{const k=st+":"+o,e=m.get(k);
+    if(e){e.ord+="\u00b7"+(i+1);if(to!==undefined)e.to=to+R;}
+    else m.set(k,{s:st,f:o+R,ord:String(i+1),kind:noteAt(st,o+R)===key?"root":"tone",...(to!==undefined?{to:to+R}:{})});});
+  return [...m.values()];}
+function runTab(run){return tab(run.map(([st,o,to])=>to!==undefined?[st,o,"/"]:[st,o]));}
+const PHRASE=[[1,3],[0,0],[0,3,"~"],[1,10],[1,8],[2,9,"~"]];
+function renderLand(){
+  const R=rootFret(),k=NOTES[key],vb=validBoxes(),host=document.getElementById("land");
+  const have1=vb.includes(BOXES[0]),have4=vb.includes(BOXES[3]),c=[];
+  if(have1)c.push(`<div class="card"><h2>Box 1 — landmark A<em>fret ${R}\u2013${R+3}</em></h2>
+    ${fretboard(boxNotes(BOXES[0]))}
+    <p class="tip"><b>Root: index finger, 6th string, fret ${R}.</b> The one everybody learns first,
+    and the easiest to find — you locate the root on the low E and the shape falls under your hand.
+    Roots also sit on the D string (fret ${R+2}) and the high e (fret ${R}).</p></div>`);
+  if(have4)c.push(`<div class="card"><h2>Box 4 — landmark B<em>fret ${R+7}\u2013${R+10}</em></h2>
+    ${fretboard(boxNotes(BOXES[3]))}
+    <p class="tip"><b>Root: index finger, 5th string, fret ${R+7}.</b> Same job as Box 1, seven frets up
+    and one string over — so you find it by locating ${k} on the A string instead of the low E. The other
+    root is on the G string at fret ${R+9}.</p></div>`);
+  if(have1&&have4)c.push(`<div class="card"><h2>Why these two<em>the relationship</em></h2>
+    <p class="tip"><b>Box 4 is Box 1 moved up seven frets.</b> Not loosely — literally. Four of the six
+    strings are the identical two-fret pattern shifted up seven; only the A string and the B string
+    differ, each by a single fret. That's why Box 4 falls under the hand so easily once Box 1 is solid,
+    and it's the reason these two became the standard pair.</p>
+    <p class="tip">Together they cover the neck: Box 1 at fret ${R} and Box 4 at fret ${R+7}, then Box 1
+    again an octave up at fret ${R+12}. Root on the 6th string, root on the 5th string — those are the
+    only two things you have to find.</p>
+    <p class="tip">Box 2 and 3 sit between them and Box 5 sits above; treat them as the road, not as
+    destinations.</p></div>`);
+  if(have1&&have4){
+    c.push(`<div class="card"><h2>Sliding up<em>Box 1 \u2192 Box 4</em></h2>
+      ${fretboard(runNotes(RUN_UP),{w:40})}
+      <pre>${runTab(RUN_UP)}</pre>
+      <p class="tip"><b>Pink arrows are slides</b> — same finger, same string, don't re-pick.
+      Two of them carry you the whole way: one on the low E (fret ${R+3} to ${R+5}) and one on the A
+      string (fret ${R+5} to ${R+7}). That second slide lands you on the root, and you are in Box 4.
+      The run finishes on the root again on the G string at fret ${R+9}.</p>
+      <p class="tip">Use the <b>third finger</b> for both slides, so the hand arrives with the index
+      free to cover the new position. This one line is the whole connection system — learn it in a
+      single key, then move it.</p></div>`);
+    c.push(`<div class="card"><h2>Sliding down<em>Box 4 \u2192 Box 1</em></h2>
+      ${fretboard(runNotes(RUN_DN),{w:40})}
+      <pre>${runTab(RUN_DN)}</pre>
+      <p class="tip">The same road travelled the other way. Slide with the <b>first finger</b> coming
+      down — fret ${R+7} to ${R+5} on the A string, then ${R+5} to ${R+3} on the low E. Going up the
+      third finger leads; coming down the index does.</p>
+      <p class="tip">Practise both in one breath: up, pause on the root, back down. When that feels
+      like one movement rather than two shapes joined end to end, the pair is yours.</p></div>`);
+    c.push(`<div class="card"><h2>Call and answer<em>phrase across the pair</em></h2>
+      ${fretboard(PHRASE.map(([s,o],i)=>({s,f:o+R,ord:String(i+1),kind:noteAt(s,o+R)===key?"root":"tone"})),{w:38})}
+      <pre>${tab(PHRASE)}</pre>
+      <p class="tip">First three notes ask the question down in Box 1, ending on a held note with vibrato.
+      <b>Leave a full bar of silence.</b> Then answer up in Box 4 and land on the root on the G string.
+      Same idea, two landmarks — this is what using both shapes actually sounds like, and it's four
+      seconds of music, not an exercise.</p></div>`);
+  }
+  if(!c.length)c.push(`<p class="tip">Neither landmark shape fits at this register in ${k} minor — switch back to Standard.</p>`);
+  // all-keys reference
+  let rows="";
+  for(let i=0;i<12;i++){
+    const base=((i-OPEN[5]+12)%12)||12, low=base-12;
+    rows+=`<tr${i===key?' class="me"':''}><td>${NOTES[i]}m</td><td>${base}\u2013${base+3}</td>`
+        +`<td>${base+7}\u2013${base+10}</td>`
+        +`<td>${low>=0?`${low}\u2013${low+3}`:"\u2014"}</td>`
+        +`<td>${low+7>=0?`${low+7}\u2013${low+10}`:"\u2014"}</td></tr>`;}
+  c.push(`<div class="card"><h2>All twelve keys<em>where the landmarks sit</em></h2>
+    <table><thead><tr><th>Key</th><th>Box 1</th><th>Box 4</th><th>Box 1 low</th><th>Box 4 low</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p class="tip">The last two columns are the same shapes twelve frets lower, where they still fit on the
+    neck. Find the root on the 6th string for Box 1 and on the 5th string for Box 4 and you never need
+    this table again — but it's a useful check while the root positions are still going in.</p></div>`);
+  host.innerHTML=c.join("");
+}
+
+// ---------- all-keys landmark chart ----------
+function keyStrip(ki,{w=25,h=11,pad=16,last=22,big=false}={}){
+  const base=((ki-OPEN[5]+12)%12)||12;
+  const W=pad+(last+1)*w+4, H=pad+5*h+15;
+  const nAt=(st,f)=>(OPEN[st]+f)%12;
+  const posns=[];
+  [[0,"b1"],[3,"b4"]].forEach(([bi,tag])=>{
+    for(let sh=-24;sh<=24;sh+=12){
+      const R=base+sh, fl=BOXES[bi].off.flat();
+      if(Math.min(...fl)+R>=0&&Math.max(...fl)+R<=last)posns.push({bi,tag,R});}});
+  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${NOTES[ki]} minor landmark positions">`;
+  // fret grid
+  for(let i=0;i<=last+1;i++){const x=pad+i*w;
+    o+=`<line x1="${x}" y1="${pad}" x2="${x}" y2="${pad+5*h}" stroke="#15161A" stroke-width="${i===0?3:.8}" opacity="${i===0?1:.22}"/>`;}
+  for(let r=0;r<6;r++)o+=`<line x1="${pad}" y1="${pad+r*h}" x2="${pad+(last+1)*w}" y2="${pad+r*h}" stroke="#15161A" stroke-width="${.5+r*.16}" opacity=".4"/>`;
+  [3,5,7,9,15,17,19,21].forEach(f=>o+=`<circle cx="${pad+(f-.5)*w}" cy="${pad+2.5*h}" r="1.8" fill="#15161A" opacity=".2"/>`);
+  [12].forEach(f=>{o+=`<circle cx="${pad+(f-.5)*w}" cy="${pad+1.5*h}" r="1.8" fill="#15161A" opacity=".28"/>`;
+    o+=`<circle cx="${pad+(f-.5)*w}" cy="${pad+3.5*h}" r="1.8" fill="#15161A" opacity=".28"/>`;});
+  // the whole scale, faint — the neck is continuous, the boxes are just slices of it
+  for(let st=0;st<6;st++)for(let f=0;f<=last;f++){
+    if(!isScale(nAt(st,f)))continue;
+    const cx=f===0?pad-6:pad+(f-.5)*w;
+    o+=`<circle cx="${cx}" cy="${pad+st*h}" r="${big?3.4:2}" fill="#15161A" opacity=".22"/>`;}
+  // zone shading
+  posns.forEach(pn=>{const fl=BOXES[pn.bi].off.flat(),a=Math.min(...fl)+pn.R,b=Math.max(...fl)+pn.R;
+    o+=`<rect x="${pad+Math.max(a-1,0)*w}" y="${pad}" width="${(b-Math.max(a-1,0))*w}" height="${5*h}" fill="${pn.tag==="b1"?"var(--blue)":"var(--gold)"}" opacity=".07"/>`;});
+  // dots
+  posns.forEach(pn=>BOXES[pn.bi].off.forEach((pr,st)=>pr.forEach(off=>{
+    const f=off+pn.R, cx=f===0?pad-6:pad+(f-.5)*w, cy=pad+st*h;
+    const root=nAt(st,f)===ki;
+    o+=`<circle cx="${cx}" cy="${cy}" r="${big?(root?8:6.5):(root?4.2:3.2)}" fill="${root?"var(--pink)":pn.tag==="b1"?"var(--blue)":"var(--gold)"}"/>`;
+    if(root)o+=`<circle cx="${cx}" cy="${cy}" r="${big?11:6}" fill="none" stroke="var(--pink)" stroke-width="${big?1.6:1}"/>`;
+    if(big)o+=`<text x="${cx}" y="${cy+3.2}" font-size="8" font-weight="500" font-family="DM Mono,monospace" text-anchor="middle" fill="#FFFDF7">${IV[deg(nAt(st,f))]}</text>`;})));
+  // slide connectors: Box 1 -> Box 4 at each position where both fit
+  posns.filter(pn=>pn.tag==="b1"&&posns.some(q=>q.tag==="b4"&&q.R===pn.R)).forEach(pn=>{
+    const X=f=>f===0?pad-6:pad+(f-.5)*w;
+    RUN_UP.forEach(([st,o1,to])=>{
+      const cy=pad+st*h,f=o1+pn.R;
+      o+=`<circle cx="${X(f)}" cy="${cy}" r="${big?5:2.6}" fill="var(--pink)"/>`;
+      if(to!==undefined){const f2=to+pn.R;
+        const g=big?9:4,hd=big?13:8;
+        o+=`<circle cx="${X(f2)}" cy="${cy}" r="${big?5:2.6}" fill="var(--pink)"/>`;
+        o+=`<line x1="${X(f)+g}" y1="${cy}" x2="${X(f2)-hd}" y2="${cy}" stroke="var(--pink)" stroke-width="${big?2.6:1.5}"/>`;
+        o+=`<polygon points="${X(f2)-g+1},${cy} ${X(f2)-hd},${cy-(big?5:3)} ${X(f2)-hd},${cy+(big?5:3)}" fill="var(--pink)"/>`;}});});
+  // labels
+  posns.forEach(pn=>{const fl=BOXES[pn.bi].off.flat(),a=Math.min(...fl)+pn.R,b=Math.max(...fl)+pn.R;
+    o+=`<text x="${pad+((a+b)/2-.5)*w}" y="${pad+5*h+(big?15:11)}" font-size="${big?11:8}" font-family="DM Mono,monospace" text-anchor="middle" fill="${pn.tag==="b1"?"var(--blue)":"#9a6f00"}">${pn.tag==="b1"?1:4}\u00b7${a}</text>`;});
+  o+=`<text x="4" y="${pad-5}" font-size="${big?12:9.5}" font-family="DM Mono,monospace" fill="#15161A" opacity=".5">0</text>`;
+  (big?[3,5,7,9,12,15,17,19,21]:[5,12,17]).forEach(f=>o+=`<text x="${pad+(f-.5)*w}" y="${pad-5}" font-size="${big?12:9.5}" font-family="DM Mono,monospace" text-anchor="middle" fill="#15161A" opacity="${f===12?.75:.5}">${f}</text>`);
+  if(big)for(let r=0;r<6;r++)o+=`<text x="${pad-9}" y="${pad+r*h+4}" font-size="11" font-family="DM Mono,monospace" text-anchor="middle" fill="#15161A" opacity=".45">${SL[r]}</text>`;
+  return o+"</svg>";
+}
+function renderChart(){
+  document.getElementById("chart").innerHTML=NOTES.map((n,i)=>{
+    const open=i===chartOpen;
+    return `<div class="card strip${i===key?" now":""}${open?" open":""}" data-key="${i}" tabindex="0" role="button" aria-expanded="${open}">
+       <h2>${n} minor<em>${open?"tap to close":"tap to enlarge"}</em></h2>
+       ${open?keyStrip(i,{w:46,h:26,pad:26,big:true}):keyStrip(i)}
+       ${open?`<p class="tip">Dots are labelled with scale degrees. <b style="color:var(--blue)">Blue = Box 1</b>,
+         <b style="color:#9a6f00">gold = Box 4</b>, pink is the slide run between them, faint grey is the rest
+         of the scale. This key is now loaded into every other view.</p>`:""}</div>`;}).join("");
+  document.querySelectorAll("#chart .strip").forEach(c=>{
+    const go=()=>{const i=+c.dataset.key;chartOpen=(chartOpen===i)?null:i;
+      if(chartOpen!==null){key=i;stopDrone();
+        if(reg===-12&&!BOXES.some(x=>Math.min(...x.off.flat())+baseFret()-12>=0))reg=0;}
+      render();
+      const el=document.querySelector("#chart .strip.open");
+      if(el)el.scrollIntoView({block:"nearest",behavior:"smooth"});};
+    c.onclick=go;c.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}};});
+}
+// ---------- crossing drills ----------
+function oneString(s){
+  const R=rootFret(),last=R+12,cells=[];
+  for(let f=0;f<=last;f++){const pc=noteAt(s,f);if(isScale(pc))cells.push({f:String(f),d:IV[deg(pc)]});}
+  const w=cells.map(c=>Math.max(c.f.length,c.d.length));
+  return SL[s]+"|"+cells.map((c,i)=>"-"+c.f.padEnd(w[i],"-")+"-").join("")+"|\n"
+       +"  "+cells.map((c,i)=>" "+c.d.padEnd(w[i]," ")+" ").join("");
+}
+function zoneTab(a,b){
+  const ev=[];
+  for(let s=5;s>=0;s--){ev.push([s,a.off[s][0]],[s,a.off[s][1]]);}
+  ev.push([0,b.off[0][1],"/"]);
+  for(let s=1;s<=5;s++){ev.push([s,b.off[s][1]],[s,b.off[s][0]]);}
+  return tab(ev);
+}
+function motifTab(){
+  const ev=[];
+  validBoxes().forEach(b=>ev.push([1,b.off[1][0]],[1,b.off[1][1]],[0,b.off[0][0]],[0,b.off[0][1]]));
+  return tab(ev).split("\n").filter(r=>/\d/.test(r)).join("\n");
+}
+function renderCross(){
+  const R=rootFret(),c=[];
+  c.push({t:"1 · One string, whole neck",e:"say the degrees aloud",
+    body:`<pre>${oneString(0)}\n\n${oneString(1)}\n\n${oneString(5)}</pre>`,
+    tip:"The neck laid flat. Play each line low to high naming the degree out loud, then back down. This kills the habit of thinking in blocks — the boxes are arbitrary slices of this one line."});
+  const vb=validBoxes();
+  [0,1,2,3].filter(i=>vb.includes(BOXES[i])&&vb.includes(BOXES[i+1])).forEach(i=>{
+    const a=BOXES[i],b=BOXES[i+1];
+    c.push({t:`2 · Zone ${a.n}+${b.n}`,e:"ascend, cross, descend",
+      body:`<pre>${zoneTab(a,b)}</pre>`,
+      tip:`Up through Box ${a.n}, slide at the shared note on the high e, down through Box ${b.n}. Then reverse the whole thing. Ascending, the shared note is your pinky in Box ${a.n} and your first finger in Box ${b.n} — slide up <b>into</b> it with the first finger and you arrive already in position. Move on when the pair feels like one shape.`});});
+  c.push({t:"3 · One motif, five positions",e:"same four notes, all night",
+    body:`<pre>${motifTab()}</pre>`,
+    tip:"Four notes on the top two strings, played in every box. Same rhythm every time. Note there's no slide marked — the shift happens as you cross back down to the B string, and <b>a position change made while moving across strings is inaudible</b>. That's the trick behind position changes you can't hear. This drill forces the crossings to happen under musical pressure instead of as an exercise."});
+  const db=vb.includes(BOXES[0])?BOXES[0]:vb[0];
+  const doors=boxNotes(db).map(n=>({...n,kind:"pivot",ring:noteAt(n.s,n.f)===key}));
+  c.push({t:"4 · Every note is a door",e:`Box ${db.n}, fret ${Math.min(...db.off.flat())+R}–${Math.max(...db.off.flat())+R}`,
+    body:fretboard(doors,{w:46}),
+    tip:"Each string in a box holds two notes: the lower one is shared with the box below, the upper one with the box above. So <b>every note you play is already a doorway</b>. Drill: drone on, wander in the box above, and shift position the moment you hit the ♭7 — land on a root or chord tone straight after, and the move sounds deliberate instead of lost. Shift in the gaps between phrases, never mid-run."});
+  document.getElementById("cross").innerHTML=c.map(x=>
+    `<div class="card"><h2>${x.t}<em>${x.e}</em></h2>${x.body}<p class="tip">${x.tip}</p></div>`).join("");
+}
+
+// ---------- practice ----------
+let quiz=null;
+function newQuiz(){
+  const vs=validBoxes(),b=vs[Math.floor(Math.random()*vs.length)],t=[0,3,5,7,10][Math.floor(Math.random()*5)];
+  const notes=boxNotes(b);
+  quiz={box:b,target:t,total:notes.filter(n=>deg(noteAt(n.s,n.f))===t).length,found:0,wrong:0,notes};
+  document.getElementById("quizboard").innerHTML=fretboard(notes,{w:46,quiz:true});
+  document.getElementById("quizstatus").innerHTML=
+    `Box ${b.n}, key ${NOTES[key]} minor — tap every <b>${IV[t]}</b> (${NOTES[(key+t)%12]}). 0 of ${quiz.total}.`;
+  document.querySelectorAll("#quizboard .qn").forEach(g=>{
+    const hit=()=>answer(g);
+    g.addEventListener("click",hit);
+    g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();hit();}});});
+}
+function answer(g){
+  if(g.dataset.done||quiz.found===quiz.total)return;
+  const pc=+g.dataset.pc,c=g.querySelector("circle"),t=g.querySelector("text"),st=document.getElementById("quizstatus");
+  if(deg(pc)===quiz.target){
+    g.dataset.done=1;quiz.found++;c.setAttribute("fill","var(--pink)");t.textContent=IV[quiz.target];
+    st.innerHTML=quiz.found===quiz.total
+      ? `All ${quiz.total} found${quiz.wrong?` with ${quiz.wrong} miss${quiz.wrong>1?"es":""}`:" clean"}. Now play them, lowest to highest, saying <b>${IV[quiz.target]}</b> out loud.`
+      : `Tap every <b>${IV[quiz.target]}</b> (${NOTES[(key+quiz.target)%12]}). ${quiz.found} of ${quiz.total}.`;
+  }else{
+    quiz.wrong++;c.setAttribute("fill","var(--gold)");
+    setTimeout(()=>c.setAttribute("fill","var(--blue)"),320);
+    st.innerHTML=`That one's the <b>${IV[deg(pc)]}</b>. Still looking for the ${IV[quiz.target]} — ${quiz.found} of ${quiz.total}.`;
+  }
+}
+const POOL=[...BOXES.map(b=>`<b>Box ${b.n}</b> — two notes per string, up and back, eyes off the neck`),
+  ...LICKS.map(l=>`<b>${l.t}</b> (${l.e}) — slow, then one notch faster`),
+  "<b>Box 1 → Box 2</b> — same lick, both positions, slide between them",
+  "<b>B.B. box</b> — one note, vibrato only, thirty seconds",
+  "<b>Root spotting</b> — find every root on the neck in this key, low to high"];
+function newSession(){
+  const p=[...POOL].sort(()=>Math.random()-.5).slice(0,3);
+  document.getElementById("session").innerHTML=
+    [`Warm up: root drone on, ${NOTES[key]} minor, wander for 3 min`,...p.map(x=>x+" — 5 min"),
+     "Interleave: cycle back through all three once more, 4 min",
+     "Record one take over the drone. Listen once. Stop."].map(x=>`<li>${x}</li>`).join("");
+}
+
+// ---------- audio ----------
+let ac=null,droneNodes=null,clickTimer=null,bpm=90;
+function ctx(){
+  if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();
+  if(ac.state==="suspended")ac.resume().then(check).catch(check);
+  else check();
+  return ac;
+}
+function check(){
+  const m=document.getElementById("audiomsg");
+  m.textContent=ac&&ac.state!=="running"
+    ?"Browser blocked audio here — open the downloaded file directly and it'll play."
+    :"";
+}
+const freq=pc=>110*Math.pow(2,(pc-9)/12);
+function toggleDrone(btn){
+  if(droneNodes){droneNodes.forEach(n=>{try{n.stop()}catch(e){}});droneNodes=null;btn.setAttribute("aria-pressed",false);return;}
+  const a=ctx(),g=a.createGain();g.gain.value=.0001;g.connect(a.destination);
+  g.gain.exponentialRampToValueAtTime(.09,a.currentTime+.6);
+  droneNodes=[[freq(key),"sine"],[freq(key)*2,"triangle"],[freq(key)*3,"sine"]].map(([f,t],i)=>{
+    const o=a.createOscillator();o.type=t;o.frequency.value=f;
+    const og=a.createGain();og.gain.value=i===0?1:.28;o.connect(og);og.connect(g);o.start();return o;});
+  btn.setAttribute("aria-pressed",true);
+}
+function toggleClick(btn){
+  if(clickTimer){clearInterval(clickTimer);clickTimer=null;btn.setAttribute("aria-pressed",false);return;}
+  let beat=0;const tick=()=>{const a=ctx(),o=a.createOscillator(),g=a.createGain();
+    o.frequency.value=beat%4===0?1400:900;o.connect(g);g.connect(a.destination);
+    g.gain.setValueAtTime(.22,a.currentTime);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.05);
+    o.start();o.stop(a.currentTime+.06);beat++;};
+  tick();clickTimer=setInterval(tick,60000/bpm);btn.setAttribute("aria-pressed",true);
+}
+function restartClick(){const b=document.getElementById("click");
+  if(clickTimer){clearInterval(clickTimer);clickTimer=null;toggleClick(b);}}
+function stopDrone(){if(droneNodes){droneNodes.forEach(n=>{try{n.stop()}catch(e){}});droneNodes=null;
+  document.getElementById("drone").setAttribute("aria-pressed",false);}}
+
+// ---------- shell ----------
+function render(){
+  ["path","song","melody","boxes","connect","land","chart","cross","blues","licks","practice"].forEach(v=>document.getElementById("v-"+v).hidden=(v!==view));
+  if(view==="path")renderPath();
+  if(view==="song")renderSong();
+  if(view==="melody")renderMelody();
+  if(view==="land")renderLand();
+  if(view==="chart")renderChart();
+  if(view==="boxes")renderBoxes();
+  if(view==="connect")renderConnect();
+  if(view==="cross")renderCross();
+  if(view==="blues")renderBlues();
+  if(view==="licks")renderLicks();
+  if(view==="practice"){newQuiz();newSession();}
+  document.querySelectorAll("#keys button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.k===key));
+  document.querySelectorAll("#views button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===view));
+  document.querySelectorAll("#labels button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.l===labelMode));
+  document.querySelectorAll("#chords button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.c===(chord||"off")));
+  document.querySelectorAll("#regs button").forEach(b=>{
+    b.setAttribute("aria-pressed",+b.dataset.r===reg);
+    if(+b.dataset.r===-12){
+      const n=BOXES.filter(x=>Math.min(...x.off.flat())+baseFret()-12>=0).length;
+      b.disabled=n===0;b.style.opacity=n?1:.35;
+      b.textContent=n?`Octave down (${n} box${n>1?"es":""})`:"Octave down — none";}});
+}
+const mk=(host,data,txt,fn)=>{const b=document.createElement("button");
+  Object.entries(data).forEach(([k,v])=>b.dataset[k]=v);b.textContent=txt;b.onclick=fn;
+  document.getElementById(host).appendChild(b);};
+NOTES.forEach((n,i)=>mk("keys",{k:i},n+"m",()=>{key=i;stopDrone();
+  if(reg===-12&&!BOXES.some(x=>Math.min(...x.off.flat())+baseFret()-12>=0))reg=0;
+  render()}));
+[["path","Start here"],["song","Over a song"],["melody","Melody"],["boxes","5 boxes"],["connect","Connections"],["land","Box 1 & 4"],["chart","All 12 keys"],["cross","Crossing drills"],["blues","Blues boxes"],["licks","Licks"],["practice","Practice"]]
+  .forEach(([v,t])=>mk("views",{v},t,()=>{view=v;render()}));
+[["name","Note names"],["interval","Intervals"],["none","Blank"]]
+  .forEach(([l,t])=>mk("labels",{l},t,()=>{labelMode=l;render()}));
+[["off","Off"],["i","i"],["iv","iv"],["v","v"]]
+  .forEach(([c,t])=>mk("chords",{c},t,()=>{chord=c==="off"?null:c;render()}));
+[[0,"Standard"],[-12,"Octave down"]]
+  .forEach(([r,t])=>mk("regs",{r},t,()=>{reg=r;render()}));
+document.getElementById("drone").onclick=e=>toggleDrone(e.currentTarget);
+document.getElementById("click").onclick=e=>toggleClick(e.currentTarget);
+document.getElementById("bpm").oninput=e=>{bpm=+e.target.value;
+  document.getElementById("bpmv").textContent=bpm+" bpm";restartClick();};
+document.getElementById("newquiz").onclick=newQuiz;
+document.getElementById("newsession").onclick=newSession;
+render();
+</script>
+</body>
+</html>

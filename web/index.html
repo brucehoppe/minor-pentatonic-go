@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minor Pentatonic — practice desk</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Minor pentatonic<br>practice desk</h1>
+  <p class="sub">One scale, five shapes, whole neck</p>
+
+  <figure class="hero">
+    <img src="assets/kaiju-guitar.png" width="1571" height="1001"
+      alt="A riso-printed kaiju in armour, drawn in blue and pink, playing an electric guitar">
+  </figure>
+
+  <div class="row" id="keys"><span class="lbl" id="keylbl">Key</span></div>
+  <nav id="views" aria-label="Views"></nav>
+
+  <div class="bar">
+    <div class="row" id="labels"><span class="lbl">Dots</span></div>
+    <div class="row" id="chords"><span class="lbl">Chord tones</span></div>
+    <div class="row" id="regs"><span class="lbl">Register</span></div>
+    <div class="row" id="extras"><span class="lbl">Blue note</span></div>
+    <div class="row" id="play">
+      <span class="lbl">Play along</span>
+      <button id="drone">Root drone</button>
+      <button id="click">Metronome</button>
+      <input type="range" id="bpm" min="40" max="220" value="90" aria-label="Tempo">
+      <span id="bpmv" style="font-size:12px;opacity:.6">90 bpm</span>
+      <span id="audiomsg" style="font-size:11.5px;color:var(--pink);flex-basis:100%;line-height:1.5"></span>
+    </div>
+    <div class="row" id="approw" hidden>
+      <span class="lbl">App</span>
+      <button id="quitapp">Quit</button>
+      <span id="appver" style="font-size:11.5px;opacity:.55"></span>
+      <span id="quitmsg" style="font-size:11.5px;color:var(--pink)"></span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div><i class="swatch" style="background:var(--pink)"></i>Root</div>
+    <div><i class="swatch" style="background:var(--blue)"></i>Scale tone</div>
+    <div><i class="swatch" style="background:var(--gold)"></i>Shared / pivot</div>
+    <div><i class="swatch ringed"></i>Chord tone</div>
+    <div><i class="swatch hollow"></i>Optional colour tone</div>
+    <div><i class="swatch dashed"></i>♭5 blue note</div>
+  </div>
+
+  <section id="v-path">
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      There's far more here than anyone should try to absorb at once. This is the order to take it in.
+      Each stage has one job and a test you can actually fail — <b>don't move on until you pass it</b>.
+      The timings are indicative; the tests aren't.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      The single most common mistake is treating soloing as a scale problem. It isn't. It's a
+      rhythm-and-phrasing problem played with scale notes, which is why stages 1 and 3 matter more
+      than everything after them.</p>
+    <div class="grid wide" id="path"></div>
+  </section>
+
+  <section id="v-song" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      The missing piece is almost always this: <b>the scale comes from the song, not from the guitar.</b>
+      You don't decide to play A minor pentatonic — the song decides, and your job is to find out what it
+      already chose. Here's the whole procedure.</p>
+    <div class="grid wide" id="song"></div>
+  </section>
+
+  <section id="v-melody" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Melody is a <b>shape over time</b>. Scale playing is a sequence of notes. These four things
+      convert one into the other.</p>
+    <div class="grid wide" id="melody"></div>
+  </section>
+
+  <section id="v-boxes">
+    <p class="tip">Select one or more boxes to practise moving between them. Tap a selected box again to remove it.
+      Start slowly: play a short phrase in one box, pause, find the root in the next box, then move.</p>
+    <div class="row"><div class="row" id="boxselect" role="group" aria-label="Select practice boxes"></div><button id="boxreset">Show all</button></div>
+    <div class="map"><div class="maplabel" id="maplabel" aria-live="polite">Full neck — all boxes</div><div id="fullmap"></div></div>
+    <p class="tip" id="boxorder" style="margin:-14px 0 18px;font-size:12px"></p>
+    <div class="grid" id="boxes"></div>
+  </section>
+
+  <section id="v-hijaz" hidden>
+    <p class="tip">Use the pentatonic boxes you know as landmarks for a new sound. Work with one short phrase before exploring the whole scale.</p>
+    <div class="row"><button id="hijazexample">Load E example · Box 1 at fret 12</button>
+      <a href="five-pentatonic-boxes-phrygian-dominant.html" target="_blank" rel="noreferrer">Open your original E reference</a></div>
+    <div class="grid wide" id="hijazlesson"></div>
+    <h2>Five familiar neighbourhoods<em>Phrygian dominant around your pentatonic boxes</em></h2>
+    <p class="tip">Pink = root; blue = shared 4, 5 and ♭7; gold = ♭2, 3 and ♭6.
+      These diagrams show only Phrygian dominant notes. The minor third is omitted.
+      Tap notes to hear them; use Dots for names or degrees. These are fret windows, not fixed fingerings: shift rather than force a stretch.
+      Your original reference reaches fret 25; the interactive diagrams stop at fret 24. Use Octave down to explore a lower position.</p>
+    <div class="grid" id="hijazboxes"></div>
+    <div class="grid wide" id="hijazpractice"></div>
+  </section>
+
+  <section id="v-solo" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 14px;font-size:12.5px">
+      Pick the shapes you're working on, then build a run inside them. <b>Tap any note on the zone map to
+      add it</b> — you'll hear it as you go — and the run below records the order, the tab and the
+      fingering. Play it back at the tempo on the slider above.</p>
+    <div class="row" id="soloboxes"><span class="lbl">Boxes</span></div>
+    <div class="row" id="solopatterns"><span class="lbl">Fill with</span></div>
+    <div class="map">
+      <div class="maplabel" id="solomaplabel">Zone</div>
+      <div id="solomap"></div>
+      <p class="tip" id="solozonetip" style="margin:10px 0 0;font-size:12px"></p>
+    </div>
+    <div class="grid wide" id="solocards"></div>
+  </section>
+
+  <section id="v-connect" hidden>
+    <p class="tip" style="max-width:60ch;margin:0 0 18px;font-size:12.5px">
+      Every box overlaps the next by exactly one note per string: <b>the higher note of a box is the
+      lower note of the box above it</b>. Those gold notes are your doors.</p>
+    <div class="grid wide" id="connect"></div>
+  </section>
+
+  <section id="v-land" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      You don't need five shapes to cover the neck. <b>Box 1 and Box 4 are the two landmarks</b> —
+      between them they give you a root under the index finger in two different places, and almost
+      everything most players do lives in one or the other.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Learn these two cold and treat 2, 3 and 5 as the connective tissue between them.</p>
+    <div class="grid wide" id="land"></div>
+  </section>
+
+  <section id="v-major" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      The same five shapes, read from the other end. This is <b>major pentatonic as one diagonal run</b>
+      up the neck, root on the A string: two notes on E, three on A, two on D, three on G, two on B,
+      three on high e. That 2&ndash;3&ndash;2&ndash;3&ndash;2&ndash;3 alternation is the whole pattern.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 14px;font-size:12.5px">
+      Pick a key and the shape keeps its fingering and slides. It carries its own key list, because
+      major keys are spelled with flats where the minor ones are not &mdash; D&#9837; major, not C&#9839;.</p>
+    <div class="row" id="majorkeys"><span class="lbl">Major key</span></div>
+    <div class="row" id="majoropts">
+      <span class="lbl">Dots</span>
+      <button id="majormode" aria-pressed="false">Note names</button>
+      <button id="majorarrows" aria-pressed="true">Shift arrows</button>
+    </div>
+    <div class="grid wide">
+      <div class="card">
+        <h2>The diagonal<em id="majorpos"></em></h2>
+        <div id="majorboard"></div>
+        <p class="tip" id="majorcap"></p>
+      </div>
+      <div class="card">
+        <h2>Frets, string by string<em>high e first</em></h2>
+        <pre id="majortab"></pre>
+        <p class="tip"><b>The arrows</b> mark the third note on each three-note string &mdash; the stretch
+          that moves you up a position.</p>
+        <p class="tip"><b>The G-to-B jump</b> is one fret wider than the others because the B string is
+          tuned a half step tighter. Same reason barre chords bend there.</p>
+        <p class="tip"><b>Relative minor:</b> the same dots played from the sixth degree are the minor
+          pentatonic box in the rest of this desk.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="v-modes" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      <b>A shape is not a mode.</b> Play these notes over the wrong chord and you will hear the major
+      scale they came from, not the mode you meant. What makes a mode is the harmony underneath it —
+      so start the <b>Root drone</b> in the bar above before you play a single shape here.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      Every mode below is drawn from the <b>same root</b> — whichever key is selected at the top. That is
+      deliberate. Comparing D dorian to C major tells you they share notes; it tells you nothing about
+      how dorian sounds. Holding the root still and moving one note does.
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Each mode names the one or two notes that separate it from the major or minor scale you already
+      know. Those are drawn <b>gold</b>. Learn to hear those notes and you have learned the mode; the
+      rest of the scale you can already play.</p>
+    <div class="row" id="modes"><span class="lbl">Mode</span></div>
+    <div class="grid wide" id="modesummary"></div>
+    <p class="tip" style="max-width:64ch;margin:18px 0 8px;font-size:12.5px">
+      The same five neighbourhoods as the pentatonic boxes, with the rest of the scale filled in around
+      them. You are not learning five new shapes — you are adding two notes to shapes you have.</p>
+    <div class="grid" id="modeboxes"></div>
+  </section>
+
+  <section id="v-notes" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      Every shape in this app moves around the neck without your knowing what a single note is called
+      &mdash; which works until someone says <b>&ldquo;take it from the B&rdquo;</b>.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Three things, not 144 positions: <b>the open strings</b> (E A D G B e), <b>the seven naturals</b> and
+      where the gaps are, and <b>one octave shape</b>. Five minutes a day, one string, said out loud.</p>
+
+    <div class="row" id="notepick"><span class="lbl">Find every</span></div>
+    <div class="row" id="stringpick"><span class="lbl">One string</span></div>
+    <div class="map">
+      <div class="maplabel" id="necklabel"></div>
+      <div id="neck"></div>
+    </div>
+
+    <div class="grid wide">
+      <div class="card">
+        <h2>The landmarks<em>learn these first</em></h2>
+        <ol>
+          <li><b>Open strings, low to high: E A D G B e.</b> Every calculation starts from one of these.</li>
+          <li><b>Fret 12 is the open string again</b>, so there are only twelve frets to learn.</li>
+          <li><b>B to C and E to F have no sharp between them.</b> Those two gaps are where the mistakes are.</li>
+          <li><b>Fret 5 is the next string open</b> &mdash; except G to B, which is fret 4.</li>
+          <li><b>The low E and high e are identical.</b> Learn one, you have both.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h2>How to drill it<em>in order</em></h2>
+        <ol>
+          <li><b>One string, one week.</b> Up the low E naming each note aloud, then down. Two minutes daily.</li>
+          <li><b>One note, whole neck.</b> Pick a note above and find every one of them.</li>
+          <li><b>Name before you play.</b> Recognition is easy; recall is the skill.</li>
+          <li><b>Use it for real.</b> Set a key here, then find that root in five places.</li>
+        </ol>
+      </div>
+    </div>
+
+    <p class="tip" style="max-width:64ch;margin:22px 0 8px;font-size:12.5px">
+      <b>The octave shape</b> carries a note you know into an octave you don't &mdash; always the same
+      distance, except across the G and B strings, where it shifts a fret.</p>
+    <div class="grid" id="octaves"></div>
+  </section>
+
+  <section id="v-triads" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      A triad is a chord with nothing wasted: <b>three notes &mdash; a root, a 3rd and a 5th</b>. Every
+      full chord you know is one of these with notes doubled. Strip those doublings away and a chord
+      becomes small enough to grab anywhere on the neck.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      This is the missing step between a power chord and a scale. A power chord has no 3rd, so it is
+      neither major nor minor. A scale is seven notes and easy to wander around in. A triad is the three
+      notes that <b>are</b> the chord &mdash; the ones the Blues trainer keeps telling you to aim at.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Take them <b>three strings at a time</b>. That is the whole trick: one small shape on one string
+      set, moved to three places, covers the neck. Then move the set.</p>
+
+    <div class="row" id="triadkinds"><span class="lbl">Quality</span></div>
+    <div class="row" id="triadsets"><span class="lbl">String set</span></div>
+    <div class="grid wide" id="triadsummary"></div>
+    <p class="tip" id="triadcount" style="max-width:64ch;margin:18px 0 8px;font-size:12.5px"></p>
+    <div class="grid" id="triadshapes"></div>
+
+    <div class="grid wide" style="margin-top:22px">
+      <div class="card">
+        <h2>Why bother<em>what triads unlock</em></h2>
+        <ol>
+          <li><b>Play chords anywhere.</b> Three shapes on one string set and you can play that chord at
+            any point on the neck, instead of running back to an open position.</li>
+          <li><b>Rhythm parts that stay out of the way.</b> Triads on the top three strings sit above the
+            bass and below the vocal. Full barre chords in the same spot just make mud.</li>
+          <li><b>Solos that follow the chords.</b> The Blues trainer names a target tone every bar. The
+            triad <em>is</em> those target tones, in a shape your hand can find.</li>
+          <li><b>Chord &rarr; arpeggio &rarr; scale.</b> Play the triad, play the same notes one at a
+            time, then fill in the scale around it in the same position. Do that with every new chord and
+            the neck stops being a grid of shapes.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h2>How to practise them<em>in order</em></h2>
+        <ol>
+          <li><b>One quality, one string set.</b> Major on strings 1&ndash;2&ndash;3. Play all three
+            shapes up the neck, then back down, naming the bass note each time.</li>
+          <li><b>Major to minor.</b> Take each shape and move the single note that is the 3rd down one
+            fret. Same shape family, opposite mood &mdash; hear it.</li>
+          <li><b>Move the set, not the shape.</b> Same three shapes on strings 2&ndash;3&ndash;4. The
+            geometry shifts when the B string is involved; that is the same G-to-B exception as everywhere
+            else.</li>
+          <li><b>Over the trainer.</b> Start the 12-bar trainer and play one triad per bar. Nothing
+            teaches chord changes faster than having to find one in time.</li>
+        </ol>
+        <p class="tip">Dot labels follow the <b>Dots</b> setting in the toolbar: switch to Intervals to
+          see 1, 3 and 5 instead of note names.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="v-inv" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      Forget the word. <b>An inversion is one action on a chord you already know:</b> take the bottom
+      note and move it to the top. <b>Press the button below and watch it happen</b> &mdash; three
+      presses bring it back where it started.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Nothing added, nothing removed: same chord, same three notes, stacked in a different order.</p>
+
+    <div class="grid wide" id="invdemo"></div>
+    <div class="grid wide" id="invmove" style="margin-top:20px"></div>
+    <div class="grid wide" id="invnot" style="margin-top:20px"></div>
+
+    <p class="tip" style="max-width:64ch;margin:26px 0 8px;font-size:12.5px">
+      <b>Now on the guitar.</b> The same three stacks as three shapes you can hold. The bottom note of
+      each diagram is the bottom note of each stack above &mdash; the only thing that differs.</p>
+    <div class="row" id="invsets"><span class="lbl">String set</span></div>
+    <div class="grid" id="invwhat"></div>
+
+    <p class="tip" style="max-width:64ch;margin:26px 0 8px;font-size:12.5px">
+      <b>Two chords is enough to feel it.</b> Play the first. Then the second the way you already know
+      it &mdash; notice the jump. Then the third card, the same chord inverted: no jump at all.</p>
+    <div class="grid" id="invtwo"></div>
+
+    <p class="tip" style="max-width:64ch;margin:22px 0 8px;font-size:12.5px">
+      <b>Three shapes, then they repeat.</b> Root, first, second, root an octave up &mdash; one cycle
+      covering the whole neck. See it and you stop learning positions.</p>
+    <div class="map">
+      <div class="maplabel" id="invnecklabel"></div>
+      <div id="invneck"></div>
+    </div>
+
+    <p class="tip" style="max-width:64ch;margin:22px 0 8px;font-size:12.5px">
+      <b>The payoff, measured.</b> What that does for one change, inversions do for a whole song. Below,
+      the same progression twice on one neck &mdash; every chord in root position, then each taking its
+      nearest shape &mdash; with the distance measured.</p>
+    <div class="row" id="invprogs"><span class="lbl">Progression</span></div>
+    <p class="tip" id="invprogtip" style="max-width:64ch;margin:0 0 14px;font-size:12.5px"></p>
+    <div class="grid wide" id="invcompare"></div>
+    <p class="tip" id="invverdict" style="max-width:70ch;margin:16px 0 0;font-size:13px"></p>
+
+    <div class="grid wide" style="margin-top:26px">
+      <div class="card">
+        <h2>What inversions are for<em>most useful first</em></h2>
+        <ol>
+          <li><b>Stay in one place.</b> Changes stop being jumps: fewer missed chords, less noise between them.</li>
+          <li><b>Voice leading.</b> Notes move a fret or not at all. That is what makes a part sound
+            arranged rather than strummed.</li>
+          <li><b>Choose the bass note.</b> C/E between C and F walks the bass C&ndash;E&ndash;F. That is
+            what a slash chord is for.</li>
+          <li><b>Control the top note.</b> The highest note is heard as the melody, so the inversion picks
+            the tune.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h2>How to practise them<em>in order</em></h2>
+        <ol>
+          <li><b>One chord, three shapes.</b> Root, first, second, root &mdash; and back, naming the bass aloud.</li>
+          <li><b>Two chords.</b> Play I, then find the IV closest to your hand before moving.</li>
+          <li><b>Whole progression, one five-fret region.</b> Then again five frets higher.</li>
+          <li><b>Over the 12-bar trainer.</b> One chord per bar. A jump means you chose wrong in the bar before.</li>
+        </ol>
+      </div>
+    </div>
+
+    <p class="tip" style="max-width:64ch;margin:22px 0 0;font-size:12.5px">
+      A caution: the lowest note is only the bass if nobody else is playing one. Alone, your C/E is an
+      inversion; over a bass player holding the root, it is a texture and the chord still sounds like C.</p>
+  </section>
+
+  <section id="v-chart" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
+      Every key at once. <b style="color:var(--blue)">Blue = Box 1</b>,
+      <b style="color:#9a6f00">gold = Box 4</b>, pink rings are roots. Labels under each zone read
+      <i>shape · starting fret</i>. Where a shape fits twice on a 22-fret neck it's drawn twice —
+      that's the same shape an octave apart, not a new one.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Notice the pattern: <b>the gold zone is always seven frets right of the blue one</b>, in every
+      key, without exception. That gap never changes — only where the pair sits on the neck.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      <b style="color:var(--pink)">The pink path is the slide run</b> from Box 1 up into Box 4 — every
+      note of it, with arrows on the two slides. It's the same run in every key; only the fret numbers
+      move.</p>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      The faint grey dots are the rest of the scale. <b>There's no empty ground between the two
+      landmarks</b> — Boxes 2 and 3 fill it, and the slide run walks straight through them. Tap any key
+      to load it into the rest of the app.</p>
+    <div class="grid" id="chart" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))"></div>
+  </section>
+
+  <section id="v-blues" hidden>
+    <p class="tip" style="max-width:60ch;margin:0 0 18px;font-size:12.5px">
+      Not separate scales — small, high-value neighbourhoods carved out of the boxes you already know.</p>
+
+    <div class="map">
+      <div class="maplabel" id="bluesmaplabel">Whole neck — all five boxes with the ♭5 dropped in</div>
+      <div id="bluesmap"></div>
+      <div class="row" id="bluesfocus" style="margin-top:12px"><span class="lbl">Isolate</span></div>
+      <p class="tip" id="bluestip" style="margin:8px 0 0;font-size:12px;max-width:64ch"></p>
+    </div>
+
+    <div class="grid" id="blues"></div>
+
+    <div class="grid wide" style="margin-top:20px">
+      <div class="card">
+        <h2>How B.B. used it<em>economy</em></h2>
+        <p class="tip">His root sits on the <b>B string under the index finger</b> — that's the anchor the
+        whole box is built around, and it's why you so often saw him planted in one place, barely moving.
+        The box is small on purpose. Nothing is there to run through; every note has to earn its place,
+        so the expression comes from touch, vibrato and the exact timing of a bend rather than from
+        speed.</p>
+        <p class="tip">The theory move that makes it sound like him: he leans on the <b>major 6th</b>
+        — the dashed note above — often in place of the ♭7. That single swap tilts a minor-sounding
+        shape toward major, which is why his playing sounds sweet and vocal rather than dark. Keep the
+        ♭7 as seasoning, not a foundation. One caution: over a genuinely minor blues the 6th clashes,
+        so the sweet note belongs in major/dominant blues.</p>
+        <p class="tip">And the vibrato. His was fast, wide and generated from the wrist, applied to a
+        held note as the destination of a phrase. Practise it alone: one note, thirty seconds, no
+        other notes allowed.</p>
+      </div>
+      <div class="card">
+        <h2>How Albert used it<em>violence</em></h2>
+        <p class="tip">Five notes off the top of Box 2 and almost nothing else — he reused the same
+        small vocabulary constantly. What makes it enormous is the bending. He <b>overbent</b>: not
+        just a whole step, but a step and a half or two full steps, bending one note up to the pitch
+        of a note three or four frets higher, then dropping it in stages rather than releasing cleanly.
+        He also stacked bends — hitting the same fret with a half-step, then a whole step, then further
+        — so one note produced several pitches.</p>
+        <p class="tip">Phrasing tells: he came in <b>late</b>, often on beat two rather than beat one,
+        which gives the lines their slinky, behind-the-beat drag. And he liked resolving to the
+        <b>5th</b> instead of the root — less final, more suspended.</p>
+        <p class="tip">Worth knowing before you try to match him: he was a left-hander playing a
+        right-handed Flying V flipped over, so the treble strings were nearest the floor and he
+        <i>pulled</i> them downward instead of pushing up. He tuned well below standard, used very
+        light strings, and played with thumb and fingers, no pick. The bends aren't superhuman —
+        the setup was doing a lot of the work. On your SG in standard tuning, a step and a half is
+        a realistic ceiling; go for the sound of the phrasing, not the exact interval.</p>
+      </div>
+      <div class="card">
+        <h2>Where to hear and read it<em>links</em></h2>
+        <p class="tip"><b>Listen first.</b> B.B.: <i>Live at the Regal</i> (1965) — the whole record is
+        the box in action. Albert: <i>Born Under a Bad Sign</i> (1967), and <i>Blues Power</i> from
+        <i>Live Wire/Blues Power</i> for the bending at full stretch.</p>
+        <p class="tip"><b>B.B. box lessons</b><br>
+        <a href="https://www.guitarworld.com/lessons/bb-king-lesson-soloing-movable-bb-box">Guitar World — the movable B.B. box</a><br>
+        <a href="https://www.premierguitar.com/deep-blues-the-b-b-king-box">Premier Guitar — Deep Blues, with notation and a backing track</a><br>
+        <a href="https://happybluesman.com/b-b-king-box-what-how-use/">Happy Bluesman — what it is and how to use it</a><br>
+        <a href="https://www.activemelody.com/lesson/b-b-king-guitar-lesson-understanding-his-approach/">Active Melody — his approach to a solo</a></p>
+        <p class="tip"><b>Albert King lessons</b><br>
+        <a href="https://happybluesman.com/lessons/albert-king-box/">Happy Bluesman — the Albert King box</a><br>
+        <a href="https://happybluesman.com/lessons/bend-stacking-in-the-albert-king-box/">Happy Bluesman — bend stacking</a><br>
+        <a href="https://www.guitarworld.com/lessons/artist-lessons/jared-james-nichols-albert-king-fingerstyle-blues-guitar">Guitar World — Jared James Nichols on Albert's fingerstyle</a><br>
+        <a href="https://riffjournal.com/king-albert-getting-a-grip-on-the-expressive-signature-bending-techniques-of-legendary-blues-great-albert-king/">Riff Journal — his upside-down setup and bending technique</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="v-power" hidden>
+    <p class="tip" style="max-width:62ch;margin:0 0 18px;font-size:12.5px">
+      Two notes, no third, movable anywhere. The chords under a riff and the pentatonic scale over it are
+      built from the same handful of notes — this is the rhythm side of everything else in here.</p>
+    <div class="grid" id="power"></div>
+    <h2 style="font-family:'Bricolage Grotesque',system-ui,sans-serif;font-size:20px;margin:30px 0 14px;
+      text-transform:uppercase;letter-spacing:.02em">A full power-chord song</h2>
+    <div class="grid" id="pcsong"></div>
+  </section>
+
+  <section id="v-form" hidden>
+    <p class="tip" style="max-width:62ch;margin:0 0 18px;font-size:12.5px">
+      How the pieces get ordered. Block width is bar count, so the shapes below are to scale.</p>
+    <div class="grid" id="form"></div>
+  </section>
+
+  <section id="v-licks" hidden>
+    <p class="tip" style="max-width:60ch;margin:0 0 8px;font-size:12.5px">
+      Numbers are playing order. <b>b</b> bend, <b>r</b> release, <b>/</b> slide, <b>~</b> vibrato.</p>
+    <p class="tip" style="max-width:60ch;margin:0 0 18px;font-size:12.5px">
+      There is also a longer written lesson on seven Box 1 licks in A minor:
+      <a href="seven-licks.html">open the Seven Licks lesson</a>.</p>
+    <div class="grid wide" id="licks"></div>
+  </section>
+
+  <section id="v-cross" hidden>
+    <p class="tip" style="max-width:62ch;margin:0 0 18px;font-size:12.5px">
+      There is only one connection rule, repeated four times: <b>on every string, the upper note of a
+      box is the lower note of the box above it</b>. Work these four drills in order — each one is a
+      prerequisite for the next.</p>
+    <div class="grid wide" id="cross"></div>
+  </section>
+
+  <section id="v-practice" hidden>
+    <p class="tip" style="max-width:62ch;margin:0 0 18px;font-size:12.5px">
+      Two timed routines from your practice guide, then the generators and tools.</p>
+    <div class="grid wide" id="guide"></div>
+    <h2 style="font-family:'Bricolage Grotesque',system-ui,sans-serif;font-size:20px;margin:30px 0 14px;
+      text-transform:uppercase;letter-spacing:.02em">Tools</h2>
+    <div class="grid wide">
+      <div class="card">
+        <h2>Find the note<em>tap the dots</em></h2>
+        <div id="quizboard"></div>
+        <div class="status" id="quizstatus"></div>
+        <div class="row" style="margin-top:10px"><button id="newquiz">New drill</button></div>
+      </div>
+      <div class="card">
+        <h2>Session<em>interleaved, ~25 min</em></h2>
+        <ol id="session"></ol>
+        <div class="row" style="margin-top:12px"><button id="newsession">Build another</button><button id="completesession">Log complete</button></div>
+        <p class="tip">Say the shape's name out loud before you play it, and record one take at the end.</p>
+      </div>
+      <div class="card">
+        <h2>Focus timer<em>work, then rest</em></h2>
+        <div class="timerface" id="timerface" aria-live="polite">05:00</div>
+        <div class="row">
+          <button class="timerpreset" data-min="3">3 min</button><button class="timerpreset" data-min="5">5 min</button>
+          <button class="timerpreset" data-min="10">10 min</button><button id="toggletimer">Start</button><button id="resettimer">Reset</button>
+        </div>
+        <p class="tip" id="timerstatus">Choose one drill. The timer keeps the session focused and sounds a cue when time is up.</p>
+      </div>
+      <div class="card">
+        <h2>Tempo ladder<em>clean reps earn speed</em></h2>
+        <p class="tip">Run the metronome at the current tempo, then add 5 bpm after each clean round. Mark a miss to drop 5 bpm and rebuild.</p>
+        <div class="timerface"><span id="ladderbpm">90</span> <span style="font-size:14px">bpm</span></div>
+        <div class="row"><button id="ladderclean">Clean · +5</button><button id="laddermiss">Miss · −5</button><button id="ladderreset">Start over</button></div>
+        <div class="status" id="ladderstatus">Round 1 · starting tempo</div>
+      </div>
+      <div class="card">
+        <h2>Practice log<em>stored on this device</em></h2>
+        <div class="status" id="logsummary"></div><ul class="loglist" id="loglist"></ul>
+        <div class="row" style="margin-top:10px"><button id="clearlog">Clear log</button></div>
+        <p class="tip">Only completed generated sessions are recorded. Nothing leaves your browser.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="v-trainer" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Hear where you are in the form. The current bar and chord move with the groove; aim each phrase
+      toward the highlighted chord tone, then leave space for the form to answer.</p>
+    <div class="card">
+      <h2>12-bar blues<em id="trainerreadout">ready</em></h2>
+      <div class="row" style="margin-top:12px">
+        <span class="lbl">Form</span><select id="bluesform" aria-label="Blues form"></select>
+        <span class="lbl">Groove</span><select id="groove" aria-label="Blues groove"><option value="shuffle">Shuffle</option><option value="straight">Straight</option><option value="slow">Slow sustain</option></select>
+        <button id="toggletrainer">Start with count-in</button><button id="resettrainer">Reset</button>
+      </div>
+      <div class="bars" id="bluesbars"></div>
+      <div class="status" id="trainertarget"></div>
+      <p class="tip" id="formtip">Bars 1–4 establish home, bars 5–6 move to IV, and bar 9 begins the turnaround.
+      Start with one note per bar. Later, approach the target from one scale tone above or below.</p>
+      <p class="tip" id="formheard"></p>
+      <p class="tip" style="opacity:.55">A bar showing two chords changes halfway through — the second chord
+      arrives on beat 3. Every form here is a standard skeleton; recordings of the same tune often differ,
+      and players substitute freely.</p>
+    </div>
+  </section>
+
+  <section id="v-rhythm" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Rhythm first, pitch second. Clap the pattern, play it on one root, then keep the rhythm unchanged
+      while choosing notes from the current box.</p>
+    <div class="grid wide">
+      <div class="card">
+        <h2>Phrase generator<em>one bar · sixteenth-note grid</em></h2>
+        <div class="row" style="margin-top:12px">
+          <span class="lbl">Density</span><select id="density" aria-label="Phrase density"><option value="sparse">Sparse</option><option value="medium" selected>Medium</option><option value="busy">Busy</option></select>
+          <button id="newrhythm">New phrase</button><button id="togglerhythm">Play loop</button>
+        </div>
+        <div class="beatgrid" id="beatgrid" aria-label="Generated rhythm"></div>
+        <div class="status" id="rhythmcount"></div>
+      </div>
+      <div class="card">
+        <h2>Three-pass drill<em>hear it before adding notes</em></h2>
+        <ol>
+          <li><b>Clap it.</b> Count “1 e &amp; a” and keep every rest silent.</li>
+          <li><b>One root.</b> Play the rhythm only on <span id="rhythmroot">A</span>.</li>
+          <li><b>Make a phrase.</b> Keep the rhythm exact; choose no more than four scale notes.</li>
+        </ol>
+        <p class="tip" id="rhythmtip"></p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="credit">
+    <p><a href="https://github.com/bruce-hoppe_uoft/minor-pentatonic-go" target="_blank" rel="noreferrer">Built by Bruce Hoppe · Source on GitHub</a></p>
+    <p><a href="seven-licks.html">Seven Licks lesson</a></p>
+    <p id="credver"></p>
+  </footer>
+</div>
+
+<script src="app.js" defer></script>
+</body>
+</html>
