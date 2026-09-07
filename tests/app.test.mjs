@@ -1685,8 +1685,8 @@ test("Quit shuts the page down, not just the server", async () => {
 
 test("the page credits its author", () => {
   const { document } = makeRuntime();
-  assert.ok(html.includes("Built by Bruce Hoppe"), "uses the Earthquake Observatory credit wording");
-  assert.ok(!html.includes("Coded by"), "the old credit is removed");
+  assert.ok(html.includes("Built by Bruce Hoppe"), "the page has a simple author credit");
+  assert.ok(!html.includes("Source on GitHub"), "the GitHub reference is removed");
   assert.ok(!html.includes("Bruce Hoppe"), "the email is removed from the page");
   assert.ok(html.includes('class="credit"'), "in a footer of its own");
   assert.ok(document.getElementById("credver"), "which also carries the build version");
