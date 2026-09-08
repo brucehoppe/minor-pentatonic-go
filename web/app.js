@@ -2591,6 +2591,7 @@ function renderPractice(){
   document.getElementById("ladderbpm").textContent=bpm;
 }
 
+// Copyright © 2026 Bruce Hoppe.
 // ---------- pentatonic to Phrygian dominant ----------
 const PD_OFFSETS=[0,1,4,5,7,8,10], PD_DEGREES=["1","♭2","3","4","5","♭6","♭7"];
 // Spell by letter and scale degree, so A's flat second is B-flat, not A-sharp.
@@ -2679,6 +2680,105 @@ function renderHijaz(){
         These fret numbers are specifically for E, regardless of the selected root above.</p></div>`;
 }
 
+// ---------- open tunings ----------
+const OPEN_TUNINGS=[
+  {id:"open-d",name:"Open D",notes:["D","A","D","F♯","A","D"],changes:["↓2","—","—","↓1","↓2","↓2"],chord:"D major",use:"A bright major drone; a natural home for slide and bottleneck phrasing."},
+  {id:"open-g",name:"Open G",notes:["D","G","D","G","B","D"],changes:["↓2","↓2","—","—","—","↓2"],chord:"G major",use:"The classic slide and roots-blues tuning; the middle four strings retain useful standard-tuning relationships."},
+  {id:"open-e",name:"Open E",notes:["E","B","E","G♯","B","E"],changes:["—","↑2","↑2","↑1","—","—"],chord:"E major",use:"Raised strings add tension. Open D with a capo at fret 2 is another way to get the open E pitches."},
+  {id:"drop-d",name:"Dropped D",notes:["D","A","D","G","B","E"],changes:["↓2","—","—","—","—","—"],chord:"D5 on strings 6–4",use:"Drop D is an alternate tuning, not an open major tuning. Play only the lowest three strings for these power chords."}
+];
+const TUNING_STANDARD=[40,45,50,55,59,64]; // MIDI, low to high; never changes the other views' tuning.
+const TUNING_EXAMPLES={
+  "open-d":{root:2,names:["D","G","A"],strings:6,lead:5,frets:[0,2,4,2],degrees:["1","2","3","2"]},
+  "open-g":{root:7,names:["G","C","D"],strings:5,lead:3,frets:[0,2,4,2],degrees:["1","2","3","2"]},
+  "open-e":{root:4,names:["E","A","B"],strings:6,lead:5,frets:[0,2,4,2],degrees:["1","2","3","2"]},
+  "drop-d":{root:2,names:["D5","G5","A5"],strings:3,lead:0,frets:[0,3,5,3],degrees:["1","♭3","4","♭3"]}
+};
+// Frets run from string 6 to string 1. null means mute; 0 means open.
+const TUNING_OPEN_CHORDS={
+  "open-d":[{name:"D",root:2,frets:[0,0,0,0,0,0]},{name:"G",root:7,frets:[null,null,5,5,5,0]},{name:"A",root:9,frets:[null,0,2,3,4,2]}],
+  "open-g":[{name:"G",root:7,frets:[null,0,0,0,0,0]},{name:"C/G",root:0,frets:[null,0,2,0,1,2]},{name:"D/A",root:2,frets:[null,2,0,2,3,4]}],
+  "open-e":[{name:"E",root:4,frets:[0,0,0,0,0,0]},{name:"A",root:9,frets:[null,null,5,5,5,0]},{name:"B",root:11,frets:[null,0,2,3,4,2]}],
+  "drop-d":[{name:"D",root:2,frets:[0,0,0,2,3,2]},{name:"G",root:7,frets:[5,null,0,0,0,3]},{name:"A",root:9,frets:[null,0,2,2,2,0]}]
+};
+function tuningMidi(t){return TUNING_STANDARD.map((m,i)=>m+(t.changes[i]==="—"?0:(t.changes[i][0]==="↑"?1:-1)*Number(t.changes[i].slice(1))));}
+function tuningStrings(t){const midi=tuningMidi(t);return `<div class="tuning-strip" aria-label="${t.name}: strings 6 to 1, low to high">${t.notes.map((n,i)=>{
+  const delta=midi[i]-TUNING_STANDARD[i],change=delta===0?"keep":`${delta<0?"↓":"↑"}${Math.abs(delta)}`;
+  return `<div class="tuning-lane ${delta?"retuned":""}"><small>String ${6-i}</small><span class="tuning-before">${["E","A","D","G","B","E"][i]}</span>
+    <span class="tuning-wire" style="--weight:${3-i*.4}px"></span><strong>${n}</strong><span class="tuning-delta">${change}</span></div>`;
+}).join("")}</div>`;}
+function tuningShape(t,fret,label,voicing=null){
+  const ex=TUNING_EXAMPLES[t.id],active=i=>t.id==="drop-d"?i<3:t.id==="open-g"?i>0:true;
+  const lo=fret||1,rows=voicing?5:3,step=81/rows;
+  const frets=voicing||t.notes.map((_,i)=>active(i)?fret:null);
+  let svg=`<svg viewBox="0 0 164 178" role="img" aria-label="${t.name}: ${label}, frets low to high ${frets.map(f=>f===null?"mute":f).join(", ")}"><title>${label}</title>`;
+  for(let row=0;row<=rows;row++)svg+=`<line x1="28" x2="138" y1="${44+row*step}" y2="${44+row*step}" stroke="var(--ink)" stroke-width="${row===0&&fret===0?4:1}"/>`;
+  for(let i=0;i<6;i++){
+    const x=28+i*22;
+    svg+=`<line x1="${x}" x2="${x}" y1="44" y2="125" stroke="var(--ink)" stroke-width="${2-i*.25}"/>`;
+    svg+=`<text x="${x}" y="20" text-anchor="middle" font-size="15" fill="var(--ink)">${frets[i]===null?"×":frets[i]===0?"○":""}</text>`;
+    if(voicing&&frets[i]>0){const y=44+(frets[i]-.5)*step;
+      svg+=`<circle cx="${x}" cy="${y}" r="7" fill="var(--blue)"/><text x="${x}" y="${y+3.5}" text-anchor="middle" font-size="9" fill="white">${frets[i]}</text>`;}
+    svg+=`<text x="${x}" y="147" text-anchor="middle" font-size="11" fill="var(--ink)">${t.notes[i]}</text>`;
+    svg+=`<text x="${x}" y="166" text-anchor="middle" font-size="10" fill="var(--ink)">${6-i}</text>`;
+  }
+  if(fret){const start=t.id==="open-g"?1:0,end=t.id==="drop-d"?2:5;
+    svg+=`<line x1="${28+start*22}" x2="${28+end*22}" y1="57.5" y2="57.5" stroke="var(--blue)" stroke-width="13" stroke-linecap="round"/>`;
+  }
+  svg+=`<text x="9" y="62" text-anchor="middle" font-size="12" fill="var(--ink)">${lo}</text></svg>`;
+  return `<figure class="tuning-shape"><figcaption><b>${label}</b><small>${voicing?"Frets 1–5":fret?`Fret ${fret}`:"Open"}</small></figcaption>${svg}<div class="tuning-fretcode">${frets.map(f=>f===null?"×":f).join(" ")}</div></figure>`;
+}
+function tuningTab(t){
+  const ex=TUNING_EXAMPLES[t.id];
+  let svg=`<svg viewBox="0 0 380 168" role="img" aria-label="${t.name} phrase: string ${6-ex.lead}, frets ${ex.frets.join(", ")}, one note per beat"><title>One-bar phrase in ${t.name}</title>`;
+  for(let beat=0;beat<4;beat++)svg+=`<text x="${100+beat*74}" y="16" text-anchor="middle" font-size="12" fill="var(--ink)">${beat+1}</text>`;
+  for(let row=0;row<6;row++){
+    const i=5-row,y=38+row*21;
+    svg+=`<text x="8" y="${y+4}" font-size="11" fill="var(--ink)">${6-i} · ${t.notes[i]}</text><line x1="64" x2="364" y1="${y}" y2="${y}" stroke="var(--ink)" opacity=".4"/>`;
+    if(i===ex.lead)ex.frets.forEach((f,beat)=>{svg+=`<rect x="${89+beat*74}" y="${y-9}" width="22" height="18" fill="var(--card)"/><text x="${100+beat*74}" y="${y+5}" text-anchor="middle" font-size="16" font-weight="700" fill="var(--blue)">${f}</text>`;});
+  }
+  return svg+"</svg>";
+}
+function tuningRootMap(t){
+  const midi=tuningMidi(t),root=TUNING_EXAMPLES[t.id].root;
+  let svg=`<svg viewBox="0 0 750 188" role="img" aria-label="Root locations in ${t.name}, frets zero to twelve; thin string at top"><title>Find the ${NOTES[root]} roots</title>`;
+  for(let f=0;f<=12;f++){
+    const x=64+f*52;
+    svg+=`<text x="${x}" y="18" text-anchor="middle" font-size="12" fill="var(--ink)">${f}</text>`;
+    if(f)svg+=`<line x1="${x-26}" x2="${x-26}" y1="34" y2="169" stroke="var(--ink)" opacity=".2"/>`;
+  }
+  for(let row=0;row<6;row++){
+    const i=5-row,y=34+row*27;
+    svg+=`<text x="4" y="${y+4}" font-size="12" fill="var(--ink)">${6-i} ${t.notes[i]}</text><line x1="64" x2="708" y1="${y}" y2="${y}" stroke="var(--ink)" stroke-width="${.7+row*.3}" opacity=".45"/>`;
+    for(let f=0;f<=12;f++)if((midi[i]+f)%12===root)svg+=`<circle cx="${64+f*52}" cy="${y}" r="10" fill="var(--pink)"/><text x="${64+f*52}" y="${y+4}" text-anchor="middle" font-size="10" fill="var(--ink)">${f}</text>`;
+  }
+  return svg+"</svg>";
+}
+let openTuning="open-d";
+function renderOpen(){
+  const t=OPEN_TUNINGS.find(x=>x.id===openTuning)||OPEN_TUNINGS[0];
+  const pick=document.getElementById("opentuningpick");
+  pick.innerHTML='<span class="lbl">Tuning</span>';
+  OPEN_TUNINGS.forEach(x=>mk(pick,{t:x.id},x.name,()=>{openTuning=x.id;renderOpen();}));
+  pick.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===t.id));
+  document.getElementById("opentuninglesson").innerHTML=`<div class="card wide"><h2>Find home in ${t.name}<em>${t.notes.join(" · ")}</em></h2>
+    <p class="tip">Pink dots = ${NOTES[TUNING_EXAMPLES[t.id].root]} roots. Numbers = frets. Thin string at top.</p>
+    <div class="tuning-map">${tuningRootMap(t)}</div></div>`;
+  document.getElementById("opentuningcards").innerHTML=OPEN_TUNINGS.map(x=>{
+    const ex=TUNING_EXAMPLES[x.id];
+    return `<article class="card tuning-card"><h2>${x.name}<em>${x.chord}</em></h2>
+    ${tuningStrings(x)}
+    <p class="tuning-caption">Low / thick ← strings 6 to 1 → high / thin<br>↓ lower · ↑ raise · numbers = semitones</p>
+    <h3>One shape, three chords</h3><div class="tuning-shapes">${[0,5,7].map((f,i)=>tuningShape(x,f,ex.names[i])).join("")}</div>
+    <p class="tuning-caption">○ open · × mute · blue bar = one finger<br>${x.id==="drop-d"?"Strum strings 6–4 only.":x.id==="open-g"?"Mute string 6 to put G, C or D in the bass.":"Strum all six strings."} Return to the open chord.</p>
+    <h3>Chords with open strings</h3><div class="tuning-shapes">${TUNING_OPEN_CHORDS[x.id].map(c=>tuningShape(x,0,c.name,c.frets)).join("")}</div>
+    <p class="tuning-caption">Dots = fretted notes; numbers = frets, not fingers.<br>${x.id==="open-g"?"C/G = C with G in the bass. D/A = D with A in the bass.":"Let the open strings ring. Place the shape silently first."}</p>
+    <h3>Play a one-bar answer</h3><div class="tuning-tab">${tuningTab(x)}</div>
+    <p class="tuning-caption">Thin string at top · one note per click at 60 bpm<br>Degrees: ${ex.degrees.join(" → ")}. Rest one bar; repeat.</p>
+    <details><summary>Practice notes</summary><p class="tip">${x.use}</p><p class="tip">Play the open chord, count four beats, then play the answer. The tab belongs to this tuning; other app views still use standard tuning.</p></details></article>`;
+  }).join("");
+}
+
 
 // Every view in one place: id, nav label, what draws it, and a small config: the
 // nav band it sits in, which toolbar controls actually do anything there, and what
@@ -2708,6 +2808,7 @@ const VIEWS=[
   ["power",   "Power chords",     renderPower,      {band:"Chords",tools:"keys"}],
 
   ["hijaz",   "Phrygian dominant", renderHijaz,     {band:"Playing",tools:"keys labels regs",key:"root"}],
+  ["open",    "Open tunings",      renderOpen,       {band:"Playing"}],
   ["melody",  "Melody",           renderMelody,     {band:"Playing"}],
   ["solo",    "Solo runs",        renderSolo,       {band:"Playing",tools:"keys labels regs"}],
   ["licks",   "Licks",            renderLicks,      {band:"Playing",tools:"keys labels chords regs extras"}],

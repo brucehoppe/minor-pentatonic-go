@@ -143,7 +143,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
     CH_SCALE,CH_GRID,CH_STR,CH_MARK,CH_TEXT,CH_GOLD,
     boxRoot,groupRoot,boxSpan,fitRoot,moved,regInfo,
     renderGuide,readChecks,writeChecks,CHECKLIST,ROUTINES,FOCUS,SONGPROJ,GUIDEROOTS,GUIDEKEYS,strNo,
-    renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
+    renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderOpen,OPEN_TUNINGS,tuningMidi,TUNING_EXAMPLES,TUNING_OPEN_CHORDS,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{key=k},setReg:r=>{reg=r},setB5:v=>{showB5=v},setBlueLock:z=>{blueLock=z},
     setLabelMode:v=>{labelMode=v},setChord:v=>{chord=v},viewCfg,
@@ -158,7 +158,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
 
 test("all revised navigation views render", () => {
   const { app, document } = makeRuntime();
-  const views = ["hijaz","path","song","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","practice"];
+  const views = ["hijaz","open","path","song","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","practice"];
   for (const view of views) {
     navButton(document, view).click();
     assert.equal(app.getState().view, view);
@@ -1683,9 +1683,10 @@ test("Quit shuts the page down, not just the server", async () => {
   assert.doesNotMatch(document.body.innerHTML, /id="views"/);
 });
 
-test("the page credits its author", () => {
+test("the author copyright stays in source code without appearing in the page", () => {
   const { document } = makeRuntime();
-  assert.ok(html.includes("Built by Bruce Hoppe"), "the page has a simple author credit");
+  assert.ok(script.includes("Copyright © 2026 Bruce Hoppe"), "the source retains the copyright comment");
+  assert.ok(!html.includes("© 2026 Bruce Hoppe"), "the copyright is not visible in the interface");
   assert.ok(!html.includes("Source on GitHub"), "the GitHub reference is removed");
   assert.ok(!html.includes("Bruce Hoppe"), "the email is removed from the page");
   assert.ok(html.includes('class="credit"'), "in a footer of its own");
@@ -2135,6 +2136,40 @@ test("Phrygian dominant lesson spells the changes and draws valid notes in every
         assert.ok([0,1,4,5,7,8,10].includes(degree),"no minor third or foreign scale tone");
         assert.equal(note.kind==="pivot",[1,4,8].includes(degree),"all three added colours are gold");
       }
+    }
+  }
+});
+
+test("open tunings section shows standard-to-open changes and practice guidance", () => {
+  const { app, document } = makeRuntime();
+  navButton(document, "open").click();
+  assert.equal(app.OPEN_TUNINGS.length, 4);
+  assert.match(document.getElementById("opentuninglesson").innerHTML, /D · A · D · F♯ · A · D/);
+  assert.match(document.getElementById("opentuninglesson").innerHTML, /Root locations in Open D/);
+  assert.match(document.getElementById("opentuningcards").innerHTML, /D5 on strings 6–4/);
+  assert.equal((document.getElementById("opentuningcards").innerHTML.match(/class="tuning-shape"/g)||[]).length,24);
+  assert.equal((document.getElementById("opentuningcards").innerHTML.match(/class="tuning-tab"/g)||[]).length,4);
+  assert.match(html, /Check every string twice/);
+  document.getElementById("opentuningpick").children[2].click();
+  assert.match(document.getElementById("opentuninglesson").innerHTML, /E · B · E · G♯ · B · E/);
+});
+
+test("alternate tuning chord voicings and tab pitches match their named harmony", () => {
+  const {app}=makeRuntime();
+  const expected={"open-d":[38,45,50,54,57,62],"open-g":[38,43,50,55,59,62],"open-e":[40,47,52,56,59,64],"drop-d":[38,45,50,55,59,64]};
+  for(const t of app.OPEN_TUNINGS){
+    const midi=app.tuningMidi(t);
+    sameShape(midi,expected[t.id],`${t.name} tuning pitches and retuning directions`);
+    for(const c of app.TUNING_OPEN_CHORDS[t.id]){
+      const degrees=c.frets.flatMap((f,i)=>f===null?[]:[(midi[i]+f-c.root+12)%12]);
+      assert.deepEqual([...new Set(degrees)].sort((a,b)=>a-b),[0,4,7],`${t.name}: ${c.name} contains exactly a major triad`);
+    }
+    const ex=app.TUNING_EXAMPLES[t.id];
+    sameShape(ex.frets.map(f=>(midi[ex.lead]+f-ex.root+12)%12),t.id==="drop-d"?[0,3,5,3]:[0,2,4,2],`${t.name} tab agrees with its degree labels`);
+    for(const fret of [0,5,7]){
+      const played=midi.filter((_,i)=>t.id==="drop-d"?i<3:t.id==="open-g"?i>0:true);
+      const degrees=[...new Set(played.map(m=>(m+fret-(ex.root+fret)+12)%12))].sort((a,b)=>a-b);
+      assert.deepEqual(degrees,t.id==="drop-d"?[0,7]:[0,4,7],`${t.name} barre chord quality`);
     }
   }
 });
