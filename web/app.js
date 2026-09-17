@@ -1320,6 +1320,30 @@ function renderGuide(){
   if(cc)cc.onclick=()=>{writeChecks([]);renderGuide();};
 }
 
+// The evidence and limitations remain readable without JavaScript. JavaScript only
+// adds the two private, device-local song-project fields from the source program.
+const ARRANGEMENT_KEY="minor-pentatonic-arrangements-v1";
+const emptyArrangement=()=>({a:"",fa:"",b:"",fb:""});
+function readArrangement(){
+  try{
+    const v=JSON.parse(window.localStorage.getItem(ARRANGEMENT_KEY)||"null");
+    return v&&["a","fa","b","fb"].every(k=>typeof v[k]==="string")?v:emptyArrangement();
+  }catch(e){return emptyArrangement();}}
+function writeArrangement(v){
+  try{window.localStorage.setItem(ARRANGEMENT_KEY,JSON.stringify(v));return true;}
+  catch(e){return false;}}
+function renderTheory(){
+  const v=readArrangement();
+  for(const [id,k] of [["theory-song-a","a"],["theory-form-a","fa"],["theory-song-b","b"],["theory-form-b","fb"]])
+    document.getElementById(id).value=v[k];
+  document.getElementById("save-arrangements").onclick=()=>{
+    const saved={a:document.getElementById("theory-song-a").value.trim(),
+      fa:document.getElementById("theory-form-a").value.trim(),
+      b:document.getElementById("theory-song-b").value.trim(),
+      fb:document.getElementById("theory-form-b").value.trim()};
+    document.getElementById("arrangement-status").textContent=writeArrangement(saved)
+      ?"Song projects saved on this device.":"Browser storage is unavailable; copy these notes before closing.";};}
+
 // ---------- focused practice tools ----------
 let timerSeconds=300,timerInitial=300,timerHandle=null,ladderStart=90,ladderRound=1;
 function timerText(n){return String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");}
@@ -2816,6 +2840,7 @@ const VIEWS=[
   ["rhythm",  "Rhythm lab",       renderRhythm,     {band:"Playing"}],
 
   ["trainer", "12-bar trainer",   renderTrainer,    {band:"Practice",tools:"keys"}],
+  ["theory",  "Practice theory",  renderTheory,     {band:"Practice"}],
   // The find-the-note board is deliberately blank — naming the dots would give the
   // answer away — so Dots is the one control Practice ignores.
   ["practice","Practice",         renderPractice,   {band:"Practice",tools:"keys regs"}],

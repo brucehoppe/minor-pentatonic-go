@@ -143,6 +143,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
     CH_SCALE,CH_GRID,CH_STR,CH_MARK,CH_TEXT,CH_GOLD,
     boxRoot,groupRoot,boxSpan,fitRoot,moved,regInfo,
     renderGuide,readChecks,writeChecks,CHECKLIST,ROUTINES,FOCUS,SONGPROJ,GUIDEROOTS,GUIDEKEYS,strNo,
+    renderTheory,readArrangement,writeArrangement,ARRANGEMENT_KEY,
     renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderOpen,OPEN_TUNINGS,tuningMidi,TUNING_EXAMPLES,TUNING_OPEN_CHORDS,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{key=k},setReg:r=>{reg=r},setB5:v=>{showB5=v},setBlueLock:z=>{blueLock=z},
@@ -158,7 +159,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
 
 test("all revised navigation views render", () => {
   const { app, document } = makeRuntime();
-  const views = ["hijaz","open","path","song","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","practice"];
+  const views = ["hijaz","open","path","song","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","theory","practice"];
   for (const view of views) {
     navButton(document, view).click();
     assert.equal(app.getState().view, view);
@@ -1641,6 +1642,44 @@ test("practice guide: the song project and long-term focus are carried over", ()
     for (const s of r.seg) assert.ok(html.includes(s.t), `segment "${s.t}" is shown`);
   assert.equal((html.match(/class="segrun"/g) || []).length, 10, "each segment has a timer button");
   sameShape(app.GUIDEKEYS.map(i => app.NOTES[i]), ["E", "B", "A", "G"], "the guide's four keys");
+});
+
+test("practice theory is actionable, sourced, and honest about evidence limits", () => {
+  const { app, document } = makeRuntime();
+  navButton(document, "theory").click();
+  const section = document.getElementById("v-theory");
+  assert.equal(section.hidden, false);
+  assert.match(html, /Cold attempt/);
+  assert.match(html, /Hear the result first/);
+  assert.match(html, /Let sleep divide attempts/);
+  assert.match(html, /Rest protects quality/);
+  assert.match(html, /Finish the whole arrangement/);
+  assert.match(html, /Ready to share/);
+  assert.equal((html.match(/style="--bars:/g) || []).length, 6, "the full arrangement is drawn as six proportional sections");
+  assert.equal((html.match(/class="readiness"/g) || []).length, 1, "share readiness is presented as a visual checklist");
+  assert.match(html, /sample\s+was small/);
+  assert.match(html, /music\s+studies are mixed/);
+  assert.match(html, /not a systematic review/);
+  for (const source of ["20592043231151416", "EJ763007", "39205981", "PMC12595466"])
+    assert.ok(html.includes(source), `${source} is linked from the research notes`);
+  assert.equal(app.viewCfg("theory").tools ?? "", "", "theory does not pretend toolbar controls apply");
+});
+
+test("practice theory saves both complete-song projects on this device", () => {
+  const { app, document } = makeRuntime();
+  navButton(document, "theory").click();
+  document.getElementById("theory-song-a").value = "Song A";
+  document.getElementById("theory-form-a").value = "intro → verse → chorus → ending · 84 bpm";
+  document.getElementById("theory-song-b").value = "Song B";
+  document.getElementById("theory-form-b").value = "hardest join: bridge → final chorus";
+  document.getElementById("save-arrangements").click();
+  assert.match(document.getElementById("arrangement-status").textContent, /saved on this device/);
+  assert.deepEqual(JSON.parse(JSON.stringify(app.readArrangement())), {
+    a:"Song A",fa:"intro → verse → chorus → ending · 84 bpm",
+    b:"Song B",fb:"hardest join: bridge → final chorus"
+  });
+  app.renderTheory();
+  assert.equal(document.getElementById("theory-form-b").value, "hardest join: bridge → final chorus");
 });
 
 test("the packaged app exposes a Quit control that the served page can use", () => {
