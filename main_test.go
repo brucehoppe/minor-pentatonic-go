@@ -194,6 +194,28 @@ func TestAppHandlerServesThePageGraphic(t *testing.T) {
 	}
 }
 
+// Every page names a tab icon, so browsers do not go looking for /favicon.ico,
+// which static hosting (the live demo) cannot answer.
+func TestPagesHaveATabIcon(t *testing.T) {
+	for path, want := range map[string]string{
+		"/assets/icon.svg":     "image/svg+xml",
+		"/assets/icon-180.png": "image/png",
+	} {
+		w := httptest.NewRecorder()
+		appHandler(func() {}).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != want {
+			t.Errorf("%s: status %d, Content-Type %q, want 200 %s", path, w.Code, w.Header().Get("Content-Type"), want)
+		}
+	}
+	pages, _ := fs.Glob(embeddedWeb(), "*.html")
+	for _, page := range pages {
+		body, _ := fs.ReadFile(embeddedWeb(), page)
+		if !strings.Contains(string(body), `<link rel="icon" href="assets/icon.svg"`) {
+			t.Errorf("%s has no tab icon", page)
+		}
+	}
+}
+
 // The design names two typefaces. If they are not in the binary the page silently
 // falls back to system fonts, which is what happened before they were embedded.
 func TestAppHandlerServesTheEmbeddedFonts(t *testing.T) {

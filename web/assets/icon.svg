@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<rect width="1024" height="1024" fill="#F2EFE6"/>
+<rect x="73" y="73" width="878" height="878" fill="none" stroke="#15161A" stroke-width="26"/>
+<rect x="192.0" y="172.0" width="20" height="680" fill="#15161A"/>
+<rect x="357.0" y="172.0" width="10" height="680" fill="#15161A"/>
+<rect x="507.0" y="172.0" width="10" height="680" fill="#15161A"/>
+<rect x="657.0" y="172.0" width="10" height="680" fill="#15161A"/>
+<rect x="807.0" y="172.0" width="10" height="680" fill="#15161A"/>
+<rect x="192.0" y="209.0" width="620.0" height="6.0" fill="#15161A"/>
+<rect x="192.0" y="327.3" width="620.0" height="9.4" fill="#15161A"/>
+<rect x="192.0" y="445.6" width="620.0" height="12.8" fill="#15161A"/>
+<rect x="192.0" y="563.9" width="620.0" height="16.2" fill="#15161A"/>
+<rect x="192.0" y="682.2" width="620.0" height="19.6" fill="#15161A"/>
+<rect x="192.0" y="800.5" width="620.0" height="23.0" fill="#15161A"/>
+<circle cx="297.0" cy="222.0" r="46" fill="#0F6FC5"/><circle cx="287.0" cy="212.0" r="46" fill="#FF48B0"/>
+<circle cx="747.0" cy="222.0" r="46" fill="#FF48B0"/><circle cx="737.0" cy="212.0" r="46" fill="#0F6FC5"/>
+<circle cx="297.0" cy="342.0" r="46" fill="#FF48B0"/><circle cx="287.0" cy="332.0" r="46" fill="#0F6FC5"/>
+<circle cx="747.0" cy="342.0" r="46" fill="#FF48B0"/><circle cx="737.0" cy="332.0" r="46" fill="#0F6FC5"/>
+<circle cx="297.0" cy="462.0" r="46" fill="#FF48B0"/><circle cx="287.0" cy="452.0" r="46" fill="#0F6FC5"/>
+<circle cx="597.0" cy="462.0" r="46" fill="#FF48B0"/><circle cx="587.0" cy="452.0" r="46" fill="#0F6FC5"/>
+<circle cx="297.0" cy="582.0" r="46" fill="#FF48B0"/><circle cx="287.0" cy="572.0" r="46" fill="#0F6FC5"/>
+<circle cx="597.0" cy="582.0" r="46" fill="#0F6FC5"/><circle cx="587.0" cy="572.0" r="46" fill="#FF48B0"/>
+<circle cx="297.0" cy="702.0" r="46" fill="#FF48B0"/><circle cx="287.0" cy="692.0" r="46" fill="#0F6FC5"/>
+<circle cx="597.0" cy="702.0" r="46" fill="#FF48B0"/><circle cx="587.0" cy="692.0" r="46" fill="#0F6FC5"/>
+<circle cx="297.0" cy="822.0" r="46" fill="#0F6FC5"/><circle cx="287.0" cy="812.0" r="46" fill="#FF48B0"/>
+<circle cx="747.0" cy="822.0" r="46" fill="#FF48B0"/><circle cx="737.0" cy="812.0" r="46" fill="#0F6FC5"/>
+</svg>

@@ -114,7 +114,9 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   window.close = () => { windowClosed = true; };
   // the packaged app serves the page over http, so the Quit row is live in tests too
   const fetched = [];
-  const location = { protocol: "http:", host: "127.0.0.1:8080" };
+  const location = demo
+    ? { protocol: "https:", host: "brucehoppe.github.io", hostname: "brucehoppe.github.io" }
+    : { protocol: "http:", host: "127.0.0.1:8080", hostname: "127.0.0.1" };
   const fetch = (url, opts = {}) => {
     fetched.push({ url, method: opts.method ?? "GET", headers: opts.headers ?? {} });
     // The app's /about; demo decides what a static host (GitHub Pages) would answer.
@@ -2365,8 +2367,9 @@ test("every fret and string line in a box diagram survives being scaled down", (
 });
 
 test("the static live demo shows no Quit control, because there is no app to stop", async () => {
-  const { document } = makeRuntime({ demo: true });
+  const { document, fetched } = makeRuntime({ demo: true });
   document.getElementById("approw").hidden = true;   // as index.html starts it
   await new Promise(r => setImmediate(r));
   assert.equal(document.getElementById("approw").hidden, true);
+  assert.equal(fetched.length, 0, "and it does not probe the host for an app that cannot be there");
 });

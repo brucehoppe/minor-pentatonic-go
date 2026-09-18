@@ -3043,10 +3043,12 @@ function shutDownPage(){
 
 // The packaged builds have no console to Ctrl-C, so offer a Quit button — but only
 // when the page is actually being served by the app: not opened as a local file, and
-// not on the static live demo, where there is no app to stop. /about names the app
-// and its version, so its answer is what reveals the row.
+// not on the static live demo, where there is no app to stop. The app only ever
+// listens on loopback, so nowhere else is asked at all; /about then names the app
+// and its version, and its answer is what reveals the row.
 const ABOUT=/^Minor Pentatonic Practice Desk (\S+)/;
-if(typeof location!=="undefined"&&typeof fetch==="function"&&/^https?:$/.test(location.protocol)){
+if(typeof location!=="undefined"&&typeof fetch==="function"&&/^https?:$/.test(location.protocol)
+   &&/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname||"")){
   fetch("/about").then(r=>r.ok?r.text():"").then(t=>{
     const m=ABOUT.exec(t||"");if(!m)return;
     document.getElementById("approw").hidden=false;
