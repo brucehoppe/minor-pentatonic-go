@@ -6,7 +6,8 @@
 // but cannot write MP3 themselves.
 //
 // In:  {start: {channels, sampleRate, kbps}}
-//      {pcm: Int16Array}   interleaved 16-bit samples, as many times as needed
+//      {pcm, bits}         interleaved samples, as many times as needed: an Int16Array,
+//                          or with bits 24 a Uint8Array of 3-byte little-endian ones
 //      {end: true}
 // Out: {progress: frames} after each pcm message, then {done: Blob} or {error}
 importScripts("vendor/lame.min.js");
@@ -15,6 +16,12 @@ const FRAME = 1152;   // samples per MP3 frame
 let enc = null, channels = 1, frames = 0;
 const parts = [];
 
+// LAME takes 16-bit samples: a 24-bit one keeps its top two bytes.
+function to16(bytes) {
+  const out = new Int16Array(bytes.length / 3);
+  for (let i = 0; i < out.length; i++) out[i] = (bytes[3 * i + 2] << 8) | bytes[3 * i + 1];
+  return out;
+}
 function encode(pcm) {
   const n = Math.floor(pcm.length / channels);
   let left = pcm, right = null;
@@ -38,7 +45,7 @@ onmessage = e => {
       channels = m.start.channels === 2 ? 2 : 1;
       enc = new lamejs.Mp3Encoder(channels, m.start.sampleRate, m.start.kbps);
     } else if (m.pcm && enc) {
-      encode(m.pcm);
+      encode(m.bits === 24 ? to16(m.pcm) : m.pcm);
       postMessage({ progress: frames });
     } else if (m.end && enc) {
       parts.push(enc.flush());

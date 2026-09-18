@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- WAV masters can be 24-bit, and MP3 quality is a choice: standard (128 kbps mono,
+  192 stereo), high (192/256) or best (320). Both are remembered on the device;
+  changing the MP3 quality re-encodes on the next download. Masters stored before
+  this read as 16-bit.
 - Download MP3 as well as WAV and the compressed original. It is encoded from
   the lossless master with LAME (lamejs 1.2.1, LGPL-3.0, shipped unmodified in
   `web/vendor/` with its licence texts) in a background worker: 128 kbps for a

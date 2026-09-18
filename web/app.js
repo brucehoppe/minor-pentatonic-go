@@ -37,7 +37,7 @@ const state={
   // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
   // input device, and the last finished take with its blob URLs
   rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null, checking:false, meter:null, savedList:[],
-  takeDB:null, workletFor:null,
+  takeDB:null, workletFor:null, wavBits:16, mp3Quality:"standard",
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
   triadKind:"maj", triadSet:"123",
@@ -1651,14 +1651,15 @@ function webAudioEngine(ac) {
 // 44-byte header, which needs only the total size, and the samples. The compatibility
 // engine renders its sounds through wavBytes; the recorder streams its master through
 // pcm16 into storage and puts wavHeader in front when you download it.
-function wavHeader(dataBytes, ch, sampleRate) {
+function wavHeader(dataBytes, ch, sampleRate, bits = 16) {
+  const bytes = bits / 8;
   const v = new DataView(new ArrayBuffer(44));
   const tag = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
   tag(0, "RIFF"); v.setUint32(4, 36 + dataBytes, true); tag(8, "WAVE");
   tag(12, "fmt "); v.setUint32(16, 16, true);
   v.setUint16(20, 1, true); v.setUint16(22, ch, true);                        // PCM
-  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * ch * 2, true);
-  v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true);                   // 16-bit
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * ch * bytes, true);
+  v.setUint16(32, ch * bytes, true); v.setUint16(34, bits, true);             // 16- or 24-bit
   tag(36, "data"); v.setUint32(40, dataBytes, true);
   return new Uint8Array(v.buffer);
 }
@@ -1671,6 +1672,18 @@ function pcm16(channels) {
     for (let c = 0; c < ch; c++, k++) {
       const x = Math.max(-1, Math.min(1, channels[c][i]));
       out[k] = x < 0 ? x * 0x8000 : x * 0x7FFF;
+    }
+  return out;
+}
+// 24-bit: three little-endian bytes a sample. Kept for a master that will be edited:
+// the extra 8 bits are headroom, so a quiet take can be raised without its hiss.
+function pcm24(channels) {
+  const ch = channels.length, n = channels[0].length, out = new Uint8Array(n * ch * 3);
+  for (let i = 0, k = 0; i < n; i++)
+    for (let c = 0; c < ch; c++, k += 3) {
+      const x = Math.max(-1, Math.min(1, channels[c][i]));
+      const v = Math.trunc(x < 0 ? x * 0x800000 : x * 0x7FFFFF);
+      out[k] = v & 0xFF; out[k + 1] = (v >> 8) & 0xFF; out[k + 2] = (v >> 16) & 0xFF;
     }
   return out;
 }
@@ -1997,6 +2010,8 @@ const REC_ROW=`<div class="row" id="recrow">
   <button id="recdlc" hidden>Download compressed</button>
   <button id="recdlw" hidden>Download WAV</button>
   <button id="recdlm" hidden>Download MP3</button>
+  <select id="recbits" aria-label="WAV bit depth"><option value="16">WAV 16-bit</option><option value="24">WAV 24-bit</option></select>
+  <select id="recq" aria-label="MP3 quality"><option value="standard">MP3 standard</option><option value="high">MP3 high</option><option value="best">MP3 best (320)</option></select>
   <span id="recmeter" hidden style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;flex-basis:100%">
     <button id="recbar0" class="lvl" aria-label="Input 1 level; select Input 1" style="display:flex;align-items:center;gap:8px;padding:4px 8px"><span style="font-size:11.5px">Input 1</span><span style="position:relative;width:120px;height:8px;border:1px solid var(--rule)"><span id="recfill0" style="position:absolute;left:0;top:0;bottom:0;width:0"></span></span></button>
     <button id="recbar1" class="lvl" aria-label="Input 2 level; select Input 2" style="display:flex;align-items:center;gap:8px;padding:4px 8px"><span style="font-size:11.5px">Input 2</span><span style="position:relative;width:120px;height:8px;border:1px solid var(--rule)"><span id="recfill1" style="position:absolute;left:0;top:0;bottom:0;width:0"></span></span></button>
@@ -2021,6 +2036,19 @@ function recUnsupported(){
       : "This browser doesn't give web pages microphone access, so recording is unavailable.";}
   if(typeof MediaRecorder!=="function")return "This browser cannot record audio.";
   return "";}
+// Download settings, remembered on this device: the WAV master's bit depth (fixed
+// when a take starts, since the master is stored that way) and the MP3 quality
+// (applied whenever an MP3 is made).
+const REC_SETTINGS_KEY="practice-desk-rec-settings";
+const MP3_QUALITY={standard:{name:"MP3 standard",kbps:[128,192]},high:{name:"MP3 high",kbps:[192,256]},best:{name:"MP3 best",kbps:[320,320]}};
+function readRecSettings(){
+  try{const v=JSON.parse(window.localStorage.getItem(REC_SETTINGS_KEY)||"null");
+    if(v&&(v.wavBits===16||v.wavBits===24))state.wavBits=v.wavBits;
+    if(v&&Object.prototype.hasOwnProperty.call(MP3_QUALITY,v.mp3Quality))state.mp3Quality=v.mp3Quality;}
+  catch(e){/* nothing stored, or unreadable: keep the defaults */}}
+function writeRecSettings(){
+  try{window.localStorage.setItem(REC_SETTINGS_KEY,JSON.stringify({wavBits:state.wavBits,mp3Quality:state.mp3Quality}));}
+  catch(e){/* private mode: settings last for this visit */}}
 // the first container this browser can write, or "" to let it choose
 function recMime(){
   if(typeof MediaRecorder.isTypeSupported!=="function")return "";
@@ -2049,7 +2077,7 @@ function recButtons(){
   b.disabled=phase==="finishing";
   b.setAttribute("aria-pressed",phase!=="idle");
   // what a take records is fixed once its input is open
-  ["recinput","recchan","recmix","recarm"].forEach(id=>{document.getElementById(id).disabled=phase!=="idle";});}
+  ["recinput","recchan","recmix","recarm","recbits"].forEach(id=>{document.getElementById(id).disabled=phase!=="idle";});}
 // Device labels stay blank until the page has been allowed an input once, so this
 // runs again after every take opens its input.
 function listInputs(){
@@ -2271,7 +2299,11 @@ function dbDo(stores,mode,fn){
     tx.oncomplete=()=>ok(result);
     tx.onerror=tx.onabort=()=>fail(tx.error||new Error("storage failed"));}));}
 const chunkRange=id=>IDBKeyRange.bound([id,0],[id,Infinity]);
-const isTake=m=>!!m&&typeof m.id==="string"&&(m.channels===1||m.channels===2)&&m.sampleRate>0;
+const isTake=m=>!!m&&typeof m.id==="string"&&(m.channels===1||m.channels===2)&&m.sampleRate>0
+  &&(m.bits===undefined||m.bits===16||m.bits===24);
+// Takes stored before 24-bit existed have no bits: they are 16-bit.
+const bitsOf=m=>m.bits===24?24:16;
+const wavSize=(frames,ch,bits)=>44+frames*ch*bits/8;
 function savedTakes(){
   return dbDo("takes","readonly",tx=>tx.objectStore("takes").getAll())
     .then(list=>(Array.isArray(list)?list:[]).filter(isTake));}
@@ -2283,13 +2315,16 @@ function dropTake(id){
 function masterPcm(meta){
   return dbDo("chunks","readonly",tx=>tx.objectStore("chunks").getAll(chunkRange(meta.id))).then(rows=>
     (Array.isArray(rows)?rows:[])
-      .filter(r=>r&&ArrayBuffer.isView(r.pcm)&&r.pcm.BYTES_PER_ELEMENT===2&&r.pcm.length%meta.channels===0)
+      .filter(r=>r&&ArrayBuffer.isView(r.pcm)&&(bitsOf(meta)===24
+        // by tag, not instanceof: a stored array may come from another realm
+        ?Object.prototype.toString.call(r.pcm)==="[object Uint8Array]"&&r.pcm.length%(meta.channels*3)===0
+        :r.pcm.BYTES_PER_ELEMENT===2&&r.pcm.length%meta.channels===0))
       .sort((a,b)=>a.seq-b.seq).map(r=>r.pcm));}
 function masterWav(meta){
   return masterPcm(meta).then(pcm=>{
     const bytes=pcm.reduce((n,p)=>n+p.byteLength,0);
     if(!bytes)return null;
-    return new Blob([wavHeader(bytes,meta.channels,meta.sampleRate),...pcm],{type:"audio/wav"});});}
+    return new Blob([wavHeader(bytes,meta.channels,meta.sampleRate,bitsOf(meta)),...pcm],{type:"audio/wav"});});}
 // Ask the browser not to clear stored takes when it's short of space, and report
 // what they take up. Both are best effort: not every browser offers them.
 function storageNote(){
@@ -2318,13 +2353,13 @@ function openCapture(ac,channels){
       processorOptions:{channels,block:Math.round(ac.sampleRate)}});
     // It writes nothing to its output; being connected is what keeps it running.
     node.connect(ac.destination);
-    const cap={node,channels,sampleRate:ac.sampleRate,id:"take-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7),
+    const cap={node,channels,bits:state.wavBits,sampleRate:ac.sampleRate,id:"take-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7),
       seq:0,frames:0,writes:Promise.resolve(),failed:null,began:false,onFail:null,done:null};
     cap.finished=new Promise(ok=>{cap.done=ok;});
     node.port.onmessage=e=>{
       const m=e.data||{};
       if(Array.isArray(m.block)&&m.block.length){
-        const pcm=pcm16(m.block),seq=cap.seq++;
+        const pcm=cap.bits===24?pcm24(m.block):pcm16(m.block),seq=cap.seq++;
         cap.frames+=m.block[0].length;
         const frames=cap.frames;
         cap.writes=cap.writes.then(()=>cap.failed?null:dbDo(["takes","chunks"],"readwrite",tx=>{
@@ -2337,7 +2372,7 @@ function openCapture(ac,channels){
 function beginCapture(cap,frame,meta){
   if(!cap||cap.began)return;
   cap.began=true;
-  cap.meta=Object.assign({id:cap.id,status:"recording",channels:cap.channels,sampleRate:cap.sampleRate,started:Date.now(),frames:0},meta);
+  cap.meta=Object.assign({id:cap.id,status:"recording",channels:cap.channels,bits:cap.bits,sampleRate:cap.sampleRate,started:Date.now(),frames:0},meta);
   cap.writes=cap.writes.then(()=>dbDo("takes","readwrite",tx=>{tx.objectStore("takes").put(cap.meta);})).catch(()=>{});
   cap.node.port.postMessage({start:frame});}
 // Stops the capture and marks the take finished; resolves with its stored record.
@@ -2417,7 +2452,7 @@ function finishTake(t){
   // is assembled from storage when you download it.
   return endCapture(t.capture).then(meta=>{
     if(meta&&meta.frames){
-      kept.wav={meta,name:kept.name.replace(/\.\w+$/,".wav"),size:44+meta.frames*meta.channels*2,blob:null,url:null,
+      kept.wav={meta,name:kept.name.replace(/\.\w+$/,".wav"),size:wavSize(meta.frames,meta.channels,bitsOf(meta)),blob:null,url:null,
         channels:meta.channels,seconds:meta.frames/meta.sampleRate};
       return fixTakeLength(kept,meta.frames/meta.sampleRate).then(storageNote).then(note=>{
         if(state.recTake!==kept)return;
@@ -2443,22 +2478,23 @@ function showTake(){
   if(!t.wav)return;
   w.textContent=`Download WAV (${fileSize(t.wav.blob?t.wav.blob.size:t.wav.size)})`;
   // MP3 is encoded on the first click; until then its size is the bitrate's estimate.
-  if(!t.mp3Busy)m.textContent=t.mp3?`Download MP3 (${fileSize(t.mp3.blob.size)})`
+  if(!t.mp3Busy)m.textContent=t.mp3&&t.mp3.kbps===mp3Kbps(t.wav.channels)?`Download MP3 (${fileSize(t.mp3.blob.size)})`
     :`Download MP3 (~${fileSize(Math.round(mp3Kbps(t.wav.channels)*125*(t.wav.seconds||0)))})`;}
 // ---- MP3 ----
 // Encoded from the lossless master (never from the compressed file, which would
 // compress it twice) by LAME in mp3-worker.js, off the main thread.
-const mp3Kbps=ch=>ch===2?192:128;
+const mp3Kbps=ch=>MP3_QUALITY[state.mp3Quality].kbps[ch===2?1:0];
 // The samples of a take's WAV: the stored master while it is there, else the page's
 // WAV copy with its 44-byte header skipped.
 function wavPcm(w){
-  if(!w.blob)return masterPcm(w.meta).then(pcm=>({pcm,channels:w.meta.channels,sampleRate:w.meta.sampleRate}));
+  if(!w.blob)return masterPcm(w.meta).then(pcm=>({pcm,channels:w.meta.channels,sampleRate:w.meta.sampleRate,bits:bitsOf(w.meta)}));
   return w.blob.arrayBuffer().then(buf=>{
-    const v=new DataView(buf);
-    return {pcm:[new Int16Array(buf.slice(44))],channels:v.getUint16(22,true),sampleRate:v.getUint32(24,true)};});}
-function encodeMp3({pcm,channels,sampleRate},onProgress){
+    const v=new DataView(buf),bits=v.getUint16(34,true)===24?24:16;
+    return {pcm:[bits===24?new Uint8Array(buf.slice(44)):new Int16Array(buf.slice(44))],
+      channels:v.getUint16(22,true),sampleRate:v.getUint32(24,true),bits};});}
+function encodeMp3({pcm,channels,sampleRate,bits=16},onProgress){
   if(typeof Worker!=="function")return Promise.reject(new Error("no Worker"));
-  const total=pcm.reduce((n,p)=>n+p.length/channels,0);
+  const total=pcm.reduce((n,p)=>n+p.length/channels/(bits===24?3:1),0);
   if(!total)return Promise.reject(new Error("nothing to encode"));
   return new Promise((ok,fail)=>{
     const w=new Worker("mp3-worker.js");
@@ -2469,17 +2505,18 @@ function encodeMp3({pcm,channels,sampleRate},onProgress){
       if(m.error){w.terminate();fail(new Error(m.error));}};
     w.onerror=()=>{w.terminate();fail(new Error("the MP3 encoder failed to start"));};
     w.postMessage({start:{channels,sampleRate,kbps:mp3Kbps(channels)}});
-    pcm.forEach(p=>w.postMessage({pcm:p}));
+    pcm.forEach(p=>w.postMessage({pcm:p,bits}));
     w.postMessage({end:true});});}
 function downloadMp3(){
   const t=state.recTake;
   if(!t||!t.wav||t.mp3Busy)return Promise.resolve();
-  if(t.mp3){saveFile(t.mp3);return Promise.resolve();}
+  if(t.mp3&&t.mp3.kbps===mp3Kbps(t.wav.channels)){saveFile(t.mp3);return Promise.resolve();}
   const b=document.getElementById("recdlm");
   t.mp3Busy=true;b.disabled=true;b.textContent="Encoding MP3\u2026";
   const done=()=>{t.mp3Busy=false;b.disabled=false;if(state.recTake===t)showTake();};
   return wavPcm(t.wav).then(src=>encodeMp3(src,f=>{b.textContent=`Encoding MP3\u2026 ${Math.round(f*100)}%`;})).then(blob=>{
-    t.mp3={blob,url:URL.createObjectURL(blob),name:t.name.replace(/\.\w+$/,".mp3")};
+    if(t.mp3&&t.mp3.url)try{URL.revokeObjectURL(t.mp3.url);}catch(e){/* already released */}
+    t.mp3={blob,url:URL.createObjectURL(blob),name:t.name.replace(/\.\w+$/,".mp3"),kbps:mp3Kbps(t.wav.channels)};
     done();saveFile(t.mp3);
   },()=>{done();recSay("The MP3 couldn't be made in this browser. The WAV and compressed files are still there.");});}
 // The WAV of the take on screen. A stored master is assembled on the first click and
@@ -2508,7 +2545,7 @@ function listSaved(){
     box.innerHTML=list.length?`<b>Saved masters</b> (not downloaded yet)<br>`+list.map(m=>{
       const secs=Math.round((m.frames||0)/m.sampleRate),len=`${Math.floor(secs/60)}:${String(secs%60).padStart(2,"0")}`;
       const name=typeof m.name==="string"?m.name:"practice take";
-      return `${m.status==="done"?"":"<b>Interrupted:</b> "}${escapeHTML(name)} \u00b7 ${len} \u00b7 ${fileSize(44+(m.frames||0)*m.channels*2)} `
+      return `${m.status==="done"?"":"<b>Interrupted:</b> "}${escapeHTML(name)} \u00b7 ${len} \u00b7 ${fileSize(wavSize(m.frames||0,m.channels,bitsOf(m)))} `
         +`<button data-dl="${escapeHTML(m.id)}">Download WAV</button> `
         +(typeof Worker==="function"?`<button data-mp3="${escapeHTML(m.id)}">MP3</button> `:"")
         +`<button data-drop="${escapeHTML(m.id)}">Discard</button>`;}).join("<br>"):"";
@@ -2520,7 +2557,7 @@ function savedAction(e){
   if(!m)return Promise.resolve();
   if(d.drop)return dropTake(m.id).then(listSaved,listSaved);
   // An MP3 is a copy for sharing, not the master, so the master stays stored.
-  if(d.mp3)return masterPcm(m).then(pcm=>encodeMp3({pcm,channels:m.channels,sampleRate:m.sampleRate})).then(b=>{
+  if(d.mp3)return masterPcm(m).then(pcm=>encodeMp3({pcm,channels:m.channels,sampleRate:m.sampleRate,bits:bitsOf(m)})).then(b=>{
     const base=typeof m.name==="string"&&/\.wav$/.test(m.name)?m.name:"practice-take.wav";
     saveFile({url:URL.createObjectURL(b),name:base.replace(/\.wav$/,".mp3")});
   },()=>recSay("The MP3 couldn't be made from that take."));
@@ -3824,6 +3861,13 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
   document.getElementById("recdlc").onclick=()=>saveFile(state.recTake);
   document.getElementById("recdlw").onclick=downloadWav;
   document.getElementById("recdlm").onclick=downloadMp3;
+  readRecSettings();
+  document.getElementById("recbits").value=String(state.wavBits);
+  document.getElementById("recq").value=state.mp3Quality;
+  document.getElementById("recbits").onchange=e=>{state.wavBits=+e.target.value===24?24:16;writeRecSettings();};
+  document.getElementById("recq").onchange=e=>{
+    if(Object.prototype.hasOwnProperty.call(MP3_QUALITY,e.target.value))state.mp3Quality=e.target.value;
+    writeRecSettings();if(state.recTake)showTake();};
   document.getElementById("recsaved").onclick=savedAction;
   listSaved();
   if(navigator.mediaDevices.addEventListener)navigator.mediaDevices.addEventListener("devicechange",listInputs);

@@ -56,7 +56,7 @@ class Element {
 // { failAfter: n } to make storage fail after n writes, or { store } to start from
 // what an earlier page left in storage.
 function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false, media = false,
-  userAgent = "", secure = true, capture = false, worker = false } = {}) {
+  userAgent = "", secure = true, capture = false, worker = false, stored: seed = {} } = {}) {
   const MathForApp = deterministic
     ? new Proxy(Math, { get: (t, k) => (k === "random" ? () => 0.42 : t[k]) })
     : Math;
@@ -136,7 +136,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     },
   };
   const intervals = new Map(), idle = new Map(); let intervalID = 0;
-  const stored = new Map();
+  const stored = new Map(Object.entries(seed));   // localStorage as an earlier visit left it
   const localStorage = { getItem: key => stored.get(key) ?? null, setItem: (key,value) => stored.set(key,String(value)) };
   // a stand-in for HTMLAudioElement, which is all the compatibility engine needs
   const audioElements = [];
@@ -3294,4 +3294,100 @@ test("the MP3 worker turns interleaved 16-bit samples into MP3 frames", async ()
   const before = posted.length;
   fresh.onmessage({ data: { pcm } });
   assert.equal(posted.length, before, "samples before start are ignored, not encoded with no settings");
+});
+
+// ---------- download settings: 24-bit WAV, MP3 quality ----------
+test("a 24-bit master is stored and downloaded at 24 bits, with every sample intact", async () => {
+  const { app, document, worklets, idb } = makeRuntime({ media: true, capture: true });
+  document.getElementById("recbits").onchange({ target: { value: "24" } });
+  document.getElementById("recbtn").click();
+  await settle();
+  worklets[0].feed(4800, -0.5); worklets[0].feed(4800, 0.25);
+  await settle();
+  assert.equal([...idb.stores.get("takes").rows.values()][0].v.bits, 24);
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(app.getTake().wav.size, 44 + 9600 * 3);
+  assert.equal(document.getElementById("recbits").disabled, false, "free again once the take ends");
+  document.getElementById("recdlw").click();
+  await settle();
+  const bytes = new Uint8Array(await app.getTake().wav.blob.arrayBuffer()), v = new DataView(bytes.buffer);
+  assert.equal(v.getUint16(34, true), 24, "bits per sample");
+  assert.equal(v.getUint16(32, true), 3, "block align: one mono 3-byte sample");
+  assert.equal(v.getUint32(28, true), 48000 * 3, "byte rate");
+  const s24 = i => { const o = 44 + 3 * i; const x = bytes[o] | bytes[o + 1] << 8 | bytes[o + 2] << 16; return x & 0x800000 ? x - 0x1000000 : x; };
+  assert.equal(s24(0), -0x400000, "-0.5 at full 24-bit precision");
+  assert.equal(s24(4800), Math.trunc(0.25 * 0x7FFFFF));
+});
+
+test("the bit depth is fixed while a take is open, and old 16-bit masters still read", async () => {
+  const { document } = makeRuntime({ media: true, capture: true });
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(document.getElementById("recbits").disabled, true);
+  // a master stored before bit depth existed has no bits field: it is 16-bit
+  const store = new Map([["takes", { keyPath: "id", rows: new Map([
+    ['"old"', { key: "old", v: { id: "old", status: "done", channels: 1, sampleRate: 48000, frames: 2, name: "old.wav" } }]]) }],
+    ["chunks", { keyPath: ["take", "seq"], rows: new Map([
+      ['["old",0]', { key: ["old", 0], v: { take: "old", seq: 0, pcm: new Int16Array([100, -100]) } }]]) }]]);
+  const later = makeRuntime({ media: true, capture: { store } });
+  await settle();
+  assert.match(later.document.getElementById("recsaved").innerHTML, /old\.wav · 0:00 · 48 B/);
+  await later.document.getElementById("recsaved").onclick({ target: { dataset: { dl: "old" } } });
+  await settle();
+  assert.equal(later.document.body.children.at(-1).download, "old.wav");
+});
+
+test("MP3 quality sets the bitrate, re-encodes when changed, and is remembered", async () => {
+  const { app, document, worklets, workers } = makeRuntime({ media: true, capture: true });
+  document.getElementById("recbtn").click();
+  await settle();
+  worklets[0].feed(48000);
+  await settle();
+  document.getElementById("recbtn").click();
+  await settle();
+  const btn = document.getElementById("recdlm"), q = document.getElementById("recq");
+  q.onchange({ target: { value: "best" } });
+  assert.equal(btn.textContent, `Download MP3 (~${app.fileSize(320 * 125)})`, "the estimate follows the setting");
+  await btn.onclick();
+  await settle();
+  const best = new Uint8Array(await app.getTake().mp3.blob.arrayBuffer());
+  assert.equal(best[2] >> 4, 14, "MPEG-1 Layer III bitrate index 14 is 320 kbps");
+  q.onchange({ target: { value: "standard" } });
+  assert.match(btn.textContent, /~/, "the 320 kbps file no longer matches the setting");
+  await btn.onclick();
+  await settle();
+  assert.equal(workers.length, 2, "so it is encoded again");
+  const std = new Uint8Array(await app.getTake().mp3.blob.arrayBuffer());
+  assert.equal(std[2] >> 4, 9, "index 9 is 128 kbps");
+  // remembered for the next visit, on this device only
+  const stored = JSON.parse(app.getState().storage.getItem("practice-desk-rec-settings"));
+  assert.equal(stored.mp3Quality, "standard");
+});
+
+test("an MP3 of a 24-bit master comes out right, and damaged settings fall back to defaults", async () => {
+  const { app, document, worklets } = makeRuntime({ media: true, capture: true });
+  document.getElementById("recbits").onchange({ target: { value: "24" } });
+  document.getElementById("recbtn").click();
+  await settle();
+  worklets[0].feed(48000, 0.3);
+  await settle();
+  document.getElementById("recbtn").click();
+  await settle();
+  await document.getElementById("recdlm").onclick();
+  await settle();
+  const mp3 = new Uint8Array(await app.getTake().mp3.blob.arrayBuffer());
+  assert.deepEqual([mp3[0], mp3[1]], [0xFF, 0xFB]);
+  assert.ok(mp3.length > 15000, "a second of audio at 128 kbps, not silence-sized");
+  assert.equal(JSON.parse(app.getState().storage.getItem("practice-desk-rec-settings")).wavBits, 24);
+
+  for (const bad of ['{"wavBits":8,"mp3Quality":"__proto__"}', "not json", '{"wavBits":"24"}', "null"]) {
+    const odd = makeRuntime({ media: true, capture: true, stored: { "practice-desk-rec-settings": bad } });
+    assert.equal(odd.document.getElementById("recbits").value, "16", `${bad}: bit depth falls back`);
+    assert.equal(odd.document.getElementById("recq").value, "standard", `${bad}: quality falls back`);
+  }
+  const kept = makeRuntime({ media: true, capture: true,
+    stored: { "practice-desk-rec-settings": '{"wavBits":24,"mp3Quality":"high"}' } });
+  assert.equal(kept.document.getElementById("recbits").value, "24", "a good setting is restored");
+  assert.equal(kept.document.getElementById("recq").value, "high");
 });
