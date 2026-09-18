@@ -8,6 +8,61 @@ A standalone Go application made from `reference/minor-pentatonic-boxes_2.html`.
 
 ![The practice desk: title, key selector and the full list of views](docs/screenshots/home.png)
 
+## Install
+
+### Windows 10 and 11
+
+Open **PowerShell** (Start menu → type *PowerShell*) and paste:
+
+```powershell
+irm https://raw.githubusercontent.com/brucehoppe/minor-pentatonic-go/main/scripts/install.ps1 | iex
+```
+
+That downloads the latest release, checks it against the release's SHA-256
+checksums, installs it for your user account, adds a Start menu shortcut and an
+entry in **Settings → Apps**, and starts it.
+
+**Permissions**
+
+- **No administrator rights needed.** The default install goes in
+  `%LOCALAPPDATA%\Programs\Minor Pentatonic`, for your account only.
+- **Execution policy.** Piping into `iex`, as above, is not blocked by PowerShell's
+  execution policy. If you save `install.ps1` first, Windows marks it as downloaded
+  and the default policy refuses it. Either run `Unblock-File .\install.ps1` once, or
+  run `powershell -ExecutionPolicy Bypass -File .\install.ps1`, which bypasses the
+  policy for that run only and changes no settings.
+- **Everyone on the PC.** `.\install.ps1 -Scope AllUsers` installs into Program Files.
+  That needs administrator rights, so Windows shows a UAC prompt. From the
+  one-line `irm … | iex` form, open PowerShell with *Run as administrator* first.
+- **SmartScreen and Firewall.** The download is checked against its checksum, and
+  its downloaded-from-the-internet mark is removed, so SmartScreen does not stop every
+  launch. The app only listens on `127.0.0.1`, so Windows Firewall has nothing to ask.
+
+Options, which you can combine:
+
+```powershell
+.\install.ps1 -DesktopShortcut      # also put a shortcut on the desktop
+.\install.ps1 -AddToPath            # run minor-pentatonic from any terminal
+.\install.ps1 -Version v2026.09.18  # a particular release
+.\install.ps1 -ZipPath .\minor-pentatonic-2026.09.18-windows-11-x64.zip   # offline
+.\install.ps1 -Uninstall            # or use Settings → Apps
+```
+
+To pass options to the one-line form, use
+`& ([scriptblock]::Create((irm <url>))) -DesktopShortcut`.
+
+### macOS
+
+Download the `.dmg` from [Releases](https://github.com/brucehoppe/minor-pentatonic-go/releases),
+open it and drag the app to Applications. It is not notarised, so the first time,
+**right-click → Open** it (see [Distribution packages](#distribution-packages)).
+
+### Anywhere Go is installed
+
+```sh
+go install github.com/brucehoppe/minor-pentatonic-go@latest
+```
+
 ## Screenshots
 
 | | |
@@ -34,6 +89,7 @@ web/assets/fonts/    the bundled typefaces, plus their licences
 tests/app.test.mjs   headless frontend suite
 docs/screenshots/    images for this README; not embedded
 scripts/release.sh   consumer packages for macOS and Windows
+scripts/install.ps1  Windows installer (see Install)
 reference/           the original page the app was built from, with local font copies; not embedded
 ```
 

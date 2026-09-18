@@ -40,3 +40,56 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Frontend suite
         run: node --test tests/app.test.mjs
+
+  windows-installer:
+    name: Windows installer (install, run, uninstall)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Build a release-shaped ZIP and checksum file
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory pkg, dist | Out-Null
+          go build -trimpath -ldflags "-s -w -X main.version=ci" -o pkg/minor-pentatonic.exe .
+          Copy-Item LICENSE pkg/LICENSE.txt
+          Compress-Archive -Path pkg/* -DestinationPath dist/minor-pentatonic-ci-windows-11-x64.zip
+          $h = (Get-FileHash dist/minor-pentatonic-ci-windows-11-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$h  minor-pentatonic-ci-windows-11-x64.zip" | Set-Content dist/SHA256SUMS-ci.txt
+      # Windows PowerShell 5.1 is what most people have, so test with it, under the
+      # default execution policy bypassed only for this process, as the README says.
+      - name: Install for the current user (no administrator rights)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1 -ZipPath dist/minor-pentatonic-ci-windows-11-x64.zip -NoLaunch -DesktopShortcut
+      - name: Check the install
+        shell: powershell
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\Minor Pentatonic'
+          if (-not (Test-Path "$dir\minor-pentatonic.exe")) { throw 'exe missing' }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Minor Pentatonic Practice Desk.lnk")) { throw 'Start menu shortcut missing' }
+          $reg = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MinorPentatonicPracticeDesk'
+          if ($reg.DisplayName -ne 'Minor Pentatonic Practice Desk') { throw 'Apps entry missing' }
+          & "$dir\minor-pentatonic.exe" -version
+          Start-Process "$dir\minor-pentatonic.exe" -ArgumentList '-no-open'
+          Start-Sleep 2
+          $about = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7534/about).Content
+          if ($about -notmatch 'Minor Pentatonic Practice Desk') { throw "unexpected /about: $about" }
+      - name: A tampered ZIP is refused
+        shell: powershell
+        run: |
+          Add-Content dist/minor-pentatonic-ci-windows-11-x64.zip 'x'
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1 -ZipPath dist/minor-pentatonic-ci-windows-11-x64.zip -NoLaunch 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0 -or $out -notmatch 'Checksum mismatch') { throw "tampered ZIP was not refused: $out" }
+      - name: Uninstall with the entry Settings > Apps would run
+        shell: powershell
+        run: |
+          $cmd = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MinorPentatonicPracticeDesk').UninstallString
+          cmd /c $cmd
+          if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs\Minor Pentatonic')) { throw 'install folder left behind' }
+          if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MinorPentatonicPracticeDesk') { throw 'Apps entry left behind' }
+          try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7534/about -TimeoutSec 2 | Out-Null; throw 'app still running' } catch [System.Net.WebException] { }
