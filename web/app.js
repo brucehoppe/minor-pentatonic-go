@@ -36,7 +36,7 @@ const state={
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
   // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
   // input device, and the last finished take with its blob URLs
-  rec:null, recDevice:"", recChannel:-1, recTake:null,
+  rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null,
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
   triadKind:"maj", triadSet:"123",
@@ -1974,6 +1974,7 @@ const REC_ROW=`<div class="row" id="recrow">
   <span class="lbl">Record</span>
   <select id="recinput" aria-label="Input device"><option value="">Default input</option></select>
   <select id="recchan" aria-label="Input channel"><option value="-1">Both inputs</option><option value="0">Input 1</option><option value="1">Input 2</option></select>
+  <button id="recmon" aria-pressed="false">Monitor input</button>
   <select id="recmix" aria-label="What to record"><option value="guitar">Guitar only</option><option value="backing">Guitar + backing</option></select>
   <label style="font-size:12px;display:flex;gap:5px;align-items:center"><input type="checkbox" id="recarm">Start on bar 1 of the 12-bar trainer</label>
   <button id="recbtn" aria-pressed="false">Record</button>
@@ -2030,6 +2031,27 @@ function listInputs(){
     if(!inputs.some(d=>d.deviceId===state.recDevice))state.recDevice="";
     sel.value=state.recDevice;
   }).catch(()=>{});}
+// What to ask getUserMedia for: the chosen device, with the voice processing off.
+// A single channel can only be picked out of an input that arrives in stereo.
+function inputWanted(mono){
+  const want={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
+  if(state.recDevice)want.deviceId={exact:state.recDevice};
+  if(state.recChannel>=0)want.channelCount={ideal:2};else if(mono)want.channelCount={ideal:1};
+  return want;}
+// The input as a Web Audio source, with the chosen channel split out. link(node)
+// connects it onward; one splitter output is mono, which a stereo node spreads to
+// both sides.
+function inputNode(ac,input,chan){
+  const src=ac.createMediaStreamSource(input);
+  const tr=input.getAudioTracks&&input.getAudioTracks()[0];
+  const have=(tr&&tr.getSettings&&tr.getSettings().channelCount)||2;
+  if(chan>=0&&chan<have&&ac.createChannelSplitter){
+    const split=ac.createChannelSplitter(2);
+    src.connect(split);
+    return {src,note:"",link:to=>split.connect(to,chan,0)};}
+  return {src,link:to=>src.connect(to),
+    note:chan>=0?`This input has one channel, so there is no Input ${chan+1}; using the channel it has.`:""};}
+
 // Opens the input and builds a MediaRecorder for it, ready to start.
 //
 // Input channel: a two-input interface arrives as one stereo stream, guitar on one
@@ -2042,28 +2064,16 @@ function openTake(){
   const ac=a&&a.context||null, backing=wantBacking&&!!(ac&&a.tap), mono=!backing;
   const note=wantBacking&&!backing?(a?"Backing can't be captured in compatibility sound mode, so this take is guitar only."
     :"There is no sound engine to capture backing from, so this take is guitar only."):"";
-  const want={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
-  if(state.recDevice)want.deviceId={exact:state.recDevice};
   const chan=state.recChannel;
-  // A single channel can only be picked out of an input that arrives in stereo.
-  if(chan>=0)want.channelCount={ideal:2};else if(mono)want.channelCount={ideal:1};
-  return navigator.mediaDevices.getUserMedia({audio:want}).then(input=>{
+  return navigator.mediaDevices.getUserMedia({audio:inputWanted(mono)}).then(input=>{
     let stream=input,src=null,dest=null,chanNote="";
     // Through Web Audio when there is one: that is where backing is mixed in, and a
     // one-channel destination downmixes a stereo interface to a true mono take.
     if(ac&&ac.createMediaStreamDestination){
       dest=ac.createMediaStreamDestination();
       dest.channelCount=mono?1:2;dest.channelCountMode="explicit";dest.channelInterpretation="speakers";
-      src=ac.createMediaStreamSource(input);
-      const tr=input.getAudioTracks&&input.getAudioTracks()[0];
-      const have=(tr&&tr.getSettings&&tr.getSettings().channelCount)||2;
-      if(chan>=0&&chan<have&&ac.createChannelSplitter){
-        // one output of the splitter is mono, which the destination spreads to both sides
-        const split=ac.createChannelSplitter(2);
-        src.connect(split);split.connect(dest,chan,0);
-      }else{
-        if(chan>=0)chanNote=`This input has one channel, so there is no Input ${chan+1}; recording the channel it has.`;
-        src.connect(dest);}
+      const n=inputNode(ac,input,chan);
+      src=n.src;chanNote=n.note;n.link(dest);
       if(backing)a.tap(dest);
       stream=dest.stream;}
     else if(chan>=0)chanNote="Picking one input needs Web Audio, which this browser withholds, so both inputs are recorded.";
@@ -2169,6 +2179,41 @@ function showTake(){
   play.src=t.url;
   c.textContent=`Download compressed (${fileSize(t.blob.size)})`;
   if(t.wav)w.textContent=`Download WAV (${fileSize(t.wav.blob.size)})`;}
+// ---- monitor input ----
+// Sends the input to the speakers, for headphones that aren't on the interface — a
+// USB headphone amp, say. It goes straight to the output, past the engine's master
+// bus, so a backing take never records the guitar twice. Through the browser it is
+// heard late by the round trip: fine to play to, not as tight as the interface's
+// own direct monitoring.
+function monButton(){
+  const b=document.getElementById("recmon"),m=state.monitor;
+  b.textContent=m&&m.opening?"Opening…":"Monitor input";
+  b.setAttribute("aria-pressed",!!m);}
+function toggleMonitor(){
+  if(state.monitor){stopMonitor();recSay("Monitoring off.");return;}
+  const a=audio(),ac=a&&a.context;
+  if(!ac||!ac.createMediaStreamSource){recSay("Monitoring needs Web Audio, which this browser withholds.");return;}
+  const pending=state.monitor={opening:true};
+  monButton();
+  return navigator.mediaDevices.getUserMedia({audio:inputWanted(false)}).then(input=>{
+    if(state.monitor!==pending){input.getTracks().forEach(t=>t.stop());return;}
+    const n=inputNode(ac,input,state.recChannel),gain=ac.createGain();
+    n.link(gain);gain.connect(ac.destination);
+    state.monitor={input,src:n.src,gain};
+    monButton();listInputs();
+    const late=recLatencyMs(ac,input);
+    recSay("Monitoring your input"+(late?`, heard about ${late} ms after you play`:"")
+      +". Use headphones: through speakers, a microphone feeds back."+(n.note?" "+n.note:""));
+  }).catch(e=>{if(state.monitor===pending){state.monitor=null;monButton();recSay(inputError(e));}});}
+function stopMonitor(){
+  const m=state.monitor;
+  if(!m)return;
+  state.monitor=null;
+  if(m.input)m.input.getTracks().forEach(t=>t.stop());
+  [m.gain,m.src].forEach(n=>{if(n)try{n.disconnect();}catch(e){/* already gone */}});
+  monButton();}
+// A new device or channel applies at once to a running monitor.
+function restartMonitor(){if(state.monitor&&!state.monitor.opening){stopMonitor();toggleMonitor();}}
 function saveFile(f){
   if(!f)return;
   const a=document.createElement("a");
@@ -3265,7 +3310,7 @@ document.getElementById("majorarrows").onclick=function(){state.majorArrows=!sta
 // replace the desk with a plain notice rather than leave a page that still looks
 // live and answers no requests.
 function silenceEverything(){
-  stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();stopRecording();
+  stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();stopRecording();stopMonitor();
   if(state.clickTimer){clearInterval(state.clickTimer);state.clickTimer=null;}
 }
 function farewellPage(){
@@ -3338,11 +3383,13 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
 (()=>{const play=document.getElementById("play");
   if(play.insertAdjacentHTML)play.insertAdjacentHTML("afterend",REC_ROW);
   const why=recUnsupported();
-  if(why){["recinput","recchan","recmix","recarm","recbtn"].forEach(id=>{document.getElementById(id).disabled=true;});
+  if(why){["recinput","recchan","recmon","recmix","recarm","recbtn"].forEach(id=>{document.getElementById(id).disabled=true;});
     document.getElementById("recrow").classList.add("off");recSay(why);return;}
   document.getElementById("recbtn").onclick=toggleRecord;
-  document.getElementById("recinput").onchange=e=>{state.recDevice=e.target.value;};
-  document.getElementById("recchan").onchange=e=>{state.recChannel=+e.target.value;};
+  document.getElementById("recinput").onchange=e=>{state.recDevice=e.target.value;restartMonitor();};
+  document.getElementById("recchan").onchange=e=>{state.recChannel=+e.target.value;restartMonitor();};
+  if(audioContextCtor())document.getElementById("recmon").onclick=toggleMonitor;
+  else{const b=document.getElementById("recmon");b.disabled=true;b.title="Monitoring needs Web Audio, which this browser withholds.";}
   document.getElementById("recdlc").onclick=()=>saveFile(state.recTake);
   document.getElementById("recdlw").onclick=()=>saveFile(state.recTake&&state.recTake.wav);
   if(navigator.mediaDevices.addEventListener)navigator.mediaDevices.addEventListener("devicechange",listInputs);

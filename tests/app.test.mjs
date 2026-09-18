@@ -59,16 +59,16 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   const elements = new Map(ids.map(id => [id, new Element(id)]));
   // startTimes records when each oscillator was booked to sound, on the fake audio
   // clock; clock.t is that clock, which a test moves forward with advance().
-  const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [], taps: [], untaps: [] };
+  const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [], taps: [], untaps: [], toSpeakers: [] };
   const clock = { t: 0, wall: 0 };
   class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} cancelScheduledValues() {} }
   class AudioContext {
-    constructor() { this.state = "running"; this.destination = {}; this.baseLatency = 0.005; this.outputLatency = audio.outputLatency ?? 0.01; }
+    constructor() { this.state = "running"; this.destination = { speakers: true }; this.baseLatency = 0.005; this.outputLatency = audio.outputLatency ?? 0.01; }
     get currentTime() { return clock.t; }
     resume() { return Promise.resolve(); }
-    createGain() { audio.gains++; return { gain: new AudioParam(),
-      connect(node) { if (node && node.stream) audio.taps.push(node); },
-      disconnect(node) { audio.untaps.push(node); } }; }
+    createGain() { audio.gains++; const g = { gain: new AudioParam(), inputs: [],
+      connect(node) { if (node && node.stream) audio.taps.push(node); if (node && node.speakers) audio.toSpeakers.push(g); },
+      disconnect(node) { audio.untaps.push(node); if (!node) g.disconnected = true; } }; return g; }
     createMediaStreamDestination() { return { stream: { destination: true }, channelCount: 2, connect() {} }; }
     createChannelSplitter(n) { const sp = { n, links: [], connect(d, out, inp) { sp.links.push({ d, out, inp }); } };
       audio.splitters = [...(audio.splitters ?? []), sp]; return sp; }
@@ -204,7 +204,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,REC_MAX_SEC,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,REC_MAX_SEC,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -2683,4 +2683,63 @@ test("both inputs is the default, and a missing channel or engine falls back and
   compat.document.getElementById("recbtn").click();
   await settle();
   assert.match(compat.document.getElementById("recmsg").textContent, /needs Web Audio.*both inputs are recorded/);
+});
+
+test("Monitor input sends the unprocessed input straight to the speakers, never into a take", async () => {
+  const { app, document, rec, audio } = makeRuntime({ media: true });
+  const btn = document.getElementById("recmon");
+  app.audio();                               // the engine's master bus goes to the speakers first
+  const before = audio.toSpeakers.length;
+  btn.click();
+  await settle();
+  const m = app.getMonitor();
+  assert.equal(rec.asked[0].audio.echoCancellation, false);
+  assert.equal(rec.asked[0].audio.autoGainControl, false);
+  assert.equal(audio.toSpeakers.length, before + 1);
+  assert.equal(audio.toSpeakers.at(-1), m.gain);
+  assert.equal(m.src.connected[0], m.gain, "input -> monitor gain -> speakers");
+  assert.equal(btn.getAttribute("aria-pressed"), "true");
+  assert.match(document.getElementById("recmsg").textContent, /Monitoring your input, heard about 25 ms.*headphones/);
+
+  // a backing take while monitoring: the take taps the master bus, which the monitor bypasses
+  document.getElementById("recmix").value = "backing";
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(audio.taps.length, 1);
+  assert.notEqual(m.src.connected[0], app.getRec().dest, "the monitored input is not the take's input");
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.ok(app.getMonitor(), "ending a take leaves monitoring on");
+
+  btn.click();
+  assert.equal(app.getMonitor(), null);
+  assert.equal(m.gain.disconnected, true);
+  assert.equal(btn.getAttribute("aria-pressed"), "false");
+  assert.equal(rec.tracksStopped, 2, "the take's input and the monitor's are both released");
+});
+
+test("the monitor follows the channel and device choice, and Quit silences it", async () => {
+  const { app, document, rec, audio } = makeRuntime({ media: true });
+  document.getElementById("recmon").click();
+  await settle();
+  assert.equal(audio.splitters, undefined);
+  document.getElementById("recchan").onchange({ target: { value: "0" } });
+  await settle();
+  assert.equal(rec.asked.length, 2, "reopened with the new choice");
+  assert.equal(rec.asked[1].audio.channelCount.ideal, 2);
+  const sp = audio.splitters[0];
+  assert.equal(sp.links[0].d, app.getMonitor().gain);
+  assert.equal(sp.links[0].out, 0);
+  document.getElementById("recinput").onchange({ target: { value: "abc" } });
+  await settle();
+  assert.equal(rec.asked[2].audio.deviceId.exact, "abc");
+  app.silenceEverything();
+  assert.equal(app.getMonitor(), null);
+  assert.equal(rec.tracksStopped, 3);
+});
+
+test("without Web Audio the monitor is switched off and says why", () => {
+  const { document } = makeRuntime({ media: true, audio: "wav" });
+  assert.equal(document.getElementById("recmon").disabled, true);
+  assert.match(document.getElementById("recmon").title, /needs Web Audio/);
 });
