@@ -18,7 +18,7 @@ web/assets/*.png     images
 web/assets/fonts/    the two typefaces, plus their licences
 tests/app.test.mjs   headless frontend suite
 scripts/release.sh   consumer packages for macOS and Windows
-reference/           the original page the app was built from; not embedded
+reference/           the original page the app was built from, with local font copies; not embedded
 ```
 
 Everything under `web/` — and nothing else — is compiled into the binary by the
