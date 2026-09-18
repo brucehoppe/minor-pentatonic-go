@@ -15,7 +15,7 @@ web/app.js           the whole interactive desk
 web/seven-licks.html supplementary written lesson
 web/seven-licks.js   its script (pages carry no inline scripts; see Security)
 web/assets/*.png     images
-web/assets/fonts/    the two typefaces, plus their licences
+web/assets/fonts/    the bundled typefaces, plus their licences
 tests/app.test.mjs   headless frontend suite
 scripts/release.sh   consumer packages for macOS and Windows
 reference/           the original page the app was built from, with local font copies; not embedded

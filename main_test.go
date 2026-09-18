@@ -179,9 +179,16 @@ func TestAppHandlerServesTheEmbeddedFonts(t *testing.T) {
 	if n := strings.Count(css.Body.String(), "@font-face"); n < 6 {
 		t.Fatalf("app.css declares %d @font-face rules, want at least 6", n)
 	}
+	licks := httptest.NewRecorder()
+	appHandler(func() {}).ServeHTTP(licks, httptest.NewRequest(http.MethodGet, "/seven-licks.html", nil))
+	for _, family := range []string{"Work Sans", "Archivo Black", "Space Mono"} {
+		if !strings.Contains(licks.Body.String(), `font-family:"`+family+`";`) {
+			t.Errorf("seven-licks.html has no @font-face for %s", family)
+		}
+	}
 
-	// every font the stylesheet asks for must actually be servable
-	for _, m := range regexp.MustCompile(`url\((assets/fonts/[^)]+)\)`).FindAllStringSubmatch(css.Body.String(), -1) {
+	// every font either stylesheet asks for must actually be servable
+	for _, m := range regexp.MustCompile(`url\((assets/fonts/[^)]+)\)`).FindAllStringSubmatch(css.Body.String()+licks.Body.String(), -1) {
 		r := httptest.NewRequest(http.MethodGet, "/"+m[1], nil)
 		w := httptest.NewRecorder()
 		appHandler(func() {}).ServeHTTP(w, r)
@@ -202,6 +209,7 @@ func TestAppHandlerServesTheEmbeddedFonts(t *testing.T) {
 	// the SIL Open Font Licence requires the licence to travel with the font
 	for _, path := range []string{
 		"/assets/fonts/OFL-DM-Mono.txt", "/assets/fonts/OFL-Bricolage-Grotesque.txt",
+		"/assets/fonts/OFL-Work-Sans.txt", "/assets/fonts/OFL-Archivo-Black.txt", "/assets/fonts/OFL-Space-Mono.txt",
 	} {
 		w := httptest.NewRecorder()
 		appHandler(func() {}).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))

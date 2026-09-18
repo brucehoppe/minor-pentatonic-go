@@ -1,6 +1,6 @@
 // Minor Pentatonic Practice Desk
 //
-// Coded by Bruce Hoppe
+// Coded by Bruce Hoppe.
 //
 // A single self-contained executable: the whole interactive practice desk is
 // embedded in the binary and served on localhost only.
