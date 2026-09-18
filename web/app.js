@@ -1962,6 +1962,10 @@ function restartClick() {
 // A take gives two files: the MediaRecorder original (small, for sharing) and a 16-bit
 // WAV decoded from it and written by wavBytes (for editing). The recorder can also be
 // armed to start on the downbeat of bar 1, booked on the audio clock by trainerTick.
+// A take stops itself at 30 minutes. Making its WAV holds the whole take in memory
+// three or four times over (compressed, decoded as float, then PCM), and past this
+// a long stereo take starts to risk the tab.
+const REC_MAX_SEC=30*60;
 const REC_TYPES=["audio/webm;codecs=opus","audio/webm","audio/mp4;codecs=mp4a.40.2","audio/mp4"];
 const REC_ROW=`<div class="row" id="recrow">
   <span class="lbl">Record</span>
@@ -2068,6 +2072,7 @@ function startTake(t,fromTrainer){
   t.phase="recording";t.fromTrainer=fromTrainer;t.date=new Date();t.t0=Date.now();
   t.recorder.start(1000);
   const say=()=>{const s=Math.floor((Date.now()-t.t0)/1000);
+    if(s>=REC_MAX_SEC){t.capped=true;stopRecording();return;}
     recSay(`Recording ${t.backing?"guitar + backing":"guitar only"} · ${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`
       +(fromTrainer?" · stopping the trainer ends the take":"")+(t.note?" · "+t.note:""));};
   say();t.clock=setInterval(say,250);
@@ -2113,7 +2118,8 @@ function finishTake(t){
   const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime)),wav:null};
   state.rec=null;
   const secs=Math.round((Date.now()-t.t0)/1000);
-  const what=`Take saved: ${secs} s, ${t.mono?"mono":"stereo"}.`+(t.note?" "+t.note:"");
+  const what=(t.capped?`Stopped at the ${REC_MAX_SEC/60}-minute limit. `:"")
+    +`Take saved: ${secs} s, ${t.mono?"mono":"stereo"}.`+(t.note?" "+t.note:"");
   showTake();recButtons();recSay(what+" Making the WAV…");
   return takeToWav(blob,t.mono).then(wav=>{
     if(state.recTake!==kept)return;

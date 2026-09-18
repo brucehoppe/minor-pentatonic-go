@@ -60,7 +60,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // startTimes records when each oscillator was booked to sound, on the fake audio
   // clock; clock.t is that clock, which a test moves forward with advance().
   const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [], taps: [], untaps: [] };
-  const clock = { t: 0 };
+  const clock = { t: 0, wall: 0 };
   class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} cancelScheduledValues() {} }
   class AudioContext {
     constructor() { this.state = "running"; this.destination = {}; }
@@ -169,7 +169,9 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     console, document, window, Math: MathForApp, location, fetch, navigator,
     btoa: (str) => Buffer.from(str, "binary").toString("base64"),
     ...(audioMode === false ? {} : { Audio: AudioEl }),
-    ...(media ? { MediaRecorder } : {}), Blob, URL: URLForApp, Date,
+    ...(media ? { MediaRecorder } : {}), Blob, URL: URLForApp,
+    // wall-clock time the tests can move on, for how long a take has run
+    Date: class extends Date { static now() { return Date.now() + clock.wall * 1000; } },
     setTimeout: fn => { fn(); return 1; },
     setInterval: fn => { const id = ++intervalID; intervals.set(id, fn); return id; },
     clearInterval: id => intervals.delete(id),
@@ -199,7 +201,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,REC_MAX_SEC,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -2598,4 +2600,19 @@ test("the hidden attribute wins over any display rule, so Quit stays hidden on t
   // the static demo. The test DOM applies no CSS, so check the stylesheet itself.
   const css = readFileSync(new URL("../web/app.css", import.meta.url), "utf8");
   assert.match(css, /(^|\s)\[hidden\]\{display:none!important\}/);
+});
+
+test("a take stops itself at the 30-minute cap and says so", async () => {
+  const { app, document, rec, clock, advance } = makeRuntime({ media: true });
+  assert.equal(app.REC_MAX_SEC, 1800);
+  document.getElementById("recbtn").click();
+  await settle();
+  clock.wall = 1799; advance(0.25);
+  assert.equal(rec.recorders[0].state, "recording", "still going just under the cap");
+  assert.match(document.getElementById("recmsg").textContent, /29:59/);
+  clock.wall = 1800; advance(0.25);
+  await settle();
+  assert.equal(rec.recorders[0].state, "inactive");
+  assert.ok(app.getTake());
+  assert.match(document.getElementById("recmsg").textContent, /^Stopped at the 30-minute limit\. Take saved: 1800 s, mono\./);
 });
