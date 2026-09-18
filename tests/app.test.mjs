@@ -56,7 +56,7 @@ class Element {
 // { failAfter: n } to make storage fail after n writes, or { store } to start from
 // what an earlier page left in storage.
 function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false, media = false,
-  userAgent = "", secure = true, capture = false } = {}) {
+  userAgent = "", secure = true, capture = false, worker = false } = {}) {
   const MathForApp = deterministic
     ? new Proxy(Math, { get: (t, k) => (k === "random" ? () => 0.42 : t[k]) })
     : Math;
@@ -239,6 +239,23 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   };
   if (capture) navigator.storage = { persist: () => Promise.resolve(true),
     estimate: () => Promise.resolve({ usage: 5 * 1048576, quota: 1024 * 1048576 }) };
+  // A Worker that really runs the named script from web/, in its own context, with
+  // importScripts resolved against web/ too — so the MP3 tests use the real LAME.
+  const workers = [];
+  class RealWorker {
+    constructor(url) {
+      const self = this; this.url = url; this.onmessage = null; workers.push(this);
+      const scope = vm.createContext({ Blob, Int16Array, Int8Array, Float32Array, Math, console,
+        postMessage: data => queueMicrotask(() => self.onmessage && self.onmessage({ data })),
+        close() { self.closed = true; } });
+      scope.importScripts = (...names) => names.forEach(n => vm.runInContext(readFileSync(new URL("../web/" + n, import.meta.url), "utf8"), scope));
+      scope.self = scope;
+      vm.runInContext(readFileSync(new URL("../web/" + url, import.meta.url), "utf8"), scope);
+      this.scope = scope;
+    }
+    postMessage(data) { queueMicrotask(() => this.scope.onmessage({ data })); }
+    terminate() { this.terminated = true; }
+  }
   const URLForApp = { createObjectURL: b => { const u = `blob:${rec.urls.length}`; rec.urls.push({ u, b }); return u; },
     revokeObjectURL: u => rec.revoked.push(u) };
   const context = vm.createContext({
@@ -247,6 +264,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     ...(audioMode === false ? {} : { Audio: AudioEl }),
     ...(media ? { MediaRecorder } : {}), Blob, URL: URLForApp,
     ...(capture ? { AudioWorkletNode, indexedDB, IDBKeyRange } : {}),
+    ...(capture || worker ? { Worker: RealWorker } : {}),
     // wall-clock time the tests can move on, for how long a take has run
     Date: class extends Date { static now() { return Date.now() + clock.wall * 1000; } },
     // Short timers run at once. Minute-scale ones — the shared input's idle release —
@@ -294,7 +312,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   const advance = seconds => { clock.t += seconds; for (const fn of [...intervals.values()]) fn(); };
   const runIdle = () => { for (const [id, fn] of [...idle]) { idle.delete(id); fn(); } };
   return { app: context.appTest, document, audio, intervals, fetched, audioElements, clock, advance, rec, runIdle,
-    worklets, modules, idb,
+    worklets, modules, idb, workers,
     closed: () => windowClosed };
 }
 
@@ -3174,4 +3192,106 @@ test("damaged or foreign rows in storage are ignored, not trusted", async () => 
   await document.getElementById("recsaved").onclick({ target: { dataset: { dl: "b" } } });
   await settle();
   assert.match(document.getElementById("recmsg").textContent, /Nothing usable was left of that take/);
+});
+
+// ---------- MP3 ----------
+test("the vendored encoder is exactly the verified lamejs 1.2.1, with its licences beside it", async () => {
+  const { createHash } = await import("node:crypto");
+  const lame = readFileSync(new URL("../web/vendor/lame.min.js", import.meta.url));
+  assert.equal(createHash("sha256").update(lame).digest("hex"), "15d285e2587b3bdbfd18a68de6ce07cc074f7480a82c3815da2dc1c348ec6df4",
+    "LGPL: LAME must ship unmodified; a change here needs its source published");
+  for (const f of ["LAME-LICENSE.txt", "LGPL-3.0.txt", "GPL-3.0.txt"])
+    assert.ok(readFileSync(new URL("../web/vendor/" + f, import.meta.url), "utf8").length > 100, f);
+  const notices = readFileSync(new URL("../THIRD_PARTY_NOTICES.md", import.meta.url), "utf8");
+  assert.match(notices, /LAME/); assert.match(notices, /web\/vendor\/lame\.min\.js/);
+});
+
+const mp3Frames = bytes => { let n = 0; for (let i = 0; i + 1 < bytes.length; i++) if (bytes[i] === 0xFF && (bytes[i + 1] & 0xE0) === 0xE0) n++; return n; };
+
+test("MP3 is encoded from the stored master by the real LAME, off the main thread", async () => {
+  const { app, document, worklets, workers, idb } = makeRuntime({ media: true, capture: true });
+  app.setKey(9); app.setBpm(100);
+  document.getElementById("recbtn").click();
+  await settle();
+  worklets[0].feed(48000, 0.25); worklets[0].feed(48000, 0.25);   // 2 s of mono
+  await settle();
+  document.getElementById("recbtn").click();
+  await settle();
+  const btn = document.getElementById("recdlm");
+  assert.equal(btn.hidden, false);
+  assert.equal(btn.textContent, `Download MP3 (~${app.fileSize(128 * 125 * 2)})`, "128 kbps x 2 s, estimated");
+  await btn.onclick();
+  await settle();
+  assert.equal(workers[0].url, "mp3-worker.js");
+  const take = app.getTake(), mp3 = new Uint8Array(await take.mp3.blob.arrayBuffer());
+  assert.deepEqual([mp3[0], mp3[1]], [0xFF, 0xFB], "an MPEG-1 Layer III frame header");
+  assert.ok(Math.abs(mp3.length - 128 * 125 * 2) < 128 * 125 * 0.2, "about 2 s at 128 kbps");
+  assert.equal(document.body.children.at(-1).download, take.name.replace(/\.\w+$/, ".mp3"));
+  assert.equal(btn.textContent, `Download MP3 (${app.fileSize(mp3.length)})`);
+  assert.equal(idb.stores.get("takes").rows.size, 1, "an MP3 is a copy: the master stays until the WAV is saved");
+  await btn.onclick();   // a second click reuses the encoded file
+  assert.equal(workers.length, 1);
+});
+
+test("MP3 of a stereo take, and of a take whose WAV was decoded rather than captured", async () => {
+  const stereo = makeRuntime({ media: true, capture: true });
+  stereo.document.getElementById("recmix").value = "backing";
+  stereo.document.getElementById("recbtn").click();
+  await settle();
+  stereo.worklets[0].feed(48000);
+  await settle();
+  stereo.document.getElementById("recbtn").click();
+  await settle();
+  assert.match(stereo.document.getElementById("recdlm").textContent, new RegExp(`~${stereo.app.fileSize(192 * 125)}`), "192 kbps for stereo");
+  await stereo.document.getElementById("recdlm").onclick();
+  await settle();
+  const s = new Uint8Array(await stereo.app.getTake().mp3.blob.arrayBuffer());
+  assert.equal((s[3] >> 6) & 3, 0, "channel mode: stereo");
+
+  const decoded = makeRuntime({ media: true, worker: true });   // no capture: the WAV is decoded
+  decoded.document.getElementById("recbtn").click();
+  await settle();
+  decoded.document.getElementById("recbtn").click();
+  await settle();
+  await decoded.document.getElementById("recdlm").onclick();
+  await settle();
+  const d = new Uint8Array(await decoded.app.getTake().mp3.blob.arrayBuffer());
+  assert.ok(mp3Frames(d) > 30, "one second of audio makes about 38 frames");
+});
+
+test("a saved master can be taken as MP3 without being dropped", async () => {
+  const first = makeRuntime({ media: true, capture: true });
+  first.document.getElementById("recbtn").click();
+  await settle();
+  first.worklets[0].feed(24000);
+  await settle();
+  const { document, idb } = makeRuntime({ media: true, capture: { store: first.idb.stores } });
+  await settle();
+  const id = [...idb.stores.get("takes").rows.values()][0].v.id;
+  assert.match(document.getElementById("recsaved").innerHTML, new RegExp(`data-mp3="${id}">MP3<`));
+  await document.getElementById("recsaved").onclick({ target: { dataset: { mp3: id } } });
+  await settle();
+  assert.match(document.body.children.at(-1).download, /\.mp3$/);
+  assert.equal(idb.stores.get("takes").rows.size, 1);
+});
+
+test("the MP3 worker turns interleaved 16-bit samples into MP3 frames", async () => {
+  const posted = [];
+  const scope = vm.createContext({ Blob, Int16Array, Int8Array, Float32Array, Math,
+    postMessage: m => posted.push(m), close() {} });
+  scope.importScripts = n => vm.runInContext(readFileSync(new URL("../web/" + n, import.meta.url), "utf8"), scope);
+  vm.runInContext(readFileSync(new URL("../web/mp3-worker.js", import.meta.url), "utf8"), scope);
+  scope.onmessage({ data: { start: { channels: 2, sampleRate: 44100, kbps: 192 } } });
+  const pcm = Int16Array.from({ length: 44100 * 2 }, (_, i) => Math.round(Math.sin(i / 20) * 8000));
+  scope.onmessage({ data: { pcm } });
+  assert.equal(posted[0].progress, 44100);
+  scope.onmessage({ data: { end: true } });
+  const bytes = new Uint8Array(await posted.at(-1).done.arrayBuffer());
+  assert.equal(bytes[0], 0xFF);
+  const fresh = vm.createContext({ Blob, Int16Array, Int8Array, Float32Array, Math, postMessage: m => posted.push(m), close() {} });
+  fresh.importScripts = scope.importScripts;
+  vm.runInContext(readFileSync(new URL("../web/mp3-worker.js", import.meta.url), "utf8"), fresh);
+  const before = posted.length;
+  fresh.onmessage({ data: { pcm } });
+  assert.equal(posted.length, before, "samples before start are ignored, not encoded with no settings");
 });

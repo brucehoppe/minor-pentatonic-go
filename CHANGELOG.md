@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- Download MP3 as well as WAV and the compressed original. It is encoded from
+  the lossless master with LAME (lamejs 1.2.1, LGPL-3.0, shipped unmodified in
+  `web/vendor/` with its licence texts) in a background worker: 128 kbps for a
+  mono take, 192 kbps for stereo. Saved masters can be taken as MP3 too.
 - The WAV is now a true master rather than decoded from the compressed file. An
   AudioWorklet (`rec-worklet.js`) captures the raw audio on the audio thread and it
   is streamed to IndexedDB as you play, so takes have no length limit (the
