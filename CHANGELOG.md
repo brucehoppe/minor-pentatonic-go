@@ -11,7 +11,11 @@ a second release on the same day.
   compressed original or a WAV; each button shows the file size. A take stops
   itself at 30 minutes. On a two-input interface you can record just the input
   the guitar is in, centred. Monitor input plays the input through the
-  computer's output, for headphones on a USB amp rather than the interface. The page's policy
+  computer's output, for headphones on a USB amp rather than the interface.
+  Recording and monitoring share one open input, released after five idle
+  minutes, so Safari asks for the microphone at most once per visit. Where Safari
+  withholds the microphone because of Lockdown Mode, the Record row says so and
+  how to exclude the site. The page's policy
   now allows `blob:` media, which is where the take plays back from.
 - Standard MIT `LICENSE` text so GitHub recognises it; the bundled fonts are
   listed in `THIRD_PARTY_NOTICES.md`, which now ships in every release package.

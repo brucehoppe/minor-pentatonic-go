@@ -36,7 +36,7 @@ const state={
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
   // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
   // input device, and the last finished take with its blob URLs
-  rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null,
+  rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null,
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
   triadKind:"maj", triadSet:"123",
@@ -1985,8 +1985,14 @@ const REC_ROW=`<div class="row" id="recrow">
 </div>`;
 function recUnsupported(){
   const md=typeof navigator!=="undefined"&&navigator.mediaDevices;
-  if(!md||typeof md.getUserMedia!=="function")
-    return "Recording needs microphone access, which browsers only give a secure page (https, or the app on this computer).";
+  if(!md||typeof md.getUserMedia!=="function"){
+    if(typeof isSecureContext!=="undefined"&&!isSecureContext)
+      return "Recording needs microphone access, which browsers only give a secure page (https, or the app on this computer).";
+    // A secure page with no microphone API: on Safari that is Lockdown Mode.
+    return isSafari()
+      ? "Safari is withholding the microphone here, which almost always means Lockdown Mode. To record, turn it off "
+        +"for this site only: Safari \u25b8 Settings \u25b8 Websites \u25b8 Lockdown Mode, then reload."
+      : "This browser doesn't give web pages microphone access, so recording is unavailable.";}
   if(typeof MediaRecorder!=="function")return "This browser cannot record audio.";
   return "";}
 // the first container this browser can write, or "" to let it choose
@@ -2038,6 +2044,30 @@ function inputWanted(mono){
   if(state.recDevice)want.deviceId={exact:state.recDevice};
   if(state.recChannel>=0)want.channelCount={ideal:2};else if(mono)want.channelCount={ideal:1};
   return want;}
+// ---- the shared input ----
+// The recorder and the monitor share one open input, and it stays open for a few
+// minutes after the last use. Safari asks again on every getUserMedia call unless
+// the site is set to Allow, so this is the difference between one question per
+// visit and one per take. Keeping it longer would leave the browser's microphone
+// indicator on for no reason.
+const INPUT_IDLE_MS=5*60*1000;
+function acquireInput(mono){
+  const want=inputWanted(mono),key=JSON.stringify(want),h=state.inputHeld;
+  const live=h&&h.key===key&&h.stream.getTracks().every(t=>t.readyState!=="ended");
+  if(live){clearTimeout(h.idle);h.idle=null;return Promise.resolve(h.stream);}
+  releaseInput();   // another device or channel, or it was unplugged
+  return navigator.mediaDevices.getUserMedia({audio:want}).then(stream=>{
+    state.inputHeld={key,stream,idle:null};return stream;});}
+function releaseInput(){
+  const h=state.inputHeld;
+  if(!h)return;
+  state.inputHeld=null;clearTimeout(h.idle);
+  h.stream.getTracks().forEach(t=>t.stop());}
+// Called whenever the recorder or the monitor lets go of the input.
+function inputIdle(){
+  const h=state.inputHeld;
+  if(!h||state.monitor||state.rec)return;
+  clearTimeout(h.idle);h.idle=setTimeout(releaseInput,INPUT_IDLE_MS);}
 // The input as a Web Audio source, with the chosen channel split out. link(node)
 // connects it onward; one splitter output is mono, which a stereo node spreads to
 // both sides.
@@ -2065,7 +2095,9 @@ function openTake(){
   const note=wantBacking&&!backing?(a?"Backing can't be captured in compatibility sound mode, so this take is guitar only."
     :"There is no sound engine to capture backing from, so this take is guitar only."):"";
   const chan=state.recChannel;
-  return navigator.mediaDevices.getUserMedia({audio:inputWanted(mono)}).then(input=>{
+  // Web Audio downmixes a mono take itself, so the input is only asked for in mono
+  // without it — which also lets the monitor share the same input.
+  return acquireInput(mono&&!(ac&&ac.createMediaStreamDestination)).then(input=>{
     let stream=input,src=null,dest=null,chanNote="";
     // Through Web Audio when there is one: that is where backing is mixed in, and a
     // one-channel destination downmixes a stereo interface to a true mono take.
@@ -2089,8 +2121,9 @@ function openTake(){
     recorder.onstop=()=>finishTake(take);
     listInputs();
     return take;});}
+// Unhooks a take from the input; the input itself is shared, so inputIdle decides
+// when it is released.
 function closeTake(t){
-  if(t.input&&t.input.getTracks)t.input.getTracks().forEach(tr=>tr.stop());
   if(t.src)try{t.src.disconnect();}catch(e){/* already gone */}
   if(t.backing&&state.engine&&state.engine.untap)state.engine.untap(t.dest);}
 function inputError(e){
@@ -2106,12 +2139,12 @@ function toggleRecord(){
   const pending=state.rec={phase:"opening"};
   recButtons();recSay("Opening the input…");
   return openTake().then(take=>{
-    if(state.rec!==pending){closeTake(take);return;}   // cancelled while it opened
+    if(state.rec!==pending){closeTake(take);inputIdle();return;}   // cancelled while it opened
     state.rec=take;
     if(armed){take.phase="armed";recButtons();
       recSay("Armed. Start the 12-bar trainer: recording begins on bar 1, after the count-in."+(take.note?" "+take.note:""));}
     else startTake(take,false);
-  }).catch(e=>{if(state.rec===pending){state.rec=null;recButtons();recSay(inputError(e));}});}
+  }).catch(e=>{if(state.rec===pending){state.rec=null;recButtons();recSay(inputError(e));inputIdle();}});}
 function startTake(t,fromTrainer){
   t.phase="recording";t.fromTrainer=fromTrainer;t.date=new Date();t.t0=Date.now();
   t.key=state.key;t.bpm=state.bpm;
@@ -2140,7 +2173,7 @@ function cancelRecording(){
   state.rec=null;
   if(r.clock)clearInterval(r.clock);
   if(r.recorder){r.recorder.onstop=null;if(r.recorder.state==="recording")r.recorder.stop();closeTake(r);}
-  recButtons();recSay("Recording cancelled.");}
+  inputIdle();recButtons();recSay("Recording cancelled.");}
 function releaseTake(t){
   [t,t.wav].forEach(f=>{if(f&&f.url)try{URL.revokeObjectURL(f.url);}catch(e){/* already released */}});}
 // Decodes the compressed take and writes it out again as PCM WAV. A guitar-only take
@@ -2161,7 +2194,7 @@ function finishTake(t){
   const blob=new Blob(t.chunks,{type:t.mime||"audio/webm"});
   if(state.recTake)releaseTake(state.recTake);
   const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm),wav:null};
-  state.rec=null;
+  state.rec=null;inputIdle();
   const secs=Math.round((Date.now()-t.t0)/1000);
   const what=(t.capped?`Stopped at the ${REC_MAX_SEC/60}-minute limit. `:"")
     +`Take saved: ${secs} s, ${t.mono?"mono":"stereo"}.`+(t.note?" "+t.note:"");
@@ -2195,8 +2228,8 @@ function toggleMonitor(){
   if(!ac||!ac.createMediaStreamSource){recSay("Monitoring needs Web Audio, which this browser withholds.");return;}
   const pending=state.monitor={opening:true};
   monButton();
-  return navigator.mediaDevices.getUserMedia({audio:inputWanted(false)}).then(input=>{
-    if(state.monitor!==pending){input.getTracks().forEach(t=>t.stop());return;}
+  return acquireInput(false).then(input=>{
+    if(state.monitor!==pending){inputIdle();return;}
     const n=inputNode(ac,input,state.recChannel),gain=ac.createGain();
     n.link(gain);gain.connect(ac.destination);
     state.monitor={input,src:n.src,gain};
@@ -2204,14 +2237,13 @@ function toggleMonitor(){
     const late=recLatencyMs(ac,input);
     recSay("Monitoring your input"+(late?`, heard about ${late} ms after you play`:"")
       +". Use headphones: through speakers, a microphone feeds back."+(n.note?" "+n.note:""));
-  }).catch(e=>{if(state.monitor===pending){state.monitor=null;monButton();recSay(inputError(e));}});}
+  }).catch(e=>{if(state.monitor===pending){state.monitor=null;monButton();recSay(inputError(e));inputIdle();}});}
 function stopMonitor(){
   const m=state.monitor;
   if(!m)return;
   state.monitor=null;
-  if(m.input)m.input.getTracks().forEach(t=>t.stop());
   [m.gain,m.src].forEach(n=>{if(n)try{n.disconnect();}catch(e){/* already gone */}});
-  monButton();}
+  inputIdle();monButton();}
 // A new device or channel applies at once to a running monitor.
 function restartMonitor(){if(state.monitor&&!state.monitor.opening){stopMonitor();toggleMonitor();}}
 function saveFile(f){
@@ -3310,7 +3342,7 @@ document.getElementById("majorarrows").onclick=function(){state.majorArrows=!sta
 // replace the desk with a plain notice rather than leave a page that still looks
 // live and answers no requests.
 function silenceEverything(){
-  stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();stopRecording();stopMonitor();
+  stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();stopRecording();stopMonitor();releaseInput();
   if(state.clickTimer){clearInterval(state.clickTimer);state.clickTimer=null;}
 }
 function farewellPage(){

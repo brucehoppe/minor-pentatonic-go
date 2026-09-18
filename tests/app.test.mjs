@@ -51,7 +51,9 @@ class Element {
 // deterministic: fix Math.random, so a view that generates a fresh quiz or session
 // on every draw still renders identically twice — without that, "did this control
 // change anything?" cannot be answered by comparing two renders.
-function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false, media = false } = {}) {
+// userAgent is read once, as the page loads; secure is window.isSecureContext.
+function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false, media = false,
+  userAgent = "", secure = true } = {}) {
   const MathForApp = deterministic
     ? new Proxy(Math, { get: (t, k) => (k === "random" ? () => 0.42 : t[k]) })
     : Math;
@@ -106,7 +108,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       return match ? document.getElementById(match[1]).children : [];
     },
   };
-  const intervals = new Map(); let intervalID = 0;
+  const intervals = new Map(), idle = new Map(); let intervalID = 0;
   const stored = new Map();
   const localStorage = { getItem: key => stored.get(key) ?? null, setItem: (key,value) => stored.set(key,String(value)) };
   // a stand-in for HTMLAudioElement, which is all the compatibility engine needs
@@ -135,10 +137,10 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     const body = url === "/about" && !demo ? "Minor Pentatonic Practice Desk 1.2.3\nCoded by Bruce Hoppe\n" : "Not Found";
     return Promise.resolve({ ok: body !== "Not Found", text: () => Promise.resolve(body) });
   };
-  const navigator = { userAgent: "" };
+  const navigator = { userAgent };
   // the recorder's world: what was asked of getUserMedia, each MediaRecorder built,
   // and every blob URL minted or revoked
-  const rec = { asked: [], recorders: [], urls: [], revoked: [], tracksStopped: 0 };
+  const rec = { asked: [], recorders: [], urls: [], revoked: [], tracksStopped: 0, tracks: [] };
   const mediaOpts = media === true ? {} : media || {};
   const types = mediaOpts.types ?? ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
   class MediaRecorder {
@@ -159,7 +161,9 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       getUserMedia(c) {
         rec.asked.push(c);
         if (mediaOpts.deny) return Promise.reject(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
-        const track = { stop() { rec.tracksStopped++; }, getSettings: () => ({ latency: 0.01, channelCount: mediaOpts.channels ?? 2 }) };
+        const track = { readyState: "live", stop() { track.readyState = "ended"; rec.tracksStopped++; },
+          getSettings: () => ({ latency: 0.01, channelCount: mediaOpts.channels ?? 2 }) };
+        rec.tracks.push(track);
         return Promise.resolve({ getTracks: () => [track], getAudioTracks: () => [track] });
       },
       enumerateDevices: () => Promise.resolve(mediaOpts.devices ?? []),
@@ -175,7 +179,11 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     ...(media ? { MediaRecorder } : {}), Blob, URL: URLForApp,
     // wall-clock time the tests can move on, for how long a take has run
     Date: class extends Date { static now() { return Date.now() + clock.wall * 1000; } },
-    setTimeout: fn => { fn(); return 1; },
+    // Short timers run at once. Minute-scale ones — the shared input's idle release —
+    // wait until a test calls runIdle(), so "held between takes" can be checked.
+    setTimeout: (fn, ms = 0) => { if (ms < 60000) { fn(); return 1; } const id = ++intervalID; idle.set(id, fn); return id; },
+    clearTimeout: id => idle.delete(id),
+    isSecureContext: secure,
     setInterval: fn => { const id = ++intervalID; intervals.set(id, fn); return id; },
     clearInterval: id => intervals.delete(id),
   });
@@ -214,7 +222,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // advance(seconds) moves the audio clock on and lets every running loop catch up,
   // which is what the browser's 25 ms pump timer does in real life.
   const advance = seconds => { clock.t += seconds; for (const fn of [...intervals.values()]) fn(); };
-  return { app: context.appTest, document, audio, intervals, fetched, audioElements, clock, advance, rec,
+  const runIdle = () => { for (const [id, fn] of [...idle]) { idle.delete(id); fn(); } };
+  return { app: context.appTest, document, audio, intervals, fetched, audioElements, clock, advance, rec, runIdle,
     closed: () => windowClosed };
 }
 
@@ -2429,14 +2438,14 @@ test("the static live demo shows no Quit control, because there is no app to sto
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(r => setImmediate(r)); };
 
 test("without microphone access the Record row is switched off and says why", () => {
-  const { document } = makeRuntime();
+  const { document } = makeRuntime({ secure: false });
   assert.equal(document.getElementById("recbtn").disabled, true);
   assert.equal(document.getElementById("recrow").classList.contains("off"), true);
   assert.match(document.getElementById("recmsg").textContent, /secure page/);
 });
 
 test("a guitar-only take asks for an unprocessed mono input and records it at 96 kbps", async () => {
-  const { app, document, rec, audio } = makeRuntime({ media: true });
+  const { app, document, rec, audio, runIdle } = makeRuntime({ media: true });
   app.setKey(9); app.setBpm(120);
   document.getElementById("recbtn").click();
   await settle();
@@ -2444,7 +2453,7 @@ test("a guitar-only take asks for an unprocessed mono input and records it at 96
   assert.equal(want.echoCancellation, false);
   assert.equal(want.noiseSuppression, false);
   assert.equal(want.autoGainControl, false);
-  assert.equal(want.channelCount.ideal, 1);
+  assert.equal(want.channelCount, undefined, "Web Audio makes the take mono, so the input needn't be");
   const r = rec.recorders[0];
   assert.equal(r.opts.audioBitsPerSecond, 96000);
   assert.equal(r.opts.mimeType, "audio/webm;codecs=opus");
@@ -2457,7 +2466,9 @@ test("a guitar-only take asks for an unprocessed mono input and records it at 96
 
   document.getElementById("recbtn").click();
   await settle();
-  assert.equal(rec.tracksStopped, 1, "the input is released when the take ends");
+  assert.equal(rec.tracksStopped, 0, "the input is kept for the next take");
+  runIdle();
+  assert.equal(rec.tracksStopped, 1, "and released after the idle minutes");
   const take = app.getTake();
   assert.match(take.name, /^practice-A-120bpm-\d{8}-\d{6}\.webm$/);
   assert.equal(take.wav.name, take.name.replace(".webm", ".wav"));
@@ -2559,13 +2570,14 @@ test("a refused microphone is explained, and Cancel releases an armed input", as
   assert.match(denied.document.getElementById("recmsg").textContent, /refused/);
   assert.equal(denied.document.getElementById("recbtn").textContent, "Record");
 
-  const { app, document, rec } = makeRuntime({ media: true });
+  const { app, document, rec, runIdle } = makeRuntime({ media: true });
   document.getElementById("recarm").checked = true;
   document.getElementById("recbtn").click();
   await settle();
   document.getElementById("recbtn").click();   // Cancel
   assert.equal(app.getRec(), null);
-  assert.equal(rec.tracksStopped, 1);
+  runIdle();
+  assert.equal(rec.tracksStopped, 1, "the armed input is let go");
   assert.equal(app.getTake(), null);
   assert.equal(document.getElementById("recarm").disabled, false);
 });
@@ -2686,7 +2698,7 @@ test("both inputs is the default, and a missing channel or engine falls back and
 });
 
 test("Monitor input sends the unprocessed input straight to the speakers, never into a take", async () => {
-  const { app, document, rec, audio } = makeRuntime({ media: true });
+  const { app, document, rec, audio, runIdle } = makeRuntime({ media: true });
   const btn = document.getElementById("recmon");
   app.audio();                               // the engine's master bus goes to the speakers first
   const before = audio.toSpeakers.length;
@@ -2715,7 +2727,10 @@ test("Monitor input sends the unprocessed input straight to the speakers, never 
   assert.equal(app.getMonitor(), null);
   assert.equal(m.gain.disconnected, true);
   assert.equal(btn.getAttribute("aria-pressed"), "false");
-  assert.equal(rec.tracksStopped, 2, "the take's input and the monitor's are both released");
+  assert.equal(rec.asked.length, 1, "the monitor and the take shared one input: one permission prompt");
+  assert.equal(rec.tracksStopped, 0);
+  runIdle();
+  assert.equal(rec.tracksStopped, 1, "released once neither uses it");
 });
 
 test("the monitor follows the channel and device choice, and Quit silences it", async () => {
@@ -2742,4 +2757,31 @@ test("without Web Audio the monitor is switched off and says why", () => {
   const { document } = makeRuntime({ media: true, audio: "wav" });
   assert.equal(document.getElementById("recmon").disabled, true);
   assert.match(document.getElementById("recmon").title, /needs Web Audio/);
+});
+
+test("a secure Safari page without the microphone API is diagnosed as Lockdown Mode", () => {
+  const safari = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Safari/605.1.15";
+  const locked = makeRuntime({ userAgent: safari });
+  assert.equal(locked.document.getElementById("recbtn").disabled, true);
+  assert.match(locked.document.getElementById("recmsg").textContent, /Lockdown Mode.*Settings \u25b8 Websites \u25b8 Lockdown Mode/);
+  assert.doesNotMatch(locked.document.getElementById("recmsg").textContent, /secure page/);
+  const other = makeRuntime();
+  assert.match(other.document.getElementById("recmsg").textContent, /doesn't give web pages microphone access/);
+});
+
+test("takes reuse the open input, and reopen it once it has been released or unplugged", async () => {
+  const { document, rec, runIdle } = makeRuntime({ media: true });
+  const take = async () => { document.getElementById("recbtn").click(); await settle();
+    document.getElementById("recbtn").click(); await settle(); };
+  await take(); await take();
+  assert.equal(rec.asked.length, 1, "two takes, one prompt");
+  runIdle();
+  await take();
+  assert.equal(rec.asked.length, 2, "after the idle release, asked again");
+  rec.tracks.at(-1).readyState = "ended";   // the interface was unplugged
+  await take();
+  assert.equal(rec.asked.length, 3);
+  document.getElementById("recchan").onchange({ target: { value: "1" } });
+  await take();
+  assert.equal(rec.asked.length, 4, "a different channel needs a differently opened input");
 });
