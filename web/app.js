@@ -1599,7 +1599,14 @@ function webAudioEngine(ac) {
         const og = ac.createGain(); og.gain.value = i === 0 ? 1 : .28;
         o.connect(og); og.connect(g); o.start(); return o;
       });
-      return { stop() { nodes.forEach(n => { try { n.stop(); } catch (e) { /* already stopped */ } }); } };
+      // Fade out rather than cut: stopping a sine mid-cycle is an audible click.
+      return { stop() {
+        const t = ac.currentTime;
+        if (g.gain.cancelScheduledValues) g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(Math.max(g.gain.value || .09, .0001), t);
+        g.gain.exponentialRampToValueAtTime(.0001, t + .08);
+        nodes.forEach(n => { try { n.stop(t + .1); } catch (e) { /* already stopped */ } });
+      } };
     },
     stopAll() { /* voices stop themselves; nothing is held open */ },
   };
@@ -1607,7 +1614,11 @@ function webAudioEngine(ac) {
 
 // ---- backend 2: rendered WAV through <audio> ----
 function wavEngine() {
-  const SR = 22050, cache = new Map(), playing = new Set();
+  // Each distinct sound (pitch x length x volume) is rendered once and kept as a
+  // data: URI. Tempo and key changes keep minting new ones, so the cache is bounded:
+  // a Map iterates in insertion order, so re-inserting on use and dropping the
+  // first key evicts the least recently used sound.
+  const SR = 22050, MAX_CACHED = 200, cache = new Map(), playing = new Set();
 
   const toBase64 = bytes => {
     let s = "";
@@ -1685,7 +1696,9 @@ function wavEngine() {
 
   const uri = (key, build) => {
     let u = cache.get(key);
-    if (!u) { u = toWav(build()); cache.set(key, u); }
+    if (u) cache.delete(key); else u = toWav(build());
+    cache.set(key, u);
+    if (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value);
     return u;
   };
   const sound = (key, build, { when = 0, loop = false, volume = 1 } = {}) => {
@@ -1737,9 +1750,17 @@ function wavEngine() {
         try { el.volume = v; } catch (e) { /* element already gone */ }
         if (v >= 1) clearInterval(fade);
       }, 50);
-      return { stop() { clearInterval(fade); release(el); } };
+      return { stop() {
+        clearInterval(fade);
+        const out = setInterval(() => {
+          v = Math.max(0, v - .25);
+          try { el.volume = v; } catch (e) { /* element already gone */ }
+          if (v <= 0) { clearInterval(out); release(el); }
+        }, 25);
+      } };
     },
     stopAll() { [...playing].forEach(release); },
+    cacheSize: () => cache.size,
   };
 }
 

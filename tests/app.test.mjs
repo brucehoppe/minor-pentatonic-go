@@ -59,7 +59,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
   // clock; clock.t is that clock, which a test moves forward with advance().
   const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [] };
   const clock = { t: 0 };
-  class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} }
+  class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} cancelScheduledValues() {} }
   class AudioContext {
     constructor() { this.state = "running"; this.destination = {}; }
     get currentTime() { return clock.t; }
@@ -2107,7 +2107,8 @@ test("compatibility engine's drone loops without a click", () => {
     `the loop joins silently (seam ${seam.toFixed(5)} vs largest ordinary step ${biggestStep.toFixed(5)})`);
 
   assert.doesNotThrow(() => handle.stop(), "and it can be stopped");
-  assert.equal(el.playing, false, "which actually pauses it");
+  for (let i = 0; i < 5; i++) for (const fn of [...runtime.intervals.values()]) fn();   // let the fade-out run
+  assert.equal(el.playing, false, "which actually pauses it once faded");
 });
 
 test("compatibility engine renders each distinct sound only once", () => {
@@ -2288,4 +2289,34 @@ test("the compatibility engine, with no audio clock, still keeps time per beat",
   assert.equal(app.getEngine().name, "Compatibility");
   assert.ok(intervals.has(app.getState().clickTimer));
   app.toggleClick(document.getElementById("click"));
+});
+
+test("the compatibility engine's sound cache stays bounded", () => {
+  const { app } = makeRuntime({ audio: "wav" });
+  const a = app.audio();
+  assert.equal(a.name, "Compatibility");
+  // every tempo change makes new note lengths: far more distinct sounds than the cap
+  for (let i = 0; i < 400; i++) a.blip(200 + i, { dur: .05 });
+  assert.ok(a.cacheSize() <= 200, `cache holds ${a.cacheSize()} sounds`);
+  // and a sound in use survives, because use refreshes it
+  a.blip(999, { dur: .05 });
+  for (let i = 0; i < 199; i++) { a.blip(1000 + i, { dur: .05 }); a.blip(999, { dur: .05 }); }
+  assert.ok(a.cacheSize() <= 200);
+});
+
+test("drones fade out instead of cutting off", () => {
+  const { app, audio } = makeRuntime();
+  const web = app.audio();
+  const d = web.startDrone([110, 220]);
+  const origStops = audio.stops;
+  d.stop();
+  assert.ok(audio.stops > origStops, "the web audio drone stops its oscillators");
+
+  const { app: wapp, audioElements, intervals: wint } = makeRuntime({ audio: "wav" });
+  const el0 = wapp.audio().startDrone([110, 220]);
+  el0.stop();
+  const el = audioElements.at(-1);
+  assert.notEqual(el.src, "", "the compatibility drone is not released at once");
+  for (const fn of [...wint.values()]) { fn(); fn(); fn(); fn(); fn(); }
+  assert.equal(el.src, "", "but is released once the fade finishes");
 });
