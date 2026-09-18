@@ -302,8 +302,8 @@ func TestAboutEndpointCreditsTheAuthor(t *testing.T) {
 			t.Errorf("/about does not mention %q; body = %q", want, w.Body.String())
 		}
 	}
-	if author != "Bruce Hoppe" {
-		t.Errorf("author = %q", author)
+	if author != "Bruce Hoppe" || strings.Contains(author, "@") {
+		t.Errorf("author = %q, want a name with no email address", author)
 	}
 }
 

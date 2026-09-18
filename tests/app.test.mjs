@@ -1741,7 +1741,9 @@ test("the author copyright stays in source code without appearing in the page", 
   assert.ok(script.includes("Copyright © 2026 Bruce Hoppe"), "the source retains the copyright comment");
   assert.ok(!html.includes("© 2026 Bruce Hoppe"), "the copyright is not visible in the interface");
   assert.ok(!html.includes("Source on GitHub"), "the GitHub reference is removed");
-  assert.ok(!html.includes("Bruce Hoppe"), "the email is removed from the page");
+  for (const [name, text] of [["page", html], ["app.js", script], ["lesson", lesson], ["lesson script", lessonScript]])
+    assert.doesNotMatch(text, /[\w.+-]+@[\w-]+\.[\w.]+/, `no email address in the ${name}`);
+  assert.ok(html.includes("A Bruce Hoppe project"), "the project line stays in the footer");
   assert.ok(html.includes('class="credit"'), "in a footer of its own");
   assert.ok(document.getElementById("credver"), "which also carries the build version");
 });
