@@ -69,10 +69,11 @@ func appHandler(stop func()) http.Handler {
 
 // contentSecurityPolicy lets the pages load only what the binary itself serves.
 // Styles may be inline (the pages and generated markup use style attributes);
-// scripts may not. Audio falls back to data: URIs of rendered WAVs, and the
-// Seven Licks page is framed by the practice desk, so framing stays same-origin.
+// scripts may not. Audio falls back to data: URIs of rendered WAVs, recorded takes
+// play back from blob: URLs, and the Seven Licks page is framed by the practice
+// desk, so framing stays same-origin.
 const contentSecurityPolicy = "default-src 'self'; script-src 'self'; " +
-	"style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:; " +
+	"style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: data:; " +
 	"object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 
 func appHandlerFS(stop func(), content fs.FS) http.Handler {

@@ -5,6 +5,11 @@ a second release on the same day.
 
 ## Unreleased
 
+- Record a take from any audio input, guitar only (mono) or with the backing mixed
+  in (stereo), with the browser's voice processing switched off. It can start on
+  bar 1 after the 12-bar trainer's count-in. Play it back, then download the
+  compressed original or a WAV; each button shows the file size. The page's policy
+  now allows `blob:` media, which is where the take plays back from.
 - Standard MIT `LICENSE` text so GitHub recognises it; the bundled fonts are
   listed in `THIRD_PARTY_NOTICES.md`, which now ships in every release package.
 - Live demo on GitHub Pages. The Quit control appears only when the page is

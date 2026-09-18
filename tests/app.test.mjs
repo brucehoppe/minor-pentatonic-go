@@ -46,10 +46,12 @@ class Element {
 }
 
 // audio: "web" (default) | "wav" (no AudioContext, only HTMLAudioElement) | false (neither)
+// media: false (default, no microphone API) | true | { types, devices, deny } — a stand-in
+// for getUserMedia and MediaRecorder; types lists the containers isTypeSupported accepts.
 // deterministic: fix Math.random, so a view that generates a fresh quiz or session
 // on every draw still renders identically twice — without that, "did this control
 // change anything?" cannot be answered by comparing two renders.
-function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false } = {}) {
+function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false, media = false } = {}) {
   const MathForApp = deterministic
     ? new Proxy(Math, { get: (t, k) => (k === "random" ? () => 0.42 : t[k]) })
     : Math;
@@ -57,14 +59,22 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   const elements = new Map(ids.map(id => [id, new Element(id)]));
   // startTimes records when each oscillator was booked to sound, on the fake audio
   // clock; clock.t is that clock, which a test moves forward with advance().
-  const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [] };
+  const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [], taps: [], untaps: [] };
   const clock = { t: 0 };
   class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} cancelScheduledValues() {} }
   class AudioContext {
     constructor() { this.state = "running"; this.destination = {}; }
     get currentTime() { return clock.t; }
     resume() { return Promise.resolve(); }
-    createGain() { audio.gains++; return { gain: new AudioParam(), connect() {} }; }
+    createGain() { audio.gains++; return { gain: new AudioParam(),
+      connect(node) { if (node && node.stream) audio.taps.push(node); },
+      disconnect(node) { audio.untaps.push(node); } }; }
+    createMediaStreamDestination() { return { stream: { destination: true }, channelCount: 2, connect() {} }; }
+    createMediaStreamSource(input) { const n = { input, connected: [], connect(d) { n.connected.push(d); },
+      disconnect() { n.connected = []; } }; return n; }
+    // decodes any take to one second of stereo 48 kHz
+    decodeAudioData() { return Promise.resolve({ numberOfChannels: 2, sampleRate: 48000,
+      getChannelData: () => new Float32Array(48000).fill(0.25) }); }
     createOscillator() { audio.oscillators++; return { type: "sine", frequency: new AudioParam(), connect() {},
       start(t) { audio.starts++; audio.startTimes.push(t); }, stop() { audio.stops++; } }; }
     createBiquadFilter() { return { type: "lowpass", frequency: new AudioParam(), connect() {} }; }
@@ -124,10 +134,42 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     return Promise.resolve({ ok: body !== "Not Found", text: () => Promise.resolve(body) });
   };
   const navigator = { userAgent: "" };
+  // the recorder's world: what was asked of getUserMedia, each MediaRecorder built,
+  // and every blob URL minted or revoked
+  const rec = { asked: [], recorders: [], urls: [], revoked: [], tracksStopped: 0 };
+  const mediaOpts = media === true ? {} : media || {};
+  const types = mediaOpts.types ?? ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  class MediaRecorder {
+    static isTypeSupported(t) { return types.includes(t); }
+    constructor(stream, opts = {}) {
+      this.stream = stream; this.opts = opts; this.mimeType = opts.mimeType ?? ""; this.state = "inactive";
+      rec.recorders.push(this);
+    }
+    start(slice) { this.state = "recording"; this.slice = slice; }
+    stop() {
+      this.state = "inactive";
+      if (this.ondataavailable) this.ondataavailable({ data: new Blob(["x".repeat(3000)]) });
+      if (this.onstop) this.onstop();
+    }
+  }
+  if (media) {
+    navigator.mediaDevices = {
+      getUserMedia(c) {
+        rec.asked.push(c);
+        if (mediaOpts.deny) return Promise.reject(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
+        return Promise.resolve({ getTracks: () => [{ stop() { rec.tracksStopped++; } }] });
+      },
+      enumerateDevices: () => Promise.resolve(mediaOpts.devices ?? []),
+      addEventListener() {},
+    };
+  }
+  const URLForApp = { createObjectURL: b => { const u = `blob:${rec.urls.length}`; rec.urls.push({ u, b }); return u; },
+    revokeObjectURL: u => rec.revoked.push(u) };
   const context = vm.createContext({
     console, document, window, Math: MathForApp, location, fetch, navigator,
     btoa: (str) => Buffer.from(str, "binary").toString("base64"),
     ...(audioMode === false ? {} : { Audio: AudioEl }),
+    ...(media ? { MediaRecorder } : {}), Blob, URL: URLForApp, Date,
     setTimeout: fn => { fn(); return 1; },
     setInterval: fn => { const id = ++intervalID; intervals.set(id, fn); return id; },
     clearInterval: id => intervals.delete(id),
@@ -157,6 +199,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
+    toggleRecord,stopRecording,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
     getState:()=>({key:state.key,view:state.view,labelMode:state.labelMode,chord:state.chord,reg:state.reg,chartOpen:state.chartOpen,boxLock:state.boxLock,droneNodes:state.droneHandle,clickTimer:state.clickTimer,bpm:state.bpm,timerSeconds:state.timerSeconds,timerInitial:state.timerInitial,timerHandle:state.timerHandle,ladderRound:state.ladderRound,
@@ -165,7 +209,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // advance(seconds) moves the audio clock on and lets every running loop catch up,
   // which is what the browser's 25 ms pump timer does in real life.
   const advance = seconds => { clock.t += seconds; for (const fn of [...intervals.values()]) fn(); };
-  return { app: context.appTest, document, audio, intervals, fetched, audioElements, clock, advance,
+  return { app: context.appTest, document, audio, intervals, fetched, audioElements, clock, advance, rec,
     closed: () => windowClosed };
 }
 
@@ -2372,4 +2416,179 @@ test("the static live demo shows no Quit control, because there is no app to sto
   await new Promise(r => setImmediate(r));
   assert.equal(document.getElementById("approw").hidden, true);
   assert.equal(fetched.length, 0, "and it does not probe the host for an app that cannot be there");
+});
+
+// ---------- recording ----------
+// Recording is promise-driven (getUserMedia, decodeAudioData, blob.arrayBuffer), so
+// the tests let those settle before looking.
+const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(r => setImmediate(r)); };
+
+test("without microphone access the Record row is switched off and says why", () => {
+  const { document } = makeRuntime();
+  assert.equal(document.getElementById("recbtn").disabled, true);
+  assert.equal(document.getElementById("recrow").classList.contains("off"), true);
+  assert.match(document.getElementById("recmsg").textContent, /secure page/);
+});
+
+test("a guitar-only take asks for an unprocessed mono input and records it at 96 kbps", async () => {
+  const { app, document, rec, audio } = makeRuntime({ media: true });
+  app.setKey(9); app.setBpm(120);
+  document.getElementById("recbtn").click();
+  await settle();
+  const want = rec.asked[0].audio;
+  assert.equal(want.echoCancellation, false);
+  assert.equal(want.noiseSuppression, false);
+  assert.equal(want.autoGainControl, false);
+  assert.equal(want.channelCount.ideal, 1);
+  const r = rec.recorders[0];
+  assert.equal(r.opts.audioBitsPerSecond, 96000);
+  assert.equal(r.opts.mimeType, "audio/webm;codecs=opus");
+  assert.equal(r.stream.destination, true, "recorded through Web Audio");
+  assert.equal(app.getRec().dest.channelCount, 1, "downmixed to one channel");
+  assert.equal(audio.taps.length, 0, "no backing in the take");
+  assert.equal(r.state, "recording");
+  assert.equal(document.getElementById("recbtn").textContent, "Stop");
+  assert.match(document.getElementById("recmsg").textContent, /Recording guitar only/);
+
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(rec.tracksStopped, 1, "the input is released when the take ends");
+  const take = app.getTake();
+  assert.match(take.name, /^practice-A-120bpm-\d{8}-\d{6}\.webm$/);
+  assert.equal(take.wav.name, take.name.replace(".webm", ".wav"));
+  assert.equal(document.getElementById("recplay").hidden, false);
+  assert.equal(document.getElementById("recplay").src, take.url);
+  assert.equal(document.getElementById("recdlc").textContent, "Download compressed (3 KB)");
+  // one second of 48 kHz mono, 16-bit, plus the 44-byte header
+  assert.equal(take.wav.blob.size, 44 + 48000 * 2);
+  assert.equal(document.getElementById("recdlw").textContent, "Download WAV (94 KB)");
+  const header = new DataView(await take.wav.blob.arrayBuffer());
+  assert.equal(header.getUint16(22, true), 1, "mono WAV");
+  assert.equal(header.getUint32(24, true), 48000);
+
+  document.getElementById("recdlw").click();
+  const link = document.body.children.at(-1);
+  assert.equal(link.download, take.wav.name);
+  assert.equal(link.href, take.wav.url);
+  assert.equal(document.getElementById("recbtn").textContent, "Record");
+});
+
+test("the container falls back to MP4/AAC, then to the browser's own choice", () => {
+  assert.equal(makeRuntime({ media: { types: ["audio/mp4;codecs=mp4a.40.2", "audio/mp4"] } }).app.recMime(),
+    "audio/mp4;codecs=mp4a.40.2");
+  assert.equal(makeRuntime({ media: { types: [] } }).app.recMime(), "");
+  const { app } = makeRuntime({ media: true });
+  assert.equal(app.recExt("audio/mp4;codecs=mp4a.40.2"), "m4a");
+  assert.equal(app.recExt("audio/webm;codecs=opus"), "webm");
+  app.setKey(1); app.setBpm(96);
+  assert.equal(app.takeName(new Date(2026, 8, 18, 9, 5, 7), "m4a"), "practice-Csharp-96bpm-20260918-090507.m4a");
+  assert.equal(app.fileSize(512), "512 B");
+  assert.equal(app.fileSize(4.2 * 1048576), "4.2 MB");
+});
+
+test("guitar + backing taps the Web Audio mix into the take and records stereo", async () => {
+  const { app, document, rec, audio } = makeRuntime({ media: true });
+  document.getElementById("recmix").value = "backing";
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(rec.asked[0].audio.channelCount, undefined, "no mono request");
+  assert.equal(app.getRec().dest.channelCount, 2);
+  assert.equal(audio.taps.length, 1, "the engine's master bus feeds the take");
+  assert.equal(audio.taps[0], app.getRec().dest);
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(audio.untaps.at(-1), audio.taps[0], "untapped when the take ends");
+  const header = new DataView(await app.getTake().wav.blob.arrayBuffer());
+  assert.equal(header.getUint16(22, true), 2, "stereo WAV");
+});
+
+test("backing with the compatibility engine falls back to guitar only and says so", async () => {
+  const { app, document, rec } = makeRuntime({ media: true, audio: "wav" });
+  document.getElementById("recmix").value = "backing";
+  document.getElementById("recbtn").click();
+  await settle();
+  const r = rec.recorders[0];
+  assert.equal(r.stream.destination, undefined, "the raw input is recorded");
+  assert.equal(rec.asked[0].audio.channelCount.ideal, 1);
+  assert.match(document.getElementById("recmsg").textContent, /compatibility sound mode.*guitar only/);
+  document.getElementById("recbtn").click();
+  await settle();
+  // no AudioContext to decode with, so only the compressed file is offered
+  assert.equal(document.getElementById("recdlc").hidden, false);
+  assert.equal(document.getElementById("recdlw").hidden, true);
+  assert.match(document.getElementById("recmsg").textContent, /no WAV copy/);
+  assert.equal(app.getTake().wav, null);
+});
+
+test("an armed take starts on bar 1 after the count-in and ends with the trainer", async () => {
+  const { app, document, rec, advance } = makeRuntime({ media: true });
+  app.setBpm(120);
+  document.getElementById("recarm").checked = true;
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(app.getRec().phase, "armed");
+  assert.equal(rec.recorders[0].state, "inactive");
+  assert.match(document.getElementById("recmsg").textContent, /Armed/);
+  assert.equal(document.getElementById("recarm").disabled, true);
+
+  app.toggleTrainer();                        // books the first count-in beat
+  for (let i = 0; i < 2; i++) advance(0.5);   // count-in beats 2 and 3 are booked
+  assert.equal(app.getState().trainerCount, 1);
+  assert.equal(rec.recorders[0].state, "inactive", "still counting in");
+  advance(0.5);   // books count-in beat 4 and, within the look-ahead, bar 1
+  advance(0.5);
+  assert.equal(app.getState().trainerBar, 0);
+  assert.equal(rec.recorders[0].state, "recording", "started on the bar-1 downbeat");
+  assert.equal(app.getRec().fromTrainer, true);
+
+  app.toggleTrainer();                        // Stop
+  await settle();
+  assert.equal(rec.recorders[0].state, "inactive");
+  assert.ok(app.getTake(), "stopping the trainer saved the take");
+});
+
+test("a refused microphone is explained, and Cancel releases an armed input", async () => {
+  const denied = makeRuntime({ media: { deny: true } });
+  denied.document.getElementById("recbtn").click();
+  await settle();
+  assert.match(denied.document.getElementById("recmsg").textContent, /refused/);
+  assert.equal(denied.document.getElementById("recbtn").textContent, "Record");
+
+  const { app, document, rec } = makeRuntime({ media: true });
+  document.getElementById("recarm").checked = true;
+  document.getElementById("recbtn").click();
+  await settle();
+  document.getElementById("recbtn").click();   // Cancel
+  assert.equal(app.getRec(), null);
+  assert.equal(rec.tracksStopped, 1);
+  assert.equal(app.getTake(), null);
+  assert.equal(document.getElementById("recarm").disabled, false);
+});
+
+test("input devices are listed by name, escaped, and the choice is used", async () => {
+  const { document, rec } = makeRuntime({ media: { devices: [
+    { kind: "audioinput", deviceId: "default", label: "Default" },
+    { kind: "audioinput", deviceId: "abc", label: "Scarlett <2i2>" },
+    { kind: "videoinput", deviceId: "cam", label: "Camera" },
+  ] } });
+  await settle();
+  const html = document.getElementById("recinput").innerHTML;
+  assert.match(html, /<option value="abc">Scarlett &lt;2i2&gt;<\/option>/);
+  assert.doesNotMatch(html, /Camera|value="default"/);
+  document.getElementById("recinput").onchange({ target: { value: "abc" } });
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(rec.asked[0].audio.deviceId.exact, "abc");
+});
+
+test("the WAV encoder writes a valid interleaved 16-bit header", () => {
+  const { app } = makeRuntime();
+  const bytes = app.wavBytes([new Float32Array([1, -1]), new Float32Array([0, 0.5])], 44100);
+  const v = new DataView(bytes.buffer);
+  assert.equal(bytes.length, 44 + 2 * 2 * 2);
+  assert.equal(String.fromCharCode(...bytes.slice(0, 4)), "RIFF");
+  assert.equal(v.getUint16(22, true), 2);
+  assert.equal(v.getUint32(28, true), 44100 * 4, "byte rate");
+  assert.equal(v.getUint16(32, true), 4, "block align");
+  assert.deepEqual([v.getInt16(44, true), v.getInt16(46, true), v.getInt16(48, true)], [32767, 0, -32768]);
 });

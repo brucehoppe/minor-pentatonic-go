@@ -34,6 +34,9 @@ const state={
   rhythm:[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0], rhythmTimer:null, rhythmStep:0,
   // audio - the chosen engine, why there is none, and what is sounding
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
+  // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
+  // input device, and the last finished take with its blob URLs
+  rec:null, recDevice:"", recTake:null,
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
   triadKind:"maj", triadSet:"123",
@@ -1523,10 +1526,12 @@ function trainerTick(when=0){const form=currentForm();
     atBeat(when,()=>{if(state.trainerTimer)document.getElementById("trainerreadout").textContent=text;});return;}
   if(state.trainerBar<0)state.trainerBar=0;
   const bar=state.trainerBar,beat=state.trainerBeat;
+  if(bar===0&&beat===0)recOnBarOne(when);
   trainerSound(symbolAt(form.chords[bar],beat),beat,when);
   atBeat(when,()=>{if(state.trainerTimer)renderTrainer(bar,beat);});
   state.trainerBeat++;if(state.trainerBeat===4){state.trainerBeat=0;state.trainerBar=(state.trainerBar+1)%12;}}
-function stopTrainer(){if(state.trainerTimer){clearInterval(state.trainerTimer);state.trainerTimer=null;}const b=document.getElementById("toggletrainer");
+function stopTrainer(){if(state.trainerTimer){clearInterval(state.trainerTimer);state.trainerTimer=null;}
+  if(state.rec&&state.rec.fromTrainer)stopRecording();const b=document.getElementById("toggletrainer");
   if(b){b.textContent="Start with count-in";b.setAttribute("aria-pressed",false);}}
 function toggleTrainer(){if(state.trainerTimer){stopTrainer();return;}state.trainerCount=4;state.trainerBar=-1;state.trainerBeat=0;
   const b=document.getElementById("toggletrainer");b.textContent="Stop";b.setAttribute("aria-pressed",true);
@@ -1566,6 +1571,8 @@ function toggleRhythm(){if(state.rhythmTimer){stopRhythm();renderRhythm();return
 // Both satisfy the same interface:
 //   name, state(), resume(), note(midi,opt), blip(hz,opt), chord(hzs,opt),
 //   startDrone(hzs) -> {stop()}, stopAll()
+// webAudioEngine also offers tap(node)/untap(node): everything it plays passes one
+// master gain, and a tap copies that mix to another node — the recorder's way in.
 
 const freq = pc => 110 * Math.pow(2, (pc - 9) / 12);
 const STRING_MIDI = [64, 59, 55, 50, 45, 40];   // high e first, standard tuning
@@ -1575,6 +1582,8 @@ const midiFreq = m => 440 * Math.pow(2, (m - 69) / 12);
 // ---- backend 1: Web Audio ----
 function webAudioEngine(ac) {
   const at = when => ac.currentTime + when;
+  const master = ac.createGain();
+  master.connect(ac.destination);
   // one plucked string: two detuned saws plus an octave, through a falling low-pass
   const voice = (f, t, dur, vol) => {
     const g = ac.createGain(), lp = ac.createBiquadFilter();
@@ -1584,7 +1593,7 @@ function webAudioEngine(ac) {
     g.gain.setValueAtTime(.0001, t);
     g.gain.exponentialRampToValueAtTime(.2 * vol, t + .012);
     g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    lp.connect(g); g.connect(ac.destination);
+    lp.connect(g); g.connect(master);
     [[1, 0], [1.003, -4], [2, -9]].forEach(([ratio, db]) => {
       const o = ac.createOscillator(), og = ac.createGain();
       o.type = "sawtooth"; o.frequency.value = f * ratio;
@@ -1595,14 +1604,17 @@ function webAudioEngine(ac) {
   const ping = (hz, t, dur, vol, type) => {
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = type || "sine"; o.frequency.value = hz;
-    o.connect(g); g.connect(ac.destination);
+    o.connect(g); g.connect(master);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(.001, t + dur);
     o.start(t); o.stop(t + dur + .02);
   };
   return {
     name: "Web Audio",
+    context: ac,
     now: () => ac.currentTime,
+    tap: node => master.connect(node),
+    untap: node => { try { master.disconnect(node); } catch (e) { /* never connected */ } },
     state: () => ac.state,
     resume: () => (ac.state === "suspended" ? ac.resume() : Promise.resolve()),
     note(m, { when = 0, dur = .55, vol = .5 } = {}) { voice(midiFreq(m), at(when), dur, vol); },
@@ -1613,7 +1625,7 @@ function webAudioEngine(ac) {
     },
     startDrone(hzs) {
       const g = ac.createGain();
-      g.gain.value = .0001; g.connect(ac.destination);
+      g.gain.value = .0001; g.connect(master);
       g.gain.exponentialRampToValueAtTime(.09, ac.currentTime + .6);
       const nodes = hzs.map((f, i) => {
         const o = ac.createOscillator();
@@ -1634,6 +1646,26 @@ function webAudioEngine(ac) {
   };
 }
 
+// 16-bit PCM WAV from one Float32Array per channel. The compatibility engine renders
+// its sounds through this, and the recorder uses it for the "Download WAV" copy.
+function wavBytes(channels, sampleRate) {
+  const ch = channels.length, n = channels[0].length, size = n * ch * 2;
+  const buf = new ArrayBuffer(44 + size), v = new DataView(buf);
+  const tag = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+  tag(0, "RIFF"); v.setUint32(4, 36 + size, true); tag(8, "WAVE");
+  tag(12, "fmt "); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, ch, true);                        // PCM
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * ch * 2, true);
+  v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true);                   // 16-bit
+  tag(36, "data"); v.setUint32(40, size, true);
+  for (let i = 0, off = 44; i < n; i++)
+    for (let c = 0; c < ch; c++, off += 2) {
+      const x = Math.max(-1, Math.min(1, channels[c][i]));
+      v.setInt16(off, x < 0 ? x * 0x8000 : x * 0x7FFF, true);
+    }
+  return new Uint8Array(buf);
+}
+
 // ---- backend 2: rendered WAV through <audio> ----
 function wavEngine() {
   // Each distinct sound (pitch x length x volume) is rendered once and kept as a
@@ -1648,21 +1680,7 @@ function wavEngine() {
       s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(s);
   };
-  const toWav = samples => {
-    const n = samples.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
-    const tag = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
-    tag(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); tag(8, "WAVE");
-    tag(12, "fmt "); v.setUint32(16, 16, true);
-    v.setUint16(20, 1, true); v.setUint16(22, 1, true);          // PCM, mono
-    v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true);
-    v.setUint16(32, 2, true); v.setUint16(34, 16, true);         // 16-bit
-    tag(36, "data"); v.setUint32(40, n * 2, true);
-    for (let i = 0; i < n; i++) {
-      const x = Math.max(-1, Math.min(1, samples[i]));
-      v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7FFF, true);
-    }
-    return "data:audio/wav;base64," + toBase64(new Uint8Array(buf));
-  };
+  const toWav = samples => "data:audio/wav;base64," + toBase64(wavBytes([samples], SR));
 
   // Additive synthesis, band-limited by construction: partials above Nyquist are
   // simply never summed, so there is no aliasing to filter out afterwards.
@@ -1932,6 +1950,189 @@ function restartClick() {
   if (state.trainerTimer) { stopTrainer(); toggleTrainer(); }
   if (state.rhythmTimer) { stopRhythm(); toggleRhythm(); }
 }
+// ---------- recording ----------
+// Records a take from an audio input — a guitar interface or a microphone. The
+// browser's speech processing is switched off: echo cancellation, noise suppression
+// and auto gain all mangle a guitar. "Guitar + backing" mixes the input with the Web
+// Audio engine's master bus in one MediaStreamDestination. The compatibility engine
+// plays through <audio> elements, which cannot be tapped, so there a take is guitar
+// only and the status line says so. The input is never sent to the speakers: you
+// already hear your guitar, and a live mic into speakers feeds back.
+//
+// A take gives two files: the MediaRecorder original (small, for sharing) and a 16-bit
+// WAV decoded from it and written by wavBytes (for editing). The recorder can also be
+// armed to start on the downbeat of bar 1, booked on the audio clock by trainerTick.
+const REC_TYPES=["audio/webm;codecs=opus","audio/webm","audio/mp4;codecs=mp4a.40.2","audio/mp4"];
+const REC_ROW=`<div class="row" id="recrow">
+  <span class="lbl">Record</span>
+  <select id="recinput" aria-label="Input device"><option value="">Default input</option></select>
+  <select id="recmix" aria-label="What to record"><option value="guitar">Guitar only</option><option value="backing">Guitar + backing</option></select>
+  <label style="font-size:12px;display:flex;gap:5px;align-items:center"><input type="checkbox" id="recarm">Start on bar 1 of the 12-bar trainer</label>
+  <button id="recbtn" aria-pressed="false">Record</button>
+  <audio id="recplay" controls hidden style="height:32px;max-width:100%"></audio>
+  <button id="recdlc" hidden>Download compressed</button>
+  <button id="recdlw" hidden>Download WAV</button>
+  <span id="recmsg" style="font-size:11.5px;opacity:.75;flex-basis:100%;line-height:1.5"></span>
+</div>`;
+function recUnsupported(){
+  const md=typeof navigator!=="undefined"&&navigator.mediaDevices;
+  if(!md||typeof md.getUserMedia!=="function")
+    return "Recording needs microphone access, which browsers only give a secure page (https, or the app on this computer).";
+  if(typeof MediaRecorder!=="function")return "This browser cannot record audio.";
+  return "";}
+// the first container this browser can write, or "" to let it choose
+function recMime(){
+  if(typeof MediaRecorder.isTypeSupported!=="function")return "";
+  return REC_TYPES.find(t=>MediaRecorder.isTypeSupported(t))||"";}
+const recExt=mime=>/mp4|aac/.test(mime)?"m4a":/ogg/.test(mime)?"ogg":"webm";
+const fileSize=n=>n<1024?n+" B":n<1048576?Math.round(n/1024)+" KB":(n/1048576).toFixed(1)+" MB";
+// practice-<key>-<bpm>bpm-<yyyymmdd-hhmmss>.<ext>; the sharp is spelled out because
+// "#" in a file name breaks the link to it.
+function takeName(date,ext){
+  const p=n=>String(n).padStart(2,"0");
+  const stamp=`${date.getFullYear()}${p(date.getMonth()+1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
+  return `practice-${NOTES[state.key].replace("#","sharp")}-${state.bpm}bpm-${stamp}.${ext}`;}
+function recSay(text){document.getElementById("recmsg").textContent=text;}
+function recButtons(){
+  const r=state.rec,phase=r?r.phase:"idle",b=document.getElementById("recbtn");
+  b.textContent={idle:"Record",opening:"Cancel",armed:"Cancel",starting:"Cancel",recording:"Stop",finishing:"Saving…"}[phase];
+  b.disabled=phase==="finishing";
+  b.setAttribute("aria-pressed",phase!=="idle");
+  // what a take records is fixed once its input is open
+  ["recinput","recmix","recarm"].forEach(id=>{document.getElementById(id).disabled=phase!=="idle";});}
+// Device labels stay blank until the page has been allowed an input once, so this
+// runs again after every take opens its input.
+function listInputs(){
+  const md=navigator.mediaDevices;
+  if(!md||typeof md.enumerateDevices!=="function")return Promise.resolve();
+  return md.enumerateDevices().then(list=>{
+    const inputs=list.filter(d=>d.kind==="audioinput"&&d.deviceId&&d.deviceId!=="default");
+    const sel=document.getElementById("recinput");
+    sel.innerHTML=`<option value="">Default input</option>`+inputs.map((d,i)=>
+      `<option value="${escapeHTML(d.deviceId)}">${escapeHTML(d.label||"Input "+(i+1))}</option>`).join("");
+    if(!inputs.some(d=>d.deviceId===state.recDevice))state.recDevice="";
+    sel.value=state.recDevice;
+  }).catch(()=>{});}
+// Opens the input and builds a MediaRecorder for it, ready to start.
+function openTake(){
+  const a=audio();   // inside the click, so the engine is allowed to start
+  const wantBacking=document.getElementById("recmix").value==="backing";
+  const ac=a&&a.context||null, backing=wantBacking&&!!(ac&&a.tap), mono=!backing;
+  const note=wantBacking&&!backing?(a?"Backing can't be captured in compatibility sound mode, so this take is guitar only."
+    :"There is no sound engine to capture backing from, so this take is guitar only."):"";
+  const want={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
+  if(state.recDevice)want.deviceId={exact:state.recDevice};
+  if(mono)want.channelCount={ideal:1};
+  return navigator.mediaDevices.getUserMedia({audio:want}).then(input=>{
+    let stream=input,src=null,dest=null;
+    // Through Web Audio when there is one: that is where backing is mixed in, and a
+    // one-channel destination downmixes a stereo interface to a true mono take.
+    if(ac&&ac.createMediaStreamDestination){
+      dest=ac.createMediaStreamDestination();
+      dest.channelCount=mono?1:2;dest.channelCountMode="explicit";dest.channelInterpretation="speakers";
+      src=ac.createMediaStreamSource(input);src.connect(dest);
+      if(backing)a.tap(dest);
+      stream=dest.stream;}
+    const mime=recMime(),opts={audioBitsPerSecond:96000};
+    if(mime)opts.mimeType=mime;
+    const recorder=new MediaRecorder(stream,opts);
+    const take={phase:"ready",input,src,dest,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,note};
+    recorder.ondataavailable=e=>{if(e.data&&e.data.size)take.chunks.push(e.data);};
+    recorder.onstop=()=>finishTake(take);
+    listInputs();
+    return take;});}
+function closeTake(t){
+  if(t.input&&t.input.getTracks)t.input.getTracks().forEach(tr=>tr.stop());
+  if(t.src)try{t.src.disconnect();}catch(e){/* already gone */}
+  if(t.backing&&state.engine&&state.engine.untap)state.engine.untap(t.dest);}
+function inputError(e){
+  const n=e&&e.name;
+  if(n==="NotAllowedError"||n==="SecurityError")return "Microphone access was refused. Allow it for this page in the browser's site settings, then press Record again.";
+  if(n==="NotFoundError"||n==="OverconstrainedError")return "That input isn't available. Pick another in the list, or plug it back in.";
+  return "The input couldn't be opened"+(e&&e.message?": "+e.message:".");}
+function toggleRecord(){
+  const r=state.rec;
+  if(r&&r.phase==="recording"){stopRecording();return;}
+  if(r){cancelRecording();return;}
+  const armed=!!document.getElementById("recarm").checked;
+  const pending=state.rec={phase:"opening"};
+  recButtons();recSay("Opening the input…");
+  return openTake().then(take=>{
+    if(state.rec!==pending){closeTake(take);return;}   // cancelled while it opened
+    state.rec=take;
+    if(armed){take.phase="armed";recButtons();
+      recSay("Armed. Start the 12-bar trainer: recording begins on bar 1, after the count-in."+(take.note?" "+take.note:""));}
+    else startTake(take,false);
+  }).catch(e=>{if(state.rec===pending){state.rec=null;recButtons();recSay(inputError(e));}});}
+function startTake(t,fromTrainer){
+  t.phase="recording";t.fromTrainer=fromTrainer;t.date=new Date();t.t0=Date.now();
+  t.recorder.start(1000);
+  const say=()=>{const s=Math.floor((Date.now()-t.t0)/1000);
+    recSay(`Recording ${t.backing?"guitar + backing":"guitar only"} · ${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`
+      +(fromTrainer?" · stopping the trainer ends the take":"")+(t.note?" · "+t.note:""));};
+  say();t.clock=setInterval(say,250);
+  recButtons();}
+// Called by trainerTick for every bar-1 downbeat, when seconds before it sounds.
+function recOnBarOne(when){
+  const r=state.rec;
+  if(!r||r.phase!=="armed")return;
+  r.phase="starting";
+  atBeat(when,()=>{if(state.rec===r&&r.phase==="starting")startTake(r,true);});}
+function stopRecording(){
+  const r=state.rec;
+  if(!r||r.phase!=="recording")return;
+  r.phase="finishing";clearInterval(r.clock);
+  recButtons();recSay("Saving the take…");
+  r.recorder.stop();}
+function cancelRecording(){
+  const r=state.rec;
+  if(!r)return;
+  state.rec=null;
+  if(r.clock)clearInterval(r.clock);
+  if(r.recorder){r.recorder.onstop=null;if(r.recorder.state==="recording")r.recorder.stop();closeTake(r);}
+  recButtons();recSay("Recording cancelled.");}
+function releaseTake(t){
+  [t,t.wav].forEach(f=>{if(f&&f.url)try{URL.revokeObjectURL(f.url);}catch(e){/* already released */}});}
+// Decodes the compressed take and writes it out again as PCM WAV. A guitar-only take
+// keeps one channel, so its WAV is mono too.
+function takeToWav(blob,mono){
+  const a=state.engine,Ctor=audioContextCtor();
+  const own=a&&a.context?null:(Ctor?new Ctor():null), ac=a&&a.context||own;
+  if(!ac||!ac.decodeAudioData)return Promise.reject(new Error("no decoder"));
+  return blob.arrayBuffer()
+    .then(buf=>new Promise((ok,fail)=>{const p=ac.decodeAudioData(buf,ok,fail);if(p&&p.then)p.then(ok,fail);}))
+    .then(ab=>{
+      const chans=[];
+      for(let c=0;c<(mono?1:ab.numberOfChannels);c++)chans.push(ab.getChannelData(c));
+      return new Blob([wavBytes(chans,ab.sampleRate)],{type:"audio/wav"});})
+    .finally(()=>{if(own&&own.close)own.close();});}
+function finishTake(t){
+  closeTake(t);
+  const blob=new Blob(t.chunks,{type:t.mime||"audio/webm"});
+  if(state.recTake)releaseTake(state.recTake);
+  const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime)),wav:null};
+  state.rec=null;
+  const secs=Math.round((Date.now()-t.t0)/1000);
+  const what=`Take saved: ${secs} s, ${t.mono?"mono":"stereo"}.`+(t.note?" "+t.note:"");
+  showTake();recButtons();recSay(what+" Making the WAV…");
+  return takeToWav(blob,t.mono).then(wav=>{
+    if(state.recTake!==kept)return;
+    kept.wav={blob:wav,url:URL.createObjectURL(wav),name:kept.name.replace(/\.\w+$/,".wav")};
+    showTake();recSay(what);
+  },()=>{if(state.recTake===kept)recSay(what+" This browser can't decode it, so there is no WAV copy.");});}
+function showTake(){
+  const t=state.recTake,play=document.getElementById("recplay");
+  const c=document.getElementById("recdlc"),w=document.getElementById("recdlw");
+  play.hidden=c.hidden=!t;w.hidden=!(t&&t.wav);
+  if(!t)return;
+  play.src=t.url;
+  c.textContent=`Download compressed (${fileSize(t.blob.size)})`;
+  if(t.wav)w.textContent=`Download WAV (${fileSize(t.wav.blob.size)})`;}
+function saveFile(f){
+  if(!f)return;
+  const a=document.createElement("a");
+  a.href=f.url;a.download=f.name;a.hidden=true;
+  document.body.appendChild(a);a.click();if(a.remove)a.remove();}
 // ---------- major pentatonic: the diagonal shape ----------
 // A different diagram from everything above: the neck runs downwards, low E on the
 // left, so one continuous run up the fretboard reads as a single diagonal. It keeps
@@ -3023,7 +3224,7 @@ document.getElementById("majorarrows").onclick=function(){state.majorArrows=!sta
 // replace the desk with a plain notice rather than leave a page that still looks
 // live and answers no requests.
 function silenceEverything(){
-  stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();
+  stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();stopRecording();
   if(state.clickTimer){clearInterval(state.clickTimer);state.clickTimer=null;}
 }
 function farewellPage(){
@@ -3091,5 +3292,18 @@ document.getElementById("bluesform").innerHTML=(()=>{
 document.getElementById("bluesform").onchange=resetTrainer;
 document.getElementById("newrhythm").onclick=generateRhythm;
 document.getElementById("togglerhythm").onclick=toggleRhythm;
+// The Record row sits under Play along. Where the browser cannot record, it stays
+// visible but switched off, with the reason — the same as the audio controls.
+(()=>{const play=document.getElementById("play");
+  if(play.insertAdjacentHTML)play.insertAdjacentHTML("afterend",REC_ROW);
+  const why=recUnsupported();
+  if(why){["recinput","recmix","recarm","recbtn"].forEach(id=>{document.getElementById(id).disabled=true;});
+    document.getElementById("recrow").classList.add("off");recSay(why);return;}
+  document.getElementById("recbtn").onclick=toggleRecord;
+  document.getElementById("recinput").onchange=e=>{state.recDevice=e.target.value;};
+  document.getElementById("recdlc").onclick=()=>saveFile(state.recTake);
+  document.getElementById("recdlw").onclick=()=>saveFile(state.recTake&&state.recTake.wav);
+  if(navigator.mediaDevices.addEventListener)navigator.mediaDevices.addEventListener("devicechange",listInputs);
+  listInputs();})();
 loadSolo();
 render();

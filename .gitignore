@@ -6,6 +6,10 @@ dist/
 # macOS
 .DS_Store
 
+# Launch-video work files and raw recordings (compressed takes go in docs/audio/)
+brag-output*/
+*.wav
+
 # Local-only files that are not part of the project
 /iTermBrowserPlugin.app/
 /guitar-program.html
