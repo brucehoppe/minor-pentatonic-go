@@ -88,6 +88,7 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $out = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1 -ZipPath dist/minor-pentatonic-ci-windows-11-x64.zip -NoLaunch 2>&1 | Out-String
           if ($LASTEXITCODE -eq 0 -or $out -notmatch 'Checksum mismatch') { throw "tampered ZIP was not refused: $out" }
+          exit 0   # the runner otherwise exits with the installer's expected failure code
       - name: Uninstall with the entry Settings > Apps would run
         shell: powershell
         run: |
