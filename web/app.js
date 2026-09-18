@@ -1292,7 +1292,10 @@ const CHECKLIST=["Play Box 1 cleanly in both directions.",
   "Complete the song with simplified rhythm and no restart.",
   "Preserve the contrast between quiet verses and strong choruses."];
 const CHECK_KEY="minor-pentatonic-guide-checklist-v1";
-function readChecks(){try{return JSON.parse(window.localStorage.getItem(CHECK_KEY)||"[]");}catch(e){return [];}}
+// Stored data is read back defensively: anything on this origin can write it, and a
+// wrong shape must not stop the view from drawing.
+function readChecks(){try{const v=JSON.parse(window.localStorage.getItem(CHECK_KEY)||"[]");
+  return Array.isArray(v)?v.map(Boolean):[];}catch(e){return [];}}
 function writeChecks(v){try{window.localStorage.setItem(CHECK_KEY,JSON.stringify(v));}catch(e){}}
 
 function renderGuide(){
@@ -1388,7 +1391,8 @@ function resetLadder(){state.bpm=state.ladderStart;state.ladderRound=1;document.
   document.getElementById("bpmv").textContent=state.bpm+" bpm";document.getElementById("ladderbpm").textContent=state.bpm;
   document.getElementById("ladderstatus").textContent="Round 1 · starting tempo";restartClick();}
 const LOG_KEY="minor-pentatonic-practice-log-v1";
-function readLog(){try{return JSON.parse(window.localStorage.getItem(LOG_KEY)||"[]");}catch(e){return [];}}
+function readLog(){try{const v=JSON.parse(window.localStorage.getItem(LOG_KEY)||"[]");
+  return Array.isArray(v)?v.filter(x=>x&&typeof x==="object"):[];}catch(e){return [];}}
 function writeLog(log){try{window.localStorage.setItem(LOG_KEY,JSON.stringify(log));}catch(e){}}
 function renderLog(){const log=readLog(),host=document.getElementById("loglist");
   document.getElementById("logsummary").innerHTML=log.length?`<b>${log.length}</b> completed session${log.length===1?"":"s"} logged.`:"No completed sessions yet.";

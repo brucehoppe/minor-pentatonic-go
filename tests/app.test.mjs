@@ -2322,3 +2322,24 @@ test("drones fade out instead of cutting off", () => {
   for (const fn of [...wint.values()]) { fn(); fn(); fn(); fn(); fn(); }
   assert.equal(el.src, "", "but is released once the fade finishes");
 });
+
+test("hostile or malformed saved data can neither inject markup nor break a view", () => {
+  const { app, document } = makeRuntime();
+  const store = app.getState().storage;
+  const evil = '<img src=x onerror="alert(1)">';
+  for (const [key, value] of [
+    ["minor-pentatonic-practice-log-v1", JSON.stringify([{ date: evil, key: evil, bpm: evil }, null, 7, "x"])],
+    ["minor-pentatonic-guide-checklist-v1", JSON.stringify({ filter: 1, length: 3 })],
+    ["minor-pentatonic-solo-v1", JSON.stringify({ boxes: [evil, 2], run: [{ s: evil, o: 1 }] })],
+    ["minor-pentatonic-arrangements-v1", JSON.stringify({ a: evil, fa: 1, b: [], fb: null })],
+  ]) store.setItem(key, value);
+
+  assert.doesNotThrow(() => app.renderGuide(), "checklist view draws");
+  assert.doesNotThrow(() => app.completeSession(), "practice log draws");
+  assert.doesNotThrow(() => app.renderTheory(), "song projects draw");
+  assert.doesNotThrow(() => { app.loadSolo(); app.renderSolo(); }, "solo lab draws");
+  const log = document.getElementById("loglist").innerHTML;
+  assert.doesNotMatch(log, /<img/, "log entries are escaped");
+  assert.match(log, /&lt;img/, "and shown as text");
+  assert.ok(app.getState().soloBoxes.every(n => typeof n === "number"), "stored boxes are numbers only");
+});
