@@ -4,6 +4,19 @@ Coded by Bruce Hoppe
 
 A standalone Go application made from `reference/minor-pentatonic-boxes_2.html`. The full interactive page is embedded in the executable, so no web server, Go installation, or companion files are needed after compilation.
 
+![The practice desk: title, key selector and the full list of views](docs/screenshots/home.png)
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Five boxes: the whole neck plus each box on its own](docs/screenshots/five-boxes.png) | ![All 12 keys: Box 1 and Box 4 zones with the slide run, in every key](docs/screenshots/all-12-keys.png) |
+| **5 boxes** — every shape across the neck, and each box on its own | **All 12 keys** — Box 1 and Box 4 in every key, with the slide run between them |
+| ![Open tunings: root map and retuning guide for Open D](docs/screenshots/open-tunings.png) | ![12-bar trainer: the form, the current chord and its target tones](docs/screenshots/12-bar-trainer.png) |
+| **Open tunings** — where the roots sit after retuning, and how far to turn each peg | **12-bar trainer** — the form moves with the groove and names each chord's target tones |
+
+<p align="center"><img src="docs/screenshots/seven-licks.jpg" width="360" alt="Seven Licks lesson: the pull-off pair, with fretboard, tab and a practice note"><br><b>Seven Licks</b> — a supplementary written lesson</p>
+
 ## Layout
 
 ```
@@ -17,6 +30,7 @@ web/seven-licks.js   its script (pages carry no inline scripts; see Security)
 web/assets/*.png     images
 web/assets/fonts/    the bundled typefaces, plus their licences
 tests/app.test.mjs   headless frontend suite
+docs/screenshots/    images for this README; not embedded
 scripts/release.sh   consumer packages for macOS and Windows
 reference/           the original page the app was built from, with local font copies; not embedded
 ```
