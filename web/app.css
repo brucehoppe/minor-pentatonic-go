@@ -135,7 +135,7 @@
   .qn:focus-visible{outline:2px solid var(--pink)}
   ol{padding-left:18px;font-size:12.5px;line-height:1.7;margin:10px 0 0}
   ol b{color:var(--blue);font-weight:500}
-  section[hidden]{display:none}
+  [hidden]{display:none!important}   /* a class that sets display must not un-hide an element */
   .status{font-size:12px;margin-top:10px;min-height:18px}
   .status b{color:var(--pink)}
   .timerface{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:34px;font-weight:800;

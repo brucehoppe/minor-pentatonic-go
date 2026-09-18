@@ -2592,3 +2592,10 @@ test("the WAV encoder writes a valid interleaved 16-bit header", () => {
   assert.equal(v.getUint16(32, true), 4, "block align");
   assert.deepEqual([v.getInt16(44, true), v.getInt16(46, true), v.getInt16(48, true)], [32767, 0, -32768]);
 });
+
+test("the hidden attribute wins over any display rule, so Quit stays hidden on the demo", () => {
+  // .row sets display:flex, which used to override hidden and show the App row on
+  // the static demo. The test DOM applies no CSS, so check the stylesheet itself.
+  const css = readFileSync(new URL("../web/app.css", import.meta.url), "utf8");
+  assert.match(css, /(^|\s)\[hidden\]\{display:none!important\}/);
+});

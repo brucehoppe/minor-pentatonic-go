@@ -17,6 +17,8 @@ a second release on the same day.
 - Releases are built and published by CI from a version tag, with build
   provenance attestations.
 - Security policy, contributing guide and issue templates.
+- Fixed: the Quit row showed on the live demo, because the row's `display:flex`
+  overrode its `hidden` attribute. Hidden now always wins.
 - A tab and home-screen icon, drawn from the app icon. The page no longer
   probes for the local app anywhere but loopback, so the demo loads without
   errors.
