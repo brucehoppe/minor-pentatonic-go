@@ -55,14 +55,18 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
     : Math;
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
   const elements = new Map(ids.map(id => [id, new Element(id)]));
-  const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0 };
+  // startTimes records when each oscillator was booked to sound, on the fake audio
+  // clock; clock.t is that clock, which a test moves forward with advance().
+  const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [] };
+  const clock = { t: 0 };
   class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} }
   class AudioContext {
-    constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+    constructor() { this.state = "running"; this.destination = {}; }
+    get currentTime() { return clock.t; }
     resume() { return Promise.resolve(); }
     createGain() { audio.gains++; return { gain: new AudioParam(), connect() {} }; }
     createOscillator() { audio.oscillators++; return { type: "sine", frequency: new AudioParam(), connect() {},
-      start() { audio.starts++; }, stop() { audio.stops++; } }; }
+      start(t) { audio.starts++; audio.startTimes.push(t); }, stop() { audio.stops++; } }; }
     createBiquadFilter() { return { type: "lowpass", frequency: new AudioParam(), connect() {} }; }
   }
   const document = {
@@ -154,7 +158,10 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
     getState:()=>({key,view,labelMode,chord,reg,chartOpen,boxLock,droneNodes:droneHandle,clickTimer,bpm,timerSeconds,timerInitial,timerHandle,ladderRound,
       trainerTimer,trainerBar,trainerBeat,trainerCount,rhythmTimer,rhythmStep,rhythm:[...rhythm],showB5,blueLock,
       soloBoxes:[...soloBoxes],soloRun:[...soloRun],soloTimer,soloStep,storage:window.localStorage})};`, context);
-  return { app: context.appTest, document, audio, intervals, fetched, audioElements,
+  // advance(seconds) moves the audio clock on and lets every running loop catch up,
+  // which is what the browser's 25 ms pump timer does in real life.
+  const advance = seconds => { clock.t += seconds; for (const fn of [...intervals.values()]) fn(); };
+  return { app: context.appTest, document, audio, intervals, fetched, audioElements, clock, advance,
     closed: () => windowClosed };
 }
 
@@ -1132,7 +1139,7 @@ test("completed sessions persist locally and can be cleared", () => {
 });
 
 test("12-bar trainer counts in and advances through the blues form", () => {
-  const { app, document, intervals, audio } = makeRuntime();
+  const { app, document, advance, audio } = makeRuntime();
   document.getElementById("groove").value = "shuffle";
   app.renderTrainer();
   assert.equal((document.getElementById("bluesbars").innerHTML.match(/class="bluesbar/g) ?? []).length, 12);
@@ -1140,10 +1147,11 @@ test("12-bar trainer counts in and advances through the blues form", () => {
   app.toggleTrainer();
   const handle = app.getState().trainerTimer;
   assert.ok(handle);
-  for (let i = 0; i < 4; i++) intervals.get(handle)();
+  const beat = 60 / app.getState().bpm;
+  for (let i = 0; i < 4; i++) advance(beat);
   assert.equal(app.getState().trainerBar, 0);
   assert.equal(app.getState().trainerBeat, 1);
-  for (let i = 0; i < 16; i++) intervals.get(handle)();
+  for (let i = 0; i < 16; i++) advance(beat);
   assert.equal(app.getState().trainerBar, 4);
   assert.match(document.getElementById("trainertarget").innerHTML, /D7/);
   assert.ok(audio.starts > 0);
@@ -1250,7 +1258,7 @@ test("known blues forms transpose correctly into A", () => {
 });
 
 test("rhythm lab generates a 16-step phrase and loops it at subdivisions", () => {
-  const { app, document, intervals, audio } = makeRuntime();
+  const { app, document, advance, audio } = makeRuntime();
   document.getElementById("density").value = "medium";
   const phrase = app.generateRhythm();
   assert.equal(phrase.length, 16);
@@ -1259,7 +1267,10 @@ test("rhythm lab generates a 16-step phrase and loops it at subdivisions", () =>
   app.toggleRhythm();
   const handle = app.getState().rhythmTimer;
   assert.ok(handle);
-  intervals.get(handle)();
+  // At 90 bpm a sixteenth (0.167 s) is longer than the 0.12 s lookahead, so starting
+  // books step 0 only, and each sixteenth of clock time books one more.
+  assert.equal(app.getState().rhythmStep, 1);
+  advance(60 / app.getState().bpm / 4);
   assert.equal(app.getState().rhythmStep, 2);
   assert.ok(audio.starts > 0);
   app.stopRhythm();
@@ -2227,4 +2238,54 @@ test("alternate tuning chord voicings and tab pitches match their named harmony"
       assert.deepEqual(degrees,t.id==="drop-d"?[0,7]:[0,4,7],`${t.name} barre chord quality`);
     }
   }
+});
+
+test("the metronome books clicks on the audio clock, so a late timer does not move them", () => {
+  const { app, document, audio, advance } = makeRuntime();
+  const beat = 60 / app.getState().bpm;
+  app.toggleClick(document.getElementById("click"));
+  // The pump timer is meant to run every 25 ms but a busy main thread makes it
+  // irregular. As long as each gap is inside the 0.12 s lookahead, every click must
+  // still land exactly on the grid.
+  for (let i = 0; i < 40; i++) advance([.03, .11, .004, .09, .06, .115, .02, .07][i % 8]);
+  const times = audio.startTimes;
+  assert.ok(times.length >= 4, `booked ${times.length} clicks`);
+  times.forEach((t, i) => assert.ok(Math.abs(t - i * beat) < 1e-9, `click ${i} at ${t}, want ${i * beat}`));
+  app.toggleClick(document.getElementById("click"));
+  assert.equal(app.getState().clickTimer, null);
+});
+
+test("a hidden tab books further ahead, so throttled timers do not drop beats", () => {
+  const { app, document, audio } = makeRuntime();
+  document.hidden = true;
+  app.toggleClick(document.getElementById("click"));
+  const beat = 60 / app.getState().bpm;
+  assert.equal(audio.startTimes.length, Math.ceil(1.5 / beat), "about 1.5 s of clicks booked at once");
+  app.toggleClick(document.getElementById("click"));
+});
+
+test("after a long stall the loop resumes from now instead of firing every missed beat", () => {
+  const { app, document, audio, advance } = makeRuntime();
+  app.toggleClick(document.getElementById("click"));
+  const before = audio.startTimes.length;
+  advance(30);   // e.g. the laptop slept
+  assert.ok(audio.startTimes.length - before <= 2, `fired ${audio.startTimes.length - before} catch-up clicks`);
+  app.toggleClick(document.getElementById("click"));
+});
+
+test("the trainer readout follows the beats booked on the audio clock", () => {
+  const { app, document, advance } = makeRuntime();
+  app.toggleTrainer();                          // books count-in beat 1 immediately
+  const beat = 60 / app.getState().bpm;
+  for (let i = 0; i < 7; i++) advance(beat);    // count-in 2-4, then bar 1 beats 1-4
+  assert.match(document.getElementById("trainerreadout").textContent, /^bar 1 · beat 4$/);
+  app.resetTrainer();
+});
+
+test("the compatibility engine, with no audio clock, still keeps time per beat", () => {
+  const { app, document, intervals } = makeRuntime({ audio: "wav" });
+  app.toggleClick(document.getElementById("click"));
+  assert.equal(app.getEngine().name, "Compatibility");
+  assert.ok(intervals.has(app.getState().clickTimer));
+  app.toggleClick(document.getElementById("click"));
 });

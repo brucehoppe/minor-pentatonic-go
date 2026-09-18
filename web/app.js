@@ -438,14 +438,16 @@ function playSolo(){
   if(note)note.textContent="";
   const R=soloRoot(),gap=30/bpm;          // eighth notes at the current tempo
   soloStep=0;
-  const tick=()=>{
-    if(soloStep>=soloRun.length){stopSolo();return;}
-    const n=soloRun[soloStep];
-    pluck(midiAt(n.s,n.o+R),0,Math.max(.18,gap*1.7),.5);
-    markSoloStep(soloStep);
+  const tick=when=>{
+    if(soloStep>=soloRun.length){
+      // The last note is already booked; stop once it has sounded, not before.
+      const t=soloTimer;clearInterval(t);
+      atBeat(when,()=>{if(soloTimer===t)stopSolo();});return;}
+    const n=soloRun[soloStep],step=soloStep;
+    pluck(midiAt(n.s,n.o+R),when,Math.max(.18,gap*1.7),.5);
+    atBeat(when,()=>{if(soloTimer)markSoloStep(step);});
     soloStep++;};
-  tick();
-  soloTimer=setInterval(tick,gap*1000);
+  soloTimer=beatLoop(gap,tick);
   const b=document.getElementById("soloplay");
   b.textContent="Stop";b.setAttribute("aria-pressed",true);}
 
@@ -1471,50 +1473,61 @@ function chordInfo(symbol){const roman=symbol.match(/^[b#]?[IV]+/)[0],kind=symbo
   roots={I:0,bII:1,II:2,bIII:3,III:4,IV:5,"#IV":6,V:7,bVI:8,VI:9,bVII:10,VII:11};
   return {symbol,root:roots[roman],kind,intervals:CHORD_KIND[kind]};}
 function chordName(symbol){const c=chordInfo(symbol);return NOTES[(key+c.root)%12]+c.kind;}
-function renderTrainer(){const form=currentForm();
+// bar and beat default to the live position; the beat clock passes the ones being
+// drawn, because it books beats slightly before they sound.
+function renderTrainer(bar=trainerBar,beat=trainerBeat){const form=currentForm();
   document.getElementById("bluesbars").innerHTML=form.chords.map((entry,i)=>{
     const syms=barSymbols(entry);
-    return `<div class="bluesbar${i===trainerBar?" now":""}${syms.length>1?" split":""}"><span>${i+1}</span>${
+    return `<div class="bluesbar${i===bar?" now":""}${syms.length>1?" split":""}"><span>${i+1}</span>${
       syms.map(sym=>`<b>${chordName(sym)}</b>`).join("")}<span>${syms.join(" ")}</span></div>`;}).join("");
-  const entry=trainerBar<0?form.chords[0]:form.chords[trainerBar];
-  const symbol=symbolAt(entry,trainerBar<0?0:trainerBeat),c=chordInfo(symbol),roles=["root","3rd","5th","7th"];
+  const entry=bar<0?form.chords[0]:form.chords[bar];
+  const symbol=symbolAt(entry,bar<0?0:beat),c=chordInfo(symbol),roles=["root","3rd","5th","7th"];
   const targets=c.intervals.map((x,i)=>`${roles[i]} (${NOTES[(key+c.root+x)%12]})`).join(" · ");
   document.getElementById("trainertarget").innerHTML=`Target tones for <b>${chordName(symbol)}</b>: ${targets}`;
   document.getElementById("formtip").textContent=form.tip;
   document.getElementById("formheard").textContent=form.heard;
-  document.getElementById("trainerreadout").textContent=trainerBar<0?"ready":`bar ${trainerBar+1} · beat ${trainerBeat+1}`;}
-function trainerSound(symbol,beat){
+  document.getElementById("trainerreadout").textContent=bar<0?"ready":`bar ${bar+1} · beat ${beat+1}`;}
+function trainerSound(symbol,beat,when=0){
   const a=audio();if(!a)return;
   const c=chordInfo(symbol),pc=(key+c.root)%12,groove=document.getElementById("groove").value;
   const hzs=c.intervals.map((iv,i)=>freq((pc+iv)%12)*(i?1:.5));
   const hold=groove==="slow"?.38:.1;
-  a.chord(hzs,{dur:hold,vol:beat===0?.06:.032});
-  if(groove==="shuffle")a.chord(hzs,{when:(60/bpm)*2/3,dur:hold,vol:.018});}
-function trainerTick(){const form=currentForm();if(trainerCount>0){document.getElementById("trainerreadout").textContent=`count in · ${5-trainerCount}`;trainerSound(symbolAt(form.chords[0],0),4-trainerCount);trainerCount--;return;}
-  if(trainerBar<0)trainerBar=0;trainerSound(symbolAt(form.chords[trainerBar],trainerBeat),trainerBeat);renderTrainer();
+  a.chord(hzs,{when,dur:hold,vol:beat===0?.06:.032});
+  if(groove==="shuffle")a.chord(hzs,{when:when+(60/bpm)*2/3,dur:hold,vol:.018});}
+function trainerTick(when=0){const form=currentForm();
+  if(trainerCount>0){const text=`count in · ${5-trainerCount}`;
+    trainerSound(symbolAt(form.chords[0],0),4-trainerCount,when);trainerCount--;
+    atBeat(when,()=>{if(trainerTimer)document.getElementById("trainerreadout").textContent=text;});return;}
+  if(trainerBar<0)trainerBar=0;
+  const bar=trainerBar,beat=trainerBeat;
+  trainerSound(symbolAt(form.chords[bar],beat),beat,when);
+  atBeat(when,()=>{if(trainerTimer)renderTrainer(bar,beat);});
   trainerBeat++;if(trainerBeat===4){trainerBeat=0;trainerBar=(trainerBar+1)%12;}}
 function stopTrainer(){if(trainerTimer){clearInterval(trainerTimer);trainerTimer=null;}const b=document.getElementById("toggletrainer");
   if(b){b.textContent="Start with count-in";b.setAttribute("aria-pressed",false);}}
 function toggleTrainer(){if(trainerTimer){stopTrainer();return;}trainerCount=4;trainerBar=-1;trainerBeat=0;
-  const b=document.getElementById("toggletrainer");b.textContent="Stop";b.setAttribute("aria-pressed",true);trainerTick();
-  trainerTimer=setInterval(trainerTick,60000/bpm);}
+  const b=document.getElementById("toggletrainer");b.textContent="Stop";b.setAttribute("aria-pressed",true);
+  trainerTimer=beatLoop(60/bpm,trainerTick);}
 function resetTrainer(){stopTrainer();trainerBar=-1;trainerBeat=0;trainerCount=4;renderTrainer();}
 
 // ---------- rhythm and phrasing generator ----------
 let rhythm=[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0],rhythmTimer=null,rhythmStep=0;
 function generateRhythm(){stopRhythm();const density=document.getElementById("density").value,prob={sparse:.24,medium:.4,busy:.62}[density];
   rhythm=Array.from({length:16},(_,i)=>i===0?1:(Math.random()<prob?1:0));rhythmStep=0;renderRhythm();return rhythm;}
-function renderRhythm(){const syllables=["1","e","&","a","2","e","&","a","3","e","&","a","4","e","&","a"];
-  document.getElementById("beatgrid").innerHTML=rhythm.map((hit,i)=>`<div class="beat${hit?" hit":""}${rhythmTimer&&i===rhythmStep?" now":""}">${hit?syllables[i]:"·"}</div>`).join("");
+function renderRhythm(now=rhythmStep){const syllables=["1","e","&","a","2","e","&","a","3","e","&","a","4","e","&","a"];
+  document.getElementById("beatgrid").innerHTML=rhythm.map((hit,i)=>`<div class="beat${hit?" hit":""}${rhythmTimer&&i===now?" now":""}">${hit?syllables[i]:"·"}</div>`).join("");
   const hits=rhythm.reduce((a,b)=>a+b,0);document.getElementById("rhythmcount").innerHTML=`${hits} attacks · ${16-hits} rests · <b>count the rests too</b>`;
   document.getElementById("rhythmroot").textContent=NOTES[key];document.getElementById("rhythmtip").innerHTML=
     `At ${bpm} bpm, one loop lasts ${(240/bpm).toFixed(1)} seconds. Accent beats 2 and 4 without changing the written rhythm.`;}
-function rhythmSound(accent){const a=audio();if(!a)return;a.blip(accent?1100:720,{dur:.045,vol:.16});}
-function rhythmTick(){if(rhythm[rhythmStep])rhythmSound(rhythmStep===4||rhythmStep===12);renderRhythm();rhythmStep=(rhythmStep+1)%16;}
+function rhythmSound(accent,when=0){const a=audio();if(!a)return;a.blip(accent?1100:720,{when,dur:.045,vol:.16});}
+function rhythmTick(when=0){const step=rhythmStep;
+  if(rhythm[step])rhythmSound(step===4||step===12,when);
+  atBeat(when,()=>{if(rhythmTimer)renderRhythm(step);});
+  rhythmStep=(rhythmStep+1)%16;}
 function stopRhythm(){if(rhythmTimer){clearInterval(rhythmTimer);rhythmTimer=null;}const b=document.getElementById("togglerhythm");
   if(b){b.textContent="Play loop";b.setAttribute("aria-pressed",false);}}
 function toggleRhythm(){if(rhythmTimer){stopRhythm();renderRhythm();return;}rhythmStep=0;const b=document.getElementById("togglerhythm");
-  b.textContent="Stop";b.setAttribute("aria-pressed",true);rhythmTick();rhythmTimer=setInterval(rhythmTick,60000/bpm/4);}
+  b.textContent="Stop";b.setAttribute("aria-pressed",true);rhythmTimer=beatLoop(60/bpm/4,rhythmTick);}
 
 // ---------- audio ----------
 // The app asks for musical events — a note, a click, a chord strike, a drone — and a
@@ -1567,6 +1580,7 @@ function webAudioEngine(ac) {
   };
   return {
     name: "Web Audio",
+    now: () => ac.currentTime,
     state: () => ac.state,
     resume: () => (ac.state === "suspended" ? ac.resume() : Promise.resolve()),
     note(m, { when = 0, dur = .55, vol = .5 } = {}) { voice(midiFreq(m), at(when), dur, vol); },
@@ -1797,6 +1811,35 @@ function audioOff(dead) {
 }
 
 // ---- what the rest of the app calls ----
+// ---- the beat clock ----
+// setInterval alone makes a poor metronome. Each tick lands whenever the main thread
+// gets round to it — late while a view is drawing — and browsers slow timers in
+// background tabs. So a loop books its beats on the audio hardware's clock a little
+// ahead of time, and a coarse timer only keeps that booking topped up (the "two
+// clocks" pattern). onBeat(when) receives the seconds until its beat sounds; a hidden
+// tab books further ahead because its timer may only run about once a second.
+//
+// Returns an interval id, so clearInterval stops it like any other loop. The
+// compatibility engine has no clock to book against, so it keeps one timer per beat.
+function beatLoop(stepSec, onBeat) {
+  const a = audio();
+  if (!a || !a.now) { onBeat(0); return setInterval(() => onBeat(0), stepSec * 1000); }
+  let next = a.now();
+  const pump = () => {
+    const now = a.now();
+    const ahead = typeof document !== "undefined" && document.hidden ? 1.5 : .12;
+    // After a long stall, carry on from now rather than firing every missed beat at once.
+    if (next < now - stepSec) next = now;
+    while (next < now + ahead) { onBeat(Math.max(0, next - now)); next += stepSec; }
+  };
+  pump();
+  return setInterval(pump, 25);
+}
+// Runs a visual update when its beat actually sounds, not when it was booked.
+function atBeat(when, fn) {
+  if (when > .005) setTimeout(fn, when * 1000); else fn();
+}
+
 function pluck(m, when = 0, dur = .55, vol = .5) {
   const a = audio(); if (!a) return 0;
   a.note(m, { when, dur, vol });
@@ -1833,13 +1876,12 @@ function stopDrone() {
 function toggleClick(btn) {
   if (clickTimer) { clearInterval(clickTimer); clickTimer = null; btn.setAttribute("aria-pressed", false); return; }
   let beat = 0;
-  const tick = () => {
+  const tick = when => {
     const a = audio(); if (!a) return;
-    a.blip(beat % 4 === 0 ? 1400 : 900, { dur: .05, vol: .22 });
+    a.blip(beat % 4 === 0 ? 1400 : 900, { when, dur: .05, vol: .22 });
     beat++;
   };
-  tick();
-  clickTimer = setInterval(tick, 60000 / bpm);
+  clickTimer = beatLoop(60 / bpm, tick);
   btn.setAttribute("aria-pressed", true);
 }
 function restartClick() {
