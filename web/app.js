@@ -7,8 +7,8 @@ const IV={0:"1",1:"♭2",2:"2",3:"♭3",4:"3",5:"4",6:"♭5",7:"5",8:"♭6",9:"6
 const OPEN=[4,11,7,2,9,4], SL=["e","B","G","D","A","E"];
 const BOXES=[
   {n:1,off:[[0,3],[0,3],[0,2],[0,2],[0,2],[0,3]],tip:"Home base. Root under the first finger on both E strings."},
-  {n:2,off:[[3,5],[3,5],[2,4],[2,5],[2,5],[3,5]],tip:"The stretchy one. Roots land on the D and high-e strings."},
-  {n:3,off:[[5,7],[5,8],[4,7],[5,7],[5,7],[5,7]],tip:"Roots on the A and G strings. Top half is the B.B. box."},
+  {n:2,off:[[3,5],[3,5],[2,4],[2,5],[2,5],[3,5]],tip:"The stretchy one. Roots land on the D and B strings."},
+  {n:3,off:[[5,7],[5,8],[4,7],[5,7],[5,7],[5,7]],tip:"Roots on the A and B strings. Top half is the B.B. box."},
   {n:4,off:[[7,10],[8,10],[7,9],[7,9],[7,10],[7,10]],tip:"Box 1's shape moved across a string set."},
   {n:5,off:[[10,12],[10,12],[9,12],[9,12],[10,12],[10,12]],tip:"Closes the loop — its top edge is Box 1, an octave up."}
 ];

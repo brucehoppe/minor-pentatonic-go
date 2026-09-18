@@ -230,6 +230,17 @@ test("5 boxes combines selections and keeps the practice pair across keys and re
   assert.doesNotMatch(document.getElementById("fullmap").innerHTML, /opacity="0.12"/);
 });
 
+test("box tips name the strings that actually hold the box's roots", () => {
+  const { app } = makeRuntime();
+  // A note at offset x on string s is a root when it matches the low-E root at offset 0.
+  const OPEN = [4, 11, 7, 2, 9, 4], NAME = ["e", "B", "G", "D", "A", "E"];
+  const roots = app.BOXES.map(b => b.off.flatMap((p, s) => p.some(x => (OPEN[s] + x - OPEN[5] + 12) % 12 === 0) ? [NAME[s]] : []));
+  sameShape(roots, [["e", "D", "E"], ["B", "D"], ["B", "A"], ["G", "A"], ["e", "G", "E"]], "root strings per box");
+  assert.match(app.BOXES[0].tip, /both E strings/);
+  assert.match(app.BOXES[1].tip, /Roots land on the D and B strings/);
+  assert.match(app.BOXES[2].tip, /Roots on the A and B strings/);
+});
+
 test("every register keeps all five boxes on the neck, in every key", () => {
   const { app, document } = makeRuntime();
   navButton(document, "boxes").click();
