@@ -49,7 +49,7 @@ class Element {
 // deterministic: fix Math.random, so a view that generates a fresh quiz or session
 // on every draw still renders identically twice — without that, "did this control
 // change anything?" cannot be answered by comparing two renders.
-function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
+function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false } = {}) {
   const MathForApp = deterministic
     ? new Proxy(Math, { get: (t, k) => (k === "random" ? () => 0.42 : t[k]) })
     : Math;
@@ -117,7 +117,9 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false } = {}) {
   const location = { protocol: "http:", host: "127.0.0.1:8080" };
   const fetch = (url, opts = {}) => {
     fetched.push({ url, method: opts.method ?? "GET", headers: opts.headers ?? {} });
-    return Promise.resolve({ ok: true, text: () => Promise.resolve("1.2.3") });
+    // The app's /about; demo decides what a static host (GitHub Pages) would answer.
+    const body = url === "/about" && !demo ? "Minor Pentatonic Practice Desk 1.2.3\nCoded by Bruce Hoppe\n" : "Not Found";
+    return Promise.resolve({ ok: body !== "Not Found", text: () => Promise.resolve(body) });
   };
   const navigator = { userAgent: "" };
   const context = vm.createContext({
@@ -1709,11 +1711,14 @@ test("practice theory saves both complete-song projects on this device", () => {
   assert.equal(document.getElementById("theory-form-b").value, "hardest join: bridge → final chorus");
 });
 
-test("the packaged app exposes a Quit control that the served page can use", () => {
+test("the packaged app exposes a Quit control that the served page can use", async () => {
   const { document, fetched } = makeRuntime();
+  document.getElementById("approw").hidden = true;   // as index.html starts it; the mock does not read attributes
+  await new Promise(r => setImmediate(r));   // let /about answer
   assert.equal(document.getElementById("approw").hidden, false,
-    "the Quit row appears when the page is served over http");
-  assert.ok(fetched.some(f => f.url === "/version"), "the page asks the app for its version");
+    "the Quit row appears when the app itself serves the page");
+  assert.ok(fetched.some(f => f.url === "/about"), "the page asks the app who it is");
+  assert.equal(document.getElementById("appver").textContent, "version 1.2.3");
 
   const quit = document.getElementById("quitapp");
   quit.click();
@@ -2357,4 +2362,11 @@ test("every fret and string line in a box diagram survives being scaled down", (
       for (const l of lines) assert.match(l, /vector-effect="non-scaling-stroke"/, `key ${key} box ${b.n}: ${l}`);
     }
   }
+});
+
+test("the static live demo shows no Quit control, because there is no app to stop", async () => {
+  const { document } = makeRuntime({ demo: true });
+  document.getElementById("approw").hidden = true;   // as index.html starts it
+  await new Promise(r => setImmediate(r));
+  assert.equal(document.getElementById("approw").hidden, true);
 });

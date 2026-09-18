@@ -1,8 +1,5 @@
 MIT License
 
-Minor Pentatonic Practice Desk
-Coded by Bruce Hoppe
-
 Copyright (c) 2026 Bruce Hoppe
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -22,20 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-
----
-
-BUNDLED FONTS
-
-This software embeds two typefaces, which are not covered by the MIT licence
-above. Both are licensed under the SIL Open Font License, Version 1.1, and the
-full text of each licence is distributed with them:
-
-  DM Mono              Copyright 2020 The DM Mono Project Authors
-                       web/assets/fonts/OFL-DM-Mono.txt
-                       served at /assets/fonts/OFL-DM-Mono.txt
-
-  Bricolage Grotesque  Copyright 2022 The Bricolage Grotesque Project Authors
-                       web/assets/fonts/OFL-Bricolage-Grotesque.txt
-                       served at /assets/fonts/OFL-Bricolage-Grotesque.txt

@@ -86,6 +86,24 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+// The live demo is static hosting, which cannot send headers, so every page also
+// carries the policy as a <meta> tag. It must match the header, less
+// frame-ancestors, which browsers ignore in <meta>.
+func TestPagesCarryTheSamePolicyAsTheHeader(t *testing.T) {
+	want := strings.TrimSuffix(contentSecurityPolicy, "; frame-ancestors 'self'")
+	if want == contentSecurityPolicy {
+		t.Fatal("expected the header policy to end with frame-ancestors")
+	}
+	pages, _ := fs.Glob(embeddedWeb(), "*.html")
+	for _, page := range pages {
+		body, _ := fs.ReadFile(embeddedWeb(), page)
+		tag := `<meta http-equiv="Content-Security-Policy" content="` + want + `">`
+		if !strings.Contains(string(body), tag) {
+			t.Errorf("%s lacks the CSP meta tag matching the header", page)
+		}
+	}
+}
+
 // With script-src 'self', an inline <script> block would silently not run.
 func TestPagesHaveNoInlineScripts(t *testing.T) {
 	pages, err := fs.Glob(embeddedWeb(), "*.html")

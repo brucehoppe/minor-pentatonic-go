@@ -1,0 +1,19 @@
+name: Idea or improvement
+description: Suggest a lesson, drill, view or change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What would it help you practise or do?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What do you have in mind?
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: For music theory or practice research, a book, lesson or paper helps. Cite it as text, not a link.

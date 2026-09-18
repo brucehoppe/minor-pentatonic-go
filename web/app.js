@@ -3042,12 +3042,16 @@ function shutDownPage(){
 }
 
 // The packaged builds have no console to Ctrl-C, so offer a Quit button — but only
-// when the page is actually being served by the app, not opened as a local file.
+// when the page is actually being served by the app: not opened as a local file, and
+// not on the static live demo, where there is no app to stop. /about names the app
+// and its version, so its answer is what reveals the row.
+const ABOUT=/^Minor Pentatonic Practice Desk (\S+)/;
 if(typeof location!=="undefined"&&typeof fetch==="function"&&/^https?:$/.test(location.protocol)){
-  document.getElementById("approw").hidden=false;
-  fetch("/version").then(r=>r.ok?r.text():"").then(v=>{
-    if(v){document.getElementById("appver").textContent="version "+v.trim();
-      document.getElementById("credver").textContent="Version "+v.trim();}}).catch(()=>{});
+  fetch("/about").then(r=>r.ok?r.text():"").then(t=>{
+    const m=ABOUT.exec(t||"");if(!m)return;
+    document.getElementById("approw").hidden=false;
+    document.getElementById("appver").textContent="version "+m[1];
+    document.getElementById("credver").textContent="Version "+m[1];}).catch(()=>{});
   document.getElementById("quitapp").onclick=()=>{
     document.getElementById("quitmsg").textContent="Stopping\u2026";
     document.getElementById("quitapp").disabled=true;

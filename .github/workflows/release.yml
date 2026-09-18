@@ -1,0 +1,89 @@
+name: Release
+
+# Push a tag such as v2026.09.19 to build and publish a release. The notes come
+# from that version's section of CHANGELOG.md, so write it first.
+# Run it by hand (Actions > Release > Run workflow) for a dry run that builds the
+# packages and keeps them as a workflow artifact without publishing anything.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build for the dry run, e.g. 2026.09.19
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: macos-latest   # lipo, iconutil, hdiutil and codesign build the Mac app
+    permissions:
+      contents: write        # create the release
+      id-token: write        # sign the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Work out the version
+        id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then v="${GITHUB_REF_NAME#v}"; else v="$INPUT_VERSION"; fi
+          case "$v" in (*[!0-9.]*|'') echo "version must be digits and dots, got '$v'"; exit 1;; esac
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build the packages (runs the full test suite first)
+        run: ./scripts/release.sh "${{ steps.v.outputs.version }}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*${{ steps.v.outputs.version }}*
+
+      - name: Keep the packages (dry run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ steps.v.outputs.version }}
+          path: dist/*${{ steps.v.outputs.version }}*
+
+      - name: Publish the release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          # This version's CHANGELOG section, then install instructions.
+          awk -v h="## $VERSION" '$0==h{on=1;next} on&&/^## /{exit} on' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "CHANGELOG.md has no '## $VERSION' section"; exit 1; fi
+          cat >> notes.md <<'NOTES'
+
+          ## Install
+
+          **Windows 10/11**, in PowerShell:
+          ```powershell
+          irm https://raw.githubusercontent.com/brucehoppe/minor-pentatonic-go/main/scripts/install.ps1 | iex
+          ```
+
+          **macOS 11+**, in Terminal:
+          ```sh
+          curl -fsSL https://raw.githubusercontent.com/brucehoppe/minor-pentatonic-go/main/scripts/install.sh | bash
+          ```
+
+          Both verify the download against the SHA256SUMS file below and need no administrator rights.
+          Each file also has a build provenance attestation: `gh attestation verify <file> -R brucehoppe/minor-pentatonic-go`.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Minor Pentatonic Practice Desk $VERSION" \
+            --notes-file notes.md dist/*"$VERSION"*

@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in the app is wrong or broken
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      description: The view, key and settings you were using help a lot.
+      placeholder: |
+        1. Open "5 boxes" in A minor
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in the page footer, or run `minor-pentatonic -version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Windows, Linux, Live demo in a browser]
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else

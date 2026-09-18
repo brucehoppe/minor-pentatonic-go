@@ -1,10 +1,16 @@
 # Minor Pentatonic Practice Desk
 
 [![CI](https://github.com/brucehoppe/minor-pentatonic-go/actions/workflows/ci.yml/badge.svg)](https://github.com/brucehoppe/minor-pentatonic-go/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/brucehoppe/minor-pentatonic-go?label=release)](https://github.com/brucehoppe/minor-pentatonic-go/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**[Try it in your browser →](https://brucehoppe.github.io/minor-pentatonic-go/)** nothing to install. Or [install it](#install) to use it offline.
 
 Coded by Bruce Hoppe
 
-A standalone Go application made from `reference/minor-pentatonic-boxes_2.html`. The full interactive page is embedded in the executable, so no web server, Go installation, or companion files are needed after compilation.
+An interactive practice desk for learning the minor pentatonic scale across the whole guitar neck: the five box shapes in all 12 keys, how they connect, blues and modal colours, chords, a 12-bar trainer, a metronome and guided practice routines.
+
+It is one small program with the whole app built in. It runs on your own computer, opens in your browser, works offline and sends nothing anywhere. It grew out of the standalone page in `reference/`.
 
 ![The practice desk: title, key selector and the full list of views](docs/screenshots/home.png)
 
@@ -143,7 +149,8 @@ go install github.com/brucehoppe/minor-pentatonic-go@latest
 ## Layout
 
 ```
-LICENSE              MIT
+LICENSE              MIT (the exact standard text, so GitHub recognises it)
+THIRD_PARTY_NOTICES.md  the bundled fonts and their licences
 main.go              server, single-instance handling, packaging behaviour
 web/index.html       the page: markup only
 web/app.css          styles
@@ -154,6 +161,7 @@ web/assets/*.jpg     images
 web/assets/fonts/    the bundled typefaces, plus their licences
 tests/app.test.mjs   headless frontend suite
 docs/screenshots/    images for this README; not embedded
+.github/workflows/   CI, the live demo (Pages) and tag-triggered releases
 scripts/release.sh   consumer packages for macOS and Windows
 scripts/install.ps1  Windows installer (see Install)
 scripts/install.sh   macOS installer (see Install)
@@ -239,18 +247,28 @@ unsigned binary and the bundled README explains "More info → Run anyway";
 
 ### Publishing a release
 
-The one-line installers download the latest GitHub Release and refuse it unless
-it has a `SHA256SUMS-<version>.txt` listing their file. To publish one:
+Releases are built and published by CI (`.github/workflows/release.yml`):
+
+1. Move the "Unreleased" notes in `CHANGELOG.md` under a new `## <version>` heading,
+   commit, and wait for CI to pass.
+2. Tag the commit and push the tag:
+
+   ```sh
+   git tag v2026.09.19 && git push origin v2026.09.19
+   ```
+
+The workflow runs `scripts/release.sh` on macOS (tests first), attests build
+provenance for every file, and publishes the release with that version's
+changelog section as its notes. Anyone can then check a download was built here:
 
 ```sh
-./scripts/release.sh 2026.09.18
-gh release create v2026.09.18 --title "Minor Pentatonic Practice Desk 2026.09.18" \
-  dist/*2026.09.18*
+gh attestation verify minor-pentatonic-2026.09.19-macos.zip -R brucehoppe/minor-pentatonic-go
 ```
 
-The `gh` account doing this needs push access to the repository. Wait for CI to
-pass on the commit first; it installs, runs and uninstalls a release build on
-Windows and macOS.
+To try the build without publishing, run the Release workflow by hand from the
+Actions tab; it keeps the packages as a workflow artifact. The one-line installers
+download the latest release and refuse it unless its `SHA256SUMS-<version>.txt`
+lists their file.
 
 ### Launch behaviour
 
@@ -332,9 +350,16 @@ them with `install.ps1` on Windows (under Windows PowerShell 5.1) and `install.s
 on macOS, and check that a tampered download is refused. Dependabot keeps the
 pinned actions current.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report security problems privately, as
+described in [SECURITY.md](SECURITY.md). Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
+
 ## Licence
 
-MIT — see [LICENSE](LICENSE). Coded by Bruce Hoppe.
+MIT — see [LICENSE](LICENSE). Coded by Bruce Hoppe. Third-party parts are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The five embedded typefaces are not MIT. DM Mono and Bricolage Grotesque (the
 practice desk) and Work Sans, Archivo Black and Space Mono (the Seven Licks lesson)
@@ -342,5 +367,5 @@ are all under the SIL Open Font License 1.1, and a copy of each licence ships be
 them in `web/assets/fonts/` and inside the binary. `reference/fonts/` holds copies of
 the first two for the reference page.
 
-`scripts/release.sh` copies the licence into every distribution archive as
-`LICENSE.txt`, so anyone who receives a build gets the terms with it.
+`scripts/release.sh` copies both into every distribution archive, as `LICENSE.txt`
+and `THIRD_PARTY_NOTICES.txt`, so anyone who receives a build gets the terms with it.

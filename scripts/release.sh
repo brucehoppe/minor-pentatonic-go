@@ -106,6 +106,7 @@ TXT
   printf 'Minor Pentatonic Practice Desk %s\nCoded by %s\n' "$VERSION" "$AUTHOR" > "$out/AUTHOR.txt"
 
   [ -f "$ROOT/LICENSE" ] && cp "$ROOT/LICENSE" "$out/LICENSE.txt"
+  cp "$ROOT/THIRD_PARTY_NOTICES.md" "$out/THIRD_PARTY_NOTICES.txt"
   # zip adds to an archive that already exists rather than replacing it, so
   # rebuilding a version would leave entries from the previous build behind.
   # Every artifact is removed before it is written.
@@ -244,6 +245,7 @@ TXT
 printf 'Minor Pentatonic Practice Desk %s\nCoded by %s\n' "$VERSION" "$AUTHOR" > "$STAGE/macos/AUTHOR.txt"
 
 [ -f "$ROOT/LICENSE" ] && cp "$ROOT/LICENSE" "$STAGE/macos/LICENSE.txt"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/macos/THIRD_PARTY_NOTICES.txt"
 ln -s /Applications "$STAGE/macos/Applications"
 
 say "Packaging macOS"
@@ -251,7 +253,7 @@ say "Packaging macOS"
 # Applications symlink, which only means anything inside a mounted disk image. So it
 # lists what goes in, which means anything added to the staging folder above has to
 # be added here too — that is how LICENSE.txt came to be in the dmg but not the zip.
-mac_extras=(README.txt AUTHOR.txt)
+mac_extras=(README.txt AUTHOR.txt THIRD_PARTY_NOTICES.txt)
 if [ -f "$STAGE/macos/LICENSE.txt" ]; then mac_extras+=(LICENSE.txt); fi
 rm -f "$DIST/$BIN-$VERSION-macos.zip"
 ( cd "$STAGE/macos" && zip -qr9 --symlinks "$DIST/$BIN-$VERSION-macos.zip" "$APP.app" "${mac_extras[@]}" )
