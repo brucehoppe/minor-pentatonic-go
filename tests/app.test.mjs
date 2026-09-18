@@ -63,7 +63,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   const clock = { t: 0, wall: 0 };
   class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} cancelScheduledValues() {} }
   class AudioContext {
-    constructor() { this.state = "running"; this.destination = {}; }
+    constructor() { this.state = "running"; this.destination = {}; this.baseLatency = 0.005; this.outputLatency = audio.outputLatency ?? 0.01; }
     get currentTime() { return clock.t; }
     resume() { return Promise.resolve(); }
     createGain() { audio.gains++; return { gain: new AudioParam(),
@@ -157,7 +157,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       getUserMedia(c) {
         rec.asked.push(c);
         if (mediaOpts.deny) return Promise.reject(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
-        return Promise.resolve({ getTracks: () => [{ stop() { rec.tracksStopped++; } }] });
+        const track = { stop() { rec.tracksStopped++; }, getSettings: () => ({ latency: 0.01 }) };
+        return Promise.resolve({ getTracks: () => [track], getAudioTracks: () => [track] });
       },
       enumerateDevices: () => Promise.resolve(mediaOpts.devices ?? []),
       addEventListener() {},
@@ -2615,4 +2616,29 @@ test("a take stops itself at the 30-minute cap and says so", async () => {
   assert.equal(rec.recorders[0].state, "inactive");
   assert.ok(app.getTake());
   assert.match(document.getElementById("recmsg").textContent, /^Stopped at the 30-minute limit\. Take saved: 1800 s, mono\./);
+});
+
+test("a take is named for the key and tempo it started with", async () => {
+  const { app, document } = makeRuntime({ media: true });
+  app.setKey(4); app.setBpm(120);
+  document.getElementById("recbtn").click();
+  await settle();
+  app.setKey(9); app.setBpm(90);   // e.g. the tempo slider moved, which ends a trainer take
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.match(app.getTake().name, /^practice-E-120bpm-/);
+});
+
+test("a slow audio path (Bluetooth) is flagged; a normal one is not", async () => {
+  const fine = makeRuntime({ media: true });   // 5 + 10 + 10 ms
+  fine.document.getElementById("recbtn").click();
+  await settle();
+  assert.doesNotMatch(fine.document.getElementById("recmsg").textContent, /delay/);
+
+  const slow = makeRuntime({ media: true });
+  slow.audio.outputLatency = 0.2;
+  slow.document.getElementById("recmix").value = "backing";
+  slow.document.getElementById("recbtn").click();
+  await settle();
+  assert.match(slow.document.getElementById("recmsg").textContent, /about 215 ms of delay.*Bluetooth/);
 });
