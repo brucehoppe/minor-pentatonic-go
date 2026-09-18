@@ -45,7 +45,7 @@ const defaultAddr = "127.0.0.1:7534"
 // is a complete, working app with nothing to install and nothing to fetch from the
 // network, including no webfont request at load time.
 //
-//go:embed web/*.html web/*.css web/*.js web/assets/*.png web/assets/fonts/*
+//go:embed web/*.html web/*.css web/*.js web/assets/*.jpg web/assets/fonts/*
 var webFiles embed.FS
 
 // embeddedWeb is the shipped site: the web/ directory, rooted so that "index.html"

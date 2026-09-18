@@ -157,17 +157,22 @@ func TestAppHandlerServesTheStylesheetAndScript(t *testing.T) {
 }
 
 func TestAppHandlerServesThePageGraphic(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/assets/kaiju-guitar.png", nil)
+	r := httptest.NewRequest(http.MethodGet, "/assets/kaiju-guitar.jpg", nil)
 	w := httptest.NewRecorder()
 	appHandler(func() {}).ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	if got := w.Header().Get("Content-Type"); got != "image/png" {
+	if got := w.Header().Get("Content-Type"); got != "image/jpeg" {
 		t.Errorf("Content-Type = %q", got)
 	}
-	if w.Body.Len() < 100_000 {
-		t.Errorf("embedded image is unexpectedly small (%d bytes)", w.Body.Len())
+	if !strings.HasPrefix(w.Body.String(), "\xff\xd8\xff") {
+		t.Error("embedded image is not a JPEG")
+	}
+	// Big enough to be the real picture, small enough that it stays a quick load:
+	// the 2 MB original is shown at no more than 380 CSS pixels wide.
+	if n := w.Body.Len(); n < 20_000 || n > 250_000 {
+		t.Errorf("embedded image is %d bytes, want 20-250 kB", n)
 	}
 }
 
@@ -226,7 +231,7 @@ func TestAppHandlerServesTheEmbeddedFonts(t *testing.T) {
 // not be, or a new build would keep showing the old page.
 func TestCacheHeaders(t *testing.T) {
 	for path, want := range map[string]string{
-		"/assets/kaiju-guitar.png": "public, max-age=31536000, immutable",
+		"/assets/kaiju-guitar.jpg": "public, max-age=31536000, immutable",
 		"/":                        "no-cache",
 		"/app.js":                  "no-cache",
 	} {

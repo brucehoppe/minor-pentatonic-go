@@ -119,7 +119,7 @@ web/app.css          styles
 web/app.js           the whole interactive desk
 web/seven-licks.html supplementary written lesson
 web/seven-licks.js   its script (pages carry no inline scripts; see Security)
-web/assets/*.png     images
+web/assets/*.jpg     images
 web/assets/fonts/    the bundled typefaces, plus their licences
 tests/app.test.mjs   headless frontend suite
 docs/screenshots/    images for this README; not embedded

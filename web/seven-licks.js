@@ -59,8 +59,10 @@ function y(strNum){ return PAD_T+(strNum-1)*ROW; }             // 1 = high e on 
 function x(fret){ return PAD_L+(fret-FRET_LO)*CELL+CELL/2; }   // centre of fret cell
 function line(f){ return PAD_L+(f-FRET_LO)*CELL; }             // fretwire before fret f
 
-function fretboard(notes){
-  let s=`<svg class="fb" viewBox="0 0 ${W} ${H}" role="img" aria-label="fretboard diagram">`;
+// notes are [string, fret, order]; the label spells them out for screen readers.
+function fretboard(notes,title){
+  const said=notes.slice().sort((a,b)=>a[2]-b[2]).map(([st,f])=>`${STR_NAMES[st-1]} string fret ${f}`).join(", then ");
+  let s=`<svg class="fb" viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}: ${said}">`;
   // 7th fret inlay
   s+=`<circle cx="${x(7)}" cy="${PAD_T+ROW*2.5}" r="9" fill="#F5C518" opacity=".5"/>`;
   // fretwires
@@ -100,7 +102,7 @@ document.getElementById('licks').innerHTML = LICKS.map(l=>`
     <div class="plate"><span>Lick ${l.n}</span><span class="tag">${l.tag}</span></div>
     <h2>${l.title}</h2>
     <p class="why">${l.why}</p>
-    ${fretboard(l.notes)}
+    ${fretboard(l.notes,l.title)}
     <pre class="tab">${l.tab.join("\n")}</pre>
     <p class="note"><b>${l.note[0]}</b><span>${l.note[1]}</span></p>
   </article>`).join('');

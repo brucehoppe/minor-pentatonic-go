@@ -1287,6 +1287,8 @@ test("supplementary Seven Licks resource still renders all cards", () => {
     location: { origin: "http://127.0.0.1" }, requestAnimationFrame: fn => fn() });
   vm.runInContext(lessonScript, context);
   assert.equal((host.innerHTML.match(/<article class="lick">/g) ?? []).length, 7);
+  assert.match(host.innerHTML, /aria-label="The pull-off pair: B string fret 8, then B string fret 5, then G string fret 7, then G string fret 5"/,
+    "each diagram tells a screen reader which lick it is and its notes in order");
 });
 
 test("register moves each box a whole octave, or leaves it where it is", () => {
