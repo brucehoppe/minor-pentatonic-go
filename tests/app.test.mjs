@@ -70,6 +70,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       connect(node) { if (node && node.stream) audio.taps.push(node); },
       disconnect(node) { audio.untaps.push(node); } }; }
     createMediaStreamDestination() { return { stream: { destination: true }, channelCount: 2, connect() {} }; }
+    createChannelSplitter(n) { const sp = { n, links: [], connect(d, out, inp) { sp.links.push({ d, out, inp }); } };
+      audio.splitters = [...(audio.splitters ?? []), sp]; return sp; }
     createMediaStreamSource(input) { const n = { input, connected: [], connect(d) { n.connected.push(d); },
       disconnect() { n.connected = []; } }; return n; }
     // decodes any take to one second of stereo 48 kHz
@@ -157,7 +159,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       getUserMedia(c) {
         rec.asked.push(c);
         if (mediaOpts.deny) return Promise.reject(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
-        const track = { stop() { rec.tracksStopped++; }, getSettings: () => ({ latency: 0.01 }) };
+        const track = { stop() { rec.tracksStopped++; }, getSettings: () => ({ latency: 0.01, channelCount: mediaOpts.channels ?? 2 }) };
         return Promise.resolve({ getTracks: () => [track], getAudioTracks: () => [track] });
       },
       enumerateDevices: () => Promise.resolve(mediaOpts.devices ?? []),
@@ -2641,4 +2643,44 @@ test("a slow audio path (Bluetooth) is flagged; a normal one is not", async () =
   slow.document.getElementById("recbtn").click();
   await settle();
   assert.match(slow.document.getElementById("recmsg").textContent, /about 215 ms of delay.*Bluetooth/);
+});
+
+test("picking one input of an interface centres that channel, in mono or stereo takes", async () => {
+  for (const mix of ["guitar", "backing"]) {
+    const { app, document, rec, audio } = makeRuntime({ media: true });
+    document.getElementById("recmix").value = mix;
+    document.getElementById("recchan").onchange({ target: { value: "1" } });
+    document.getElementById("recbtn").click();
+    await settle();
+    assert.equal(rec.asked[0].audio.channelCount.ideal, 2, `${mix}: the input is asked for in stereo`);
+    const r = app.getRec();
+    assert.equal(r.dest.channelCount, mix === "guitar" ? 1 : 2);
+    const sp = audio.splitters[0];
+    sameShape(sp.links.map(l => [l.out, l.inp]), [[1, 0]], `${mix}: input 2 alone feeds the take`);
+    assert.equal(sp.links[0].d, r.dest);
+    assert.equal(r.src.connected.length, 1, "the raw input is not also mixed in");
+    assert.equal(r.src.connected[0], sp);
+    assert.equal(document.getElementById("recchan").disabled, true, "fixed while the take is open");
+  }
+});
+
+test("both inputs is the default, and a missing channel or engine falls back and says so", async () => {
+  const both = makeRuntime({ media: true });
+  both.document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(both.audio.splitters, undefined);
+  assert.equal(both.app.getRec().src.connected[0], both.app.getRec().dest);
+
+  const mono = makeRuntime({ media: { channels: 1 } });
+  mono.document.getElementById("recchan").onchange({ target: { value: "1" } });
+  mono.document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(mono.app.getRec().src.connected[0], mono.app.getRec().dest);
+  assert.match(mono.document.getElementById("recmsg").textContent, /one channel, so there is no Input 2/);
+
+  const compat = makeRuntime({ media: true, audio: "wav" });
+  compat.document.getElementById("recchan").onchange({ target: { value: "0" } });
+  compat.document.getElementById("recbtn").click();
+  await settle();
+  assert.match(compat.document.getElementById("recmsg").textContent, /needs Web Audio.*both inputs are recorded/);
 });

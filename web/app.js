@@ -36,7 +36,7 @@ const state={
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
   // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
   // input device, and the last finished take with its blob URLs
-  rec:null, recDevice:"", recTake:null,
+  rec:null, recDevice:"", recChannel:-1, recTake:null,
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
   triadKind:"maj", triadSet:"123",
@@ -1973,6 +1973,7 @@ const REC_TYPES=["audio/webm;codecs=opus","audio/webm","audio/mp4;codecs=mp4a.40
 const REC_ROW=`<div class="row" id="recrow">
   <span class="lbl">Record</span>
   <select id="recinput" aria-label="Input device"><option value="">Default input</option></select>
+  <select id="recchan" aria-label="Input channel"><option value="-1">Both inputs</option><option value="0">Input 1</option><option value="1">Input 2</option></select>
   <select id="recmix" aria-label="What to record"><option value="guitar">Guitar only</option><option value="backing">Guitar + backing</option></select>
   <label style="font-size:12px;display:flex;gap:5px;align-items:center"><input type="checkbox" id="recarm">Start on bar 1 of the 12-bar trainer</label>
   <button id="recbtn" aria-pressed="false">Record</button>
@@ -2015,7 +2016,7 @@ function recButtons(){
   b.disabled=phase==="finishing";
   b.setAttribute("aria-pressed",phase!=="idle");
   // what a take records is fixed once its input is open
-  ["recinput","recmix","recarm"].forEach(id=>{document.getElementById(id).disabled=phase!=="idle";});}
+  ["recinput","recchan","recmix","recarm"].forEach(id=>{document.getElementById(id).disabled=phase!=="idle";});}
 // Device labels stay blank until the page has been allowed an input once, so this
 // runs again after every take opens its input.
 function listInputs(){
@@ -2030,6 +2031,11 @@ function listInputs(){
     sel.value=state.recDevice;
   }).catch(()=>{});}
 // Opens the input and builds a MediaRecorder for it, ready to start.
+//
+// Input channel: a two-input interface arrives as one stereo stream, guitar on one
+// side. "Both inputs" keeps that (averaged to mono for a guitar-only take, so the
+// guitar is 6 dB down with the empty input's hiss mixed in). Picking Input 1 or 2
+// splits that channel out and sends it to the centre, in a mono or stereo take alike.
 function openTake(){
   const a=audio();   // inside the click, so the engine is allowed to start
   const wantBacking=document.getElementById("recmix").value==="backing";
@@ -2038,17 +2044,29 @@ function openTake(){
     :"There is no sound engine to capture backing from, so this take is guitar only."):"";
   const want={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
   if(state.recDevice)want.deviceId={exact:state.recDevice};
-  if(mono)want.channelCount={ideal:1};
+  const chan=state.recChannel;
+  // A single channel can only be picked out of an input that arrives in stereo.
+  if(chan>=0)want.channelCount={ideal:2};else if(mono)want.channelCount={ideal:1};
   return navigator.mediaDevices.getUserMedia({audio:want}).then(input=>{
-    let stream=input,src=null,dest=null;
+    let stream=input,src=null,dest=null,chanNote="";
     // Through Web Audio when there is one: that is where backing is mixed in, and a
     // one-channel destination downmixes a stereo interface to a true mono take.
     if(ac&&ac.createMediaStreamDestination){
       dest=ac.createMediaStreamDestination();
       dest.channelCount=mono?1:2;dest.channelCountMode="explicit";dest.channelInterpretation="speakers";
-      src=ac.createMediaStreamSource(input);src.connect(dest);
+      src=ac.createMediaStreamSource(input);
+      const tr=input.getAudioTracks&&input.getAudioTracks()[0];
+      const have=(tr&&tr.getSettings&&tr.getSettings().channelCount)||2;
+      if(chan>=0&&chan<have&&ac.createChannelSplitter){
+        // one output of the splitter is mono, which the destination spreads to both sides
+        const split=ac.createChannelSplitter(2);
+        src.connect(split);split.connect(dest,chan,0);
+      }else{
+        if(chan>=0)chanNote=`This input has one channel, so there is no Input ${chan+1}; recording the channel it has.`;
+        src.connect(dest);}
       if(backing)a.tap(dest);
       stream=dest.stream;}
+    else if(chan>=0)chanNote="Picking one input needs Web Audio, which this browser withholds, so both inputs are recorded.";
     const mime=recMime(),opts={audioBitsPerSecond:96000};
     if(mime)opts.mimeType=mime;
     const recorder=new MediaRecorder(stream,opts);
@@ -2056,7 +2074,7 @@ function openTake(){
     const warn=late>REC_LATE_MS?`Your audio adds about ${late} ms of delay, so the take will sound late against the backing. `
       +"Bluetooth headphones are the usual cause: use wired ones, or your interface's outputs.":"";
     const take={phase:"ready",input,src,dest,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,
-      note:[note,warn].filter(Boolean).join(" ")};
+      note:[note,chanNote,warn].filter(Boolean).join(" ")};
     recorder.ondataavailable=e=>{if(e.data&&e.data.size)take.chunks.push(e.data);};
     recorder.onstop=()=>finishTake(take);
     listInputs();
@@ -3320,10 +3338,11 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
 (()=>{const play=document.getElementById("play");
   if(play.insertAdjacentHTML)play.insertAdjacentHTML("afterend",REC_ROW);
   const why=recUnsupported();
-  if(why){["recinput","recmix","recarm","recbtn"].forEach(id=>{document.getElementById(id).disabled=true;});
+  if(why){["recinput","recchan","recmix","recarm","recbtn"].forEach(id=>{document.getElementById(id).disabled=true;});
     document.getElementById("recrow").classList.add("off");recSay(why);return;}
   document.getElementById("recbtn").onclick=toggleRecord;
   document.getElementById("recinput").onchange=e=>{state.recDevice=e.target.value;};
+  document.getElementById("recchan").onchange=e=>{state.recChannel=+e.target.value;};
   document.getElementById("recdlc").onclick=()=>saveFile(state.recTake);
   document.getElementById("recdlw").onclick=()=>saveFile(state.recTake&&state.recTake.wav);
   if(navigator.mediaDevices.addEventListener)navigator.mediaDevices.addEventListener("devicechange",listInputs);
