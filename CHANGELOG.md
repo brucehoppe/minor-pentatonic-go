@@ -12,6 +12,10 @@ a second release on the same day.
   itself at 30 minutes. On a two-input interface you can record just the input
   the guitar is in, centred. Monitor input plays the input through the
   computer's output, for headphones on a USB amp rather than the interface.
+  Check input shows a live level for each of the interface's two inputs, so
+  you can see which one the guitar is in; click a bar to pick it. It says when
+  there is no signal, when the signal is on the other input, and when the level
+  is hot or clipping.
   Recording and monitoring share one open input, released after five idle
   minutes, so Safari asks for the microphone at most once per visit. Where Safari
   withholds the microphone because of Lockdown Mode, the Record row says so and

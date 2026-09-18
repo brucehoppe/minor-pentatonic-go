@@ -36,7 +36,7 @@ const state={
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
   // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
   // input device, and the last finished take with its blob URLs
-  rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null,
+  rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null, checking:false, meter:null,
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
   triadKind:"maj", triadSet:"123",
@@ -1974,6 +1974,7 @@ const REC_ROW=`<div class="row" id="recrow">
   <span class="lbl">Record</span>
   <select id="recinput" aria-label="Input device"><option value="">Default input</option></select>
   <select id="recchan" aria-label="Input channel"><option value="-1">Both inputs</option><option value="0">Input 1</option><option value="1">Input 2</option></select>
+  <button id="reccheck" aria-pressed="false">Check input</button>
   <button id="recmon" aria-pressed="false">Monitor input</button>
   <select id="recmix" aria-label="What to record"><option value="guitar">Guitar only</option><option value="backing">Guitar + backing</option></select>
   <label style="font-size:12px;display:flex;gap:5px;align-items:center"><input type="checkbox" id="recarm">Start on bar 1 of the 12-bar trainer</label>
@@ -1981,6 +1982,11 @@ const REC_ROW=`<div class="row" id="recrow">
   <audio id="recplay" controls hidden style="height:32px;max-width:100%"></audio>
   <button id="recdlc" hidden>Download compressed</button>
   <button id="recdlw" hidden>Download WAV</button>
+  <span id="recmeter" hidden style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;flex-basis:100%">
+    <button id="recbar0" class="lvl" aria-label="Input 1 level; select Input 1" style="display:flex;align-items:center;gap:8px;padding:4px 8px"><span style="font-size:11.5px">Input 1</span><span style="position:relative;width:120px;height:8px;border:1px solid var(--rule)"><span id="recfill0" style="position:absolute;left:0;top:0;bottom:0;width:0"></span></span></button>
+    <button id="recbar1" class="lvl" aria-label="Input 2 level; select Input 2" style="display:flex;align-items:center;gap:8px;padding:4px 8px"><span style="font-size:11.5px">Input 2</span><span style="position:relative;width:120px;height:8px;border:1px solid var(--rule)"><span id="recfill1" style="position:absolute;left:0;top:0;bottom:0;width:0"></span></span></button>
+    <span id="reclevel" style="font-size:11.5px;line-height:1.5"></span>
+  </span>
   <span id="recmsg" style="font-size:11.5px;opacity:.75;flex-basis:100%;line-height:1.5"></span>
 </div>`;
 function recUnsupported(){
@@ -2042,7 +2048,9 @@ function listInputs(){
 function inputWanted(mono){
   const want={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
   if(state.recDevice)want.deviceId={exact:state.recDevice};
-  if(state.recChannel>=0)want.channelCount={ideal:2};else if(mono)want.channelCount={ideal:1};
+  // Stereo whenever Web Audio will handle it: the meter watches both inputs, and a
+  // take picks its channel out of that. So the channel choice never reopens it.
+  want.channelCount={ideal:mono?1:2};
   return want;}
 // ---- the shared input ----
 // The recorder and the monitor share one open input, and it stays open for a few
@@ -2057,16 +2065,21 @@ function acquireInput(mono){
   if(live){clearTimeout(h.idle);h.idle=null;return Promise.resolve(h.stream);}
   releaseInput();   // another device or channel, or it was unplugged
   return navigator.mediaDevices.getUserMedia({audio:want}).then(stream=>{
-    state.inputHeld={key,stream,idle:null};return stream;});}
+    state.inputHeld={key,stream,idle:null};
+    const a=state.engine;
+    if(a&&a.context)meterAttach(a.context,stream);
+    return stream;});}
 function releaseInput(){
   const h=state.inputHeld;
   if(!h)return;
   state.inputHeld=null;clearTimeout(h.idle);
+  meterDetach();
+  if(state.checking){state.checking=false;checkButton();}
   h.stream.getTracks().forEach(t=>t.stop());}
-// Called whenever the recorder or the monitor lets go of the input.
+// Called whenever the recorder, the monitor or Check input lets go of the input.
 function inputIdle(){
   const h=state.inputHeld;
-  if(!h||state.monitor||state.rec)return;
+  if(!h||state.monitor||state.rec||state.checking)return;
   clearTimeout(h.idle);h.idle=setTimeout(releaseInput,INPUT_IDLE_MS);}
 // The input as a Web Audio source, with the chosen channel split out. link(node)
 // connects it onward; one splitter output is mono, which a stereo node spreads to
@@ -2212,6 +2225,84 @@ function showTake(){
   play.src=t.url;
   c.textContent=`Download compressed (${fileSize(t.blob.size)})`;
   if(t.wav)w.textContent=`Download WAV (${fileSize(t.wav.blob.size)})`;}
+// ---- input check and level meter ----
+// While the input is open — Check input, monitoring, armed, recording, or the idle
+// minutes after — two bars show the level of Input 1 and Input 2, so you can see
+// which one the guitar is in (a Scarlett Solo's mic socket is 1, its instrument jack
+// 2). Clicking a bar picks that input. The line beside them says what to fix.
+const METER_FLOOR=-60, METER_SILENT=-55, METER_HOT=-6, METER_CLIP=-1;
+const dbOf=x=>x>0?20*Math.log10(x):-Infinity;
+function meterAttach(ac,stream){
+  if(state.meter&&state.meter.stream===stream)return;
+  meterDetach();
+  if(!ac.createAnalyser||!ac.createChannelSplitter)return;
+  const src=ac.createMediaStreamSource(stream),split=ac.createChannelSplitter(2);
+  src.connect(split);
+  const an=[0,1].map(i=>{const x=ac.createAnalyser();x.fftSize=1024;split.connect(x,i,0);return x;});
+  const tr=stream.getAudioTracks&&stream.getAudioTracks()[0];
+  const chans=(tr&&tr.getSettings&&tr.getSettings().channelCount)||2;
+  const m=state.meter={stream,src,an,chans,shown:[METER_FLOOR,METER_FLOOR],buf:new Float32Array(1024),clipAt:0,quiet:0,timer:null};
+  document.getElementById("recmeter").hidden=false;
+  document.getElementById("recbar1").hidden=chans<2;
+  m.timer=setInterval(()=>meterTick(m),60);
+  meterTick(m);}
+function meterDetach(){
+  const m=state.meter;
+  if(!m)return;
+  state.meter=null;clearInterval(m.timer);
+  try{m.src.disconnect();}catch(e){/* already gone */}
+  document.getElementById("recmeter").hidden=true;}
+// Peak level of each input in dB, falling back slowly so a note stays readable.
+function meterRead(m){
+  return m.an.map((x,i)=>{
+    x.getFloatTimeDomainData(m.buf);
+    let pk=0;for(let j=0;j<m.buf.length;j++){const v=Math.abs(m.buf[j]);if(v>pk)pk=v;}
+    const db=i<m.chans?dbOf(pk):-Infinity;
+    return m.shown[i]=Math.max(db,m.shown[i]-1.5,METER_FLOOR);});}
+function meterTick(m){
+  const lv=meterRead(m),now=Date.now(),sel=state.recChannel;
+  lv.forEach((db,i)=>{
+    const f=document.getElementById("recfill"+i),pct=Math.max(0,Math.min(100,(db-METER_FLOOR)/-METER_FLOOR*100));
+    f.style.width=pct+"%";
+    f.style.background=db>=METER_CLIP?"var(--pink)":db>=METER_HOT?"var(--gold)":"var(--blue)";
+    const b=document.getElementById("recbar"+i);
+    // aria-current, not aria-pressed: pressed buttons are painted solid blue, which
+    // would hide the level inside the very bar you chose
+    b.setAttribute("aria-current",sel===i);
+    b.style.outline=sel===i?"2px solid var(--blue)":"";});
+  // the input that counts: the chosen one, or with Both inputs the louder
+  const at=sel>=0?sel:(lv[1]>lv[0]?1:0),other=1-at,name=sel>=0?`Input ${sel+1}`:"the input";
+  if(lv[at]>=METER_CLIP)m.clipAt=now;
+  m.quiet=lv[at]<METER_SILENT?m.quiet+1:0;
+  let say;
+  if(sel>=0&&m.chans>1&&lv[at]<METER_SILENT&&lv[other]>=METER_SILENT)
+    say=`Signal is on Input ${other+1}, not Input ${sel+1}: click Input ${other+1} to switch.`;
+  else if(sel<0&&m.chans>1&&lv[at]>=METER_SILENT&&lv[other]<METER_SILENT)
+    say=`Signal on Input ${at+1} only: click it to record just that input, centred at full level.`;
+  else if(now-m.clipAt<2000)say="Too loud: it's clipping. Turn the gain knob down until the ring stays green.";
+  else if(lv[at]<METER_SILENT)
+    say=`No signal on ${name}. Play a note; if no bar moves, check the cable, the gain and the INST button.`;
+  else if(lv[at]>=METER_HOT)say="Hot: fine on its own, but turn the gain down a little before recording with backing.";
+  else say=`Good level on ${name}.`;
+  document.getElementById("reclevel").textContent=say;}
+function checkButton(){document.getElementById("reccheck").setAttribute("aria-pressed",state.checking);}
+function toggleCheck(){
+  if(state.checking){state.checking=false;checkButton();inputIdle();return;}
+  const a=audio(),ac=a&&a.context;
+  if(!ac||!ac.createAnalyser){recSay("Checking the input needs Web Audio, which this browser withholds.");return;}
+  return openCheck().then(()=>{listInputs();recSay("Checking the input: play a note and watch which bar moves. Nothing goes to the speakers.");});}
+// Opening a different device releases the old input, which clears checking, so it
+// is set once the new one is open.
+function openCheck(){
+  return acquireInput(false).then(()=>{state.checking=true;checkButton();})
+    .catch(e=>{state.checking=false;checkButton();recSay(inputError(e));});}
+function restartCheck(){if(state.checking)openCheck();}
+function pickChannel(i){
+  state.recChannel=i;
+  document.getElementById("recchan").value=String(i);
+  restartMonitor();
+  if(state.meter)meterTick(state.meter);}
+
 // ---- monitor input ----
 // Sends the input to the speakers, for headphones that aren't on the interface — a
 // USB headphone amp, say. It goes straight to the output, past the engine's master
@@ -3415,13 +3506,16 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
 (()=>{const play=document.getElementById("play");
   if(play.insertAdjacentHTML)play.insertAdjacentHTML("afterend",REC_ROW);
   const why=recUnsupported();
-  if(why){["recinput","recchan","recmon","recmix","recarm","recbtn"].forEach(id=>{document.getElementById(id).disabled=true;});
+  if(why){["recinput","recchan","reccheck","recmon","recmix","recarm","recbtn"].forEach(id=>{document.getElementById(id).disabled=true;});
     document.getElementById("recrow").classList.add("off");recSay(why);return;}
   document.getElementById("recbtn").onclick=toggleRecord;
-  document.getElementById("recinput").onchange=e=>{state.recDevice=e.target.value;restartMonitor();};
+  document.getElementById("recinput").onchange=e=>{state.recDevice=e.target.value;restartMonitor();restartCheck();};
   document.getElementById("recchan").onchange=e=>{state.recChannel=+e.target.value;restartMonitor();};
-  if(audioContextCtor())document.getElementById("recmon").onclick=toggleMonitor;
-  else{const b=document.getElementById("recmon");b.disabled=true;b.title="Monitoring needs Web Audio, which this browser withholds.";}
+  // a bar is a shortcut for the channel menu, until a take has fixed the input
+  [0,1].forEach(i=>{document.getElementById("recbar"+i).onclick=()=>{if(!state.rec)pickChannel(i);};});
+  if(audioContextCtor()){document.getElementById("recmon").onclick=toggleMonitor;document.getElementById("reccheck").onclick=toggleCheck;}
+  else["recmon","reccheck"].forEach(id=>{const b=document.getElementById(id);b.disabled=true;
+    b.title="This needs Web Audio, which this browser withholds.";});
   document.getElementById("recdlc").onclick=()=>saveFile(state.recTake);
   document.getElementById("recdlw").onclick=()=>saveFile(state.recTake&&state.recTake.wav);
   if(navigator.mediaDevices.addEventListener)navigator.mediaDevices.addEventListener("devicechange",listInputs);

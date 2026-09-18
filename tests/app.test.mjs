@@ -72,6 +72,11 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       connect(node) { if (node && node.stream) audio.taps.push(node); if (node && node.speakers) audio.toSpeakers.push(g); },
       disconnect(node) { audio.untaps.push(node); if (!node) g.disconnected = true; } }; return g; }
     createMediaStreamDestination() { return { stream: { destination: true }, channelCount: 2, connect() {} }; }
+    // An analyser reads audio.levels[channel] (a peak, 0..1) for whichever splitter
+    // output feeds it, so a test can "play" into Input 1 or Input 2.
+    createAnalyser() { const an = { fftSize: 2048, getFloatTimeDomainData(buf) {
+      const link = (audio.splitters ?? []).flatMap(sp => sp.links).find(l => l.d === an);
+      buf.fill(0); buf[0] = (audio.levels ?? [0, 0])[link ? link.out : 0]; } }; return an; }
     createChannelSplitter(n) { const sp = { n, links: [], connect(d, out, inp) { sp.links.push({ d, out, inp }); } };
       audio.splitters = [...(audio.splitters ?? []), sp]; return sp; }
     createMediaStreamSource(input) { const n = { input, connected: [], connect(d) { n.connected.push(d); },
@@ -212,7 +217,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,REC_MAX_SEC,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,REC_MAX_SEC,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -2453,7 +2458,7 @@ test("a guitar-only take asks for an unprocessed mono input and records it at 96
   assert.equal(want.echoCancellation, false);
   assert.equal(want.noiseSuppression, false);
   assert.equal(want.autoGainControl, false);
-  assert.equal(want.channelCount, undefined, "Web Audio makes the take mono, so the input needn't be");
+  assert.equal(want.channelCount.ideal, 2, "opened in stereo; Web Audio makes the take mono");
   const r = rec.recorders[0];
   assert.equal(r.opts.audioBitsPerSecond, 96000);
   assert.equal(r.opts.mimeType, "audio/webm;codecs=opus");
@@ -2507,7 +2512,7 @@ test("guitar + backing taps the Web Audio mix into the take and records stereo",
   document.getElementById("recmix").value = "backing";
   document.getElementById("recbtn").click();
   await settle();
-  assert.equal(rec.asked[0].audio.channelCount, undefined, "no mono request");
+  assert.equal(rec.asked[0].audio.channelCount.ideal, 2);
   assert.equal(app.getRec().dest.channelCount, 2);
   assert.equal(audio.taps.length, 1, "the engine's master bus feeds the take");
   assert.equal(audio.taps[0], app.getRec().dest);
@@ -2667,7 +2672,7 @@ test("picking one input of an interface centres that channel, in mono or stereo 
     assert.equal(rec.asked[0].audio.channelCount.ideal, 2, `${mix}: the input is asked for in stereo`);
     const r = app.getRec();
     assert.equal(r.dest.channelCount, mix === "guitar" ? 1 : 2);
-    const sp = audio.splitters[0];
+    const sp = audio.splitters.find(x => x.links.some(l => l.d === r.dest));
     sameShape(sp.links.map(l => [l.out, l.inp]), [[1, 0]], `${mix}: input 2 alone feeds the take`);
     assert.equal(sp.links[0].d, r.dest);
     assert.equal(r.src.connected.length, 1, "the raw input is not also mixed in");
@@ -2680,7 +2685,8 @@ test("both inputs is the default, and a missing channel or engine falls back and
   const both = makeRuntime({ media: true });
   both.document.getElementById("recbtn").click();
   await settle();
-  assert.equal(both.audio.splitters, undefined);
+  assert.ok(!both.audio.splitters.some(x => x.links.some(l => l.d === both.app.getRec().dest)),
+    "no channel is split out for the take");
   assert.equal(both.app.getRec().src.connected[0], both.app.getRec().dest);
 
   const mono = makeRuntime({ media: { channels: 1 } });
@@ -2737,20 +2743,18 @@ test("the monitor follows the channel and device choice, and Quit silences it", 
   const { app, document, rec, audio } = makeRuntime({ media: true });
   document.getElementById("recmon").click();
   await settle();
-  assert.equal(audio.splitters, undefined);
+  assert.ok(!audio.splitters.some(x => x.links.some(l => l.d === app.getMonitor().gain)), "both inputs, unsplit");
   document.getElementById("recchan").onchange({ target: { value: "0" } });
   await settle();
-  assert.equal(rec.asked.length, 2, "reopened with the new choice");
-  assert.equal(rec.asked[1].audio.channelCount.ideal, 2);
-  const sp = audio.splitters[0];
-  assert.equal(sp.links[0].d, app.getMonitor().gain);
+  assert.equal(rec.asked.length, 1, "the new channel comes out of the same input");
+  const sp = audio.splitters.find(x => x.links.some(l => l.d === app.getMonitor().gain));
   assert.equal(sp.links[0].out, 0);
   document.getElementById("recinput").onchange({ target: { value: "abc" } });
   await settle();
-  assert.equal(rec.asked[2].audio.deviceId.exact, "abc");
+  assert.equal(rec.asked[1].audio.deviceId.exact, "abc");
   app.silenceEverything();
   assert.equal(app.getMonitor(), null);
-  assert.equal(rec.tracksStopped, 3);
+  assert.equal(rec.tracksStopped, 2);
 });
 
 test("without Web Audio the monitor is switched off and says why", () => {
@@ -2783,5 +2787,94 @@ test("takes reuse the open input, and reopen it once it has been released or unp
   assert.equal(rec.asked.length, 3);
   document.getElementById("recchan").onchange({ target: { value: "1" } });
   await take();
-  assert.equal(rec.asked.length, 4, "a different channel needs a differently opened input");
+  assert.equal(rec.asked.length, 3, "a channel is picked out of the open input: no new prompt");
+  document.getElementById("recinput").onchange({ target: { value: "abc" } });
+  await take();
+  assert.equal(rec.asked.length, 4, "another device is another input");
+});
+
+// ---------- input check and level meter ----------
+const meterText = document => document.getElementById("reclevel").textContent;
+const tick = async (advance, n = 1) => { for (let i = 0; i < n; i++) advance(0.06); await settle(); };
+
+test("Check input shows both inputs' levels without sending anything to the speakers", async () => {
+  const { app, document, rec, audio, advance, runIdle } = makeRuntime({ media: true });
+  app.audio();
+  const speakers = audio.toSpeakers.length;
+  document.getElementById("reccheck").click();
+  await settle();
+  assert.equal(document.getElementById("reccheck").getAttribute("aria-pressed"), "true");
+  assert.equal(document.getElementById("recmeter").hidden, false);
+  assert.equal(audio.toSpeakers.length, speakers, "checking is silent");
+  assert.match(meterText(document), /No signal on the input\. Play a note/);
+
+  audio.levels = [0, 0.3];                    // guitar in the instrument jack, about -10 dB
+  await tick(advance);
+  // the analyser works in 32-bit floats, so compare the width to a hundredth of a percent
+  assert.ok(Math.abs(parseFloat(document.getElementById("recfill1").style.width) - (20 * Math.log10(0.3) + 60) / 60 * 100) < 0.01);
+  assert.equal(document.getElementById("recfill0").style.width, "0%");
+  assert.equal(document.getElementById("recfill1").style.background, "var(--blue)");
+  assert.match(meterText(document), /Signal on Input 2 only: click it/);
+
+  document.getElementById("recbar1").click();   // pick it by clicking its bar
+  assert.equal(app.getChannel(), 1);
+  assert.equal(document.getElementById("recchan").value, "1");
+  assert.equal(document.getElementById("recbar1").getAttribute("aria-current"), "true");
+  assert.match(meterText(document), /^Good level on Input 2\.$/);
+
+  document.getElementById("reccheck").click();  // off: the input is kept a while, then let go
+  assert.equal(document.getElementById("recmeter").hidden, false);
+  runIdle();
+  assert.equal(document.getElementById("recmeter").hidden, true);
+  assert.equal(rec.tracksStopped, 1);
+});
+
+test("the meter says when the guitar is on the other input, too loud, or silent", async () => {
+  const { document, audio, advance, clock } = makeRuntime({ media: true });
+  document.getElementById("recchan").onchange({ target: { value: "0" } });   // Input 1: the mic socket
+  document.getElementById("reccheck").click();
+  await settle();
+  audio.levels = [0, 0.3];
+  await tick(advance);
+  assert.match(meterText(document), /Signal is on Input 2, not Input 1: click Input 2 to switch/);
+  assert.equal(document.getElementById("recbar0").getAttribute("aria-current"), "true");
+
+  document.getElementById("recbar1").click();
+  audio.levels = [0, 0.97];                   // -0.3 dB
+  await tick(advance);
+  assert.match(meterText(document), /clipping/);
+  assert.equal(document.getElementById("recfill1").style.background, "var(--pink)");
+  audio.levels = [0, 0.6];                    // -4.4 dB
+  await tick(advance, 4);                      // the bar falls back from the peak
+  assert.match(meterText(document), /clipping/, "the warning holds for 2 s, so a brief clip is seen");
+  clock.wall += 3;
+  await tick(advance);
+  assert.match(meterText(document), /^Hot: .*before recording with backing/);
+  assert.equal(document.getElementById("recfill1").style.background, "var(--gold)");
+
+  audio.levels = [0, 0];
+  await tick(advance, 60);
+  assert.match(meterText(document), /No signal on Input 2.*INST button/);
+});
+
+test("the meter runs during monitoring and takes, and a bar can't change a take's input", async () => {
+  const { app, document, audio, advance } = makeRuntime({ media: true });
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.ok(app.getMeter(), "a take opens the meter too");
+  audio.levels = [0.3, 0];
+  await tick(advance);
+  document.getElementById("recbar1").click();
+  assert.equal(app.getChannel(), -1, "the input is fixed while a take is open");
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.ok(app.getMeter(), "still showing between takes");
+});
+
+test("a one-channel input shows one bar", async () => {
+  const { document } = makeRuntime({ media: { channels: 1 } });
+  document.getElementById("reccheck").click();
+  await settle();
+  assert.equal(document.getElementById("recbar1").hidden, true);
+  assert.equal(document.getElementById("recbar0").hidden, false);
 });
