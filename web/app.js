@@ -1994,10 +1994,14 @@ function recUnsupported(){
   if(!md||typeof md.getUserMedia!=="function"){
     if(typeof isSecureContext!=="undefined"&&!isSecureContext)
       return "Recording needs microphone access, which browsers only give a secure page (https, or the app on this computer).";
-    // A secure page with no microphone API: on Safari that is Lockdown Mode.
+    // A secure page with no microphone API: on Safari's engine that is Lockdown Mode.
+    // Other Mac browsers built on it (DuckDuckGo, for one) also say "Safari", but
+    // their exclusion lives in System Settings, so both routes are given.
     return isSafari()
-      ? "Safari is withholding the microphone here, which almost always means Lockdown Mode. To record, turn it off "
-        +"for this site only: Safari \u25b8 Settings \u25b8 Websites \u25b8 Lockdown Mode, then reload."
+      ? "The microphone is being withheld here, which on a Mac almost always means Lockdown Mode. To record, exclude "
+        +"this site in Safari (Settings \u25b8 Websites \u25b8 Lockdown Mode) or, in another browser such as DuckDuckGo, "
+        +"exclude the app (System Settings \u25b8 Privacy & Security \u25b8 Lockdown Mode \u25b8 Configure Web Browsing), "
+        +"then reload. Chrome isn't affected by Lockdown Mode."
       : "This browser doesn't give web pages microphone access, so recording is unavailable.";}
   if(typeof MediaRecorder!=="function")return "This browser cannot record audio.";
   return "";}
@@ -2200,8 +2204,61 @@ function takeToWav(blob,mono){
     .then(ab=>{
       const chans=[];
       for(let c=0;c<(mono?1:ab.numberOfChannels);c++)chans.push(ab.getChannelData(c));
-      return new Blob([wavBytes(chans,ab.sampleRate)],{type:"audio/wav"});})
+      return {wav:new Blob([wavBytes(chans,ab.sampleRate)],{type:"audio/wav"}),seconds:ab.duration};})
     .finally(()=>{if(own&&own.close)own.close();});}
+// ---- a WebM take's length ----
+// A browser recorder writes WebM as a stream, so the file never says how long it is,
+// and some players then show no length or can't seek. This writes a Duration into
+// the Segment's Info, in the file's own TimecodeScale units (11 bytes). Inserting
+// bytes moves everything after Info, so a file with a SeekHead or Cues — positions
+// that would then be wrong — or anything else unexpected comes back unchanged: no
+// worse than it was.
+function webmWithDuration(bytes,ms){
+  const vint=(i,isId)=>{
+    if(i>=bytes.length)return null;
+    const x=bytes[i];let len=1,m=0x80;
+    while(len<=8&&!(x&m)){m>>=1;len++;}
+    if(len>8||i+len>bytes.length)return null;
+    let v=isId?x:x&(m-1);
+    for(let k=1;k<len;k++)v=v*256+bytes[i+k];
+    return {v,len,unknown:!isId&&v===2**(7*len)-1};};
+  const el=i=>{const id=vint(i,true),sz=id&&vint(i+id.len,false);
+    return sz?{id:id.v,sizeAt:i+id.len,sizeLen:sz.len,size:sz.v,unknown:sz.unknown,data:i+id.len+sz.len}:null;};
+  const head=el(0);
+  if(!head||head.id!==0x1A45DFA3)return bytes;                     // not EBML
+  const seg=el(head.data+head.size);
+  if(!seg||seg.id!==0x18538067)return bytes;
+  let info=null;
+  for(let i=seg.data;;){
+    const e=el(i);
+    if(!e||e.id===0x114D9B74||e.id===0x1C53BB6B)return bytes;      // SeekHead, Cues
+    if(e.id===0x1549A966){info=e;break;}
+    if(e.unknown||e.id===0x1F43B675)return bytes;                  // a Cluster before any Info
+    i=e.data+e.size;}
+  let scale=1e6;
+  for(let i=info.data;i<info.data+info.size;){
+    const e=el(i);
+    if(!e||e.id===0x4489)return bytes;                             // already has a Duration
+    if(e.id===0x2AD7B1){scale=0;for(let k=0;k<e.size;k++)scale=scale*256+bytes[e.data+k];}
+    i=e.data+e.size;}
+  const grown=info.size+11,fits=(n,len)=>n<2**(7*len)-1;
+  if(!scale||!fits(grown,info.sizeLen)||(!seg.unknown&&!fits(seg.size+11,seg.sizeLen)))return bytes;
+  const at=info.data+info.size,out=new Uint8Array(bytes.length+11);
+  out.set(bytes.subarray(0,at));out.set(bytes.subarray(at),at+11);
+  out.set([0x44,0x89,0x88],at);                                     // Duration, 8-byte float
+  new DataView(out.buffer).setFloat64(at+3,ms*1e6/scale);
+  const putSize=(pos,len,n)=>{for(let k=len-1;k>=0;k--){out[pos+k]=n%256;n=Math.floor(n/256);}out[pos]|=0x80>>(len-1);};
+  putSize(info.sizeAt,info.sizeLen,grown);
+  if(!seg.unknown)putSize(seg.sizeAt,seg.sizeLen,seg.size+11);
+  return out;}
+function fixTakeLength(kept,seconds){
+  if(!/webm/.test(kept.blob.type)||!(seconds>0))return Promise.resolve();
+  return kept.blob.arrayBuffer().then(buf=>{
+    const fixed=webmWithDuration(new Uint8Array(buf),seconds*1000);
+    if(fixed.length===buf.byteLength||state.recTake!==kept)return;
+    try{URL.revokeObjectURL(kept.url);}catch(e){/* already released */}
+    kept.blob=new Blob([fixed],{type:kept.blob.type});
+    kept.url=URL.createObjectURL(kept.blob);}).catch(()=>{/* keep the file as recorded */});}
 function finishTake(t){
   closeTake(t);
   const blob=new Blob(t.chunks,{type:t.mime||"audio/webm"});
@@ -2212,11 +2269,14 @@ function finishTake(t){
   const what=(t.capped?`Stopped at the ${REC_MAX_SEC/60}-minute limit. `:"")
     +`Take saved: ${secs} s, ${t.mono?"mono":"stereo"}.`+(t.note?" "+t.note:"");
   showTake();recButtons();recSay(what+" Making the WAV…");
-  return takeToWav(blob,t.mono).then(wav=>{
+  // The decoded length is exact; without a decoder, the recorder's own clock will do.
+  return takeToWav(blob,t.mono).then(({wav,seconds})=>fixTakeLength(kept,seconds).then(()=>{
     if(state.recTake!==kept)return;
     kept.wav={blob:wav,url:URL.createObjectURL(wav),name:kept.name.replace(/\.\w+$/,".wav")};
     showTake();recSay(what);
-  },()=>{if(state.recTake===kept)recSay(what+" This browser can't decode it, so there is no WAV copy.");});}
+  }),()=>fixTakeLength(kept,(Date.now()-t.t0)/1000).then(()=>{
+    if(state.recTake!==kept)return;
+    showTake();recSay(what+" This browser can't decode it, so there is no WAV copy.");}));}
 function showTake(){
   const t=state.recTake,play=document.getElementById("recplay");
   const c=document.getElementById("recdlc"),w=document.getElementById("recdlw");

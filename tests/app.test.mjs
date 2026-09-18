@@ -82,7 +82,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     createMediaStreamSource(input) { const n = { input, connected: [], connect(d) { n.connected.push(d); },
       disconnect() { n.connected = []; } }; return n; }
     // decodes any take to one second of stereo 48 kHz
-    decodeAudioData() { return Promise.resolve({ numberOfChannels: 2, sampleRate: 48000,
+    decodeAudioData() { return Promise.resolve({ numberOfChannels: 2, sampleRate: 48000, duration: 1,
       getChannelData: () => new Float32Array(48000).fill(0.25) }); }
     createOscillator() { audio.oscillators++; return { type: "sine", frequency: new AudioParam(), connect() {},
       start(t) { audio.starts++; audio.startTimes.push(t); }, stop() { audio.stops++; } }; }
@@ -157,7 +157,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     start(slice) { this.state = "recording"; this.slice = slice; }
     stop() {
       this.state = "inactive";
-      if (this.ondataavailable) this.ondataavailable({ data: new Blob(["x".repeat(3000)]) });
+      if (this.ondataavailable) this.ondataavailable({ data: new Blob([mediaOpts.data ?? "x".repeat(3000)]) });
       if (this.onstop) this.onstop();
     }
   }
@@ -217,7 +217,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,REC_MAX_SEC,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,REC_MAX_SEC,webmWithDuration,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -2767,7 +2767,10 @@ test("a secure Safari page without the microphone API is diagnosed as Lockdown M
   const safari = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Safari/605.1.15";
   const locked = makeRuntime({ userAgent: safari });
   assert.equal(locked.document.getElementById("recbtn").disabled, true);
-  assert.match(locked.document.getElementById("recmsg").textContent, /Lockdown Mode.*Settings \u25b8 Websites \u25b8 Lockdown Mode/);
+  const msg = locked.document.getElementById("recmsg").textContent;
+  assert.match(msg, /Lockdown Mode.*Safari \(Settings \u25b8 Websites \u25b8 Lockdown Mode\)/);
+  assert.match(msg, /DuckDuckGo, exclude the app \(System Settings .*Configure Web Browsing\)/);
+  assert.match(msg, /Chrome isn't affected/);
   assert.doesNotMatch(locked.document.getElementById("recmsg").textContent, /secure page/);
   const other = makeRuntime();
   assert.match(other.document.getElementById("recmsg").textContent, /doesn't give web pages microphone access/);
@@ -2877,4 +2880,64 @@ test("a one-channel input shows one bar", async () => {
   await settle();
   assert.equal(document.getElementById("recbar1").hidden, true);
   assert.equal(document.getElementById("recbar0").hidden, false);
+});
+
+// ---------- a WebM take's length ----------
+// A WebM laid out the way browser recorders write it: EBML header, a Segment of
+// unknown size, Info without a Duration, Tracks, then a Cluster of unknown size.
+const ebml = (id, body, sizeBytes) => {
+  const idBytes = []; for (let v = id; v > 0; v = Math.floor(v / 256)) idBytes.unshift(v % 256);
+  const size = sizeBytes ?? [0x80 | body.length];
+  return [...idBytes, ...size, ...body];
+};
+const UNKNOWN = [0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+const recorderWebm = ({ seekHead = false, duration = false } = {}) => new Uint8Array([
+  ...ebml(0x1A45DFA3, ebml(0x4282, [0x77, 0x65, 0x62, 0x6D])),          // DocType "webm"
+  ...ebml(0x18538067, [
+    ...(seekHead ? ebml(0x114D9B74, [0xEC, 0x80]) : []),
+    ...ebml(0x1549A966, [...ebml(0x2AD7B1, [0x0F, 0x42, 0x40]),           // TimecodeScale 1 ms
+      ...ebml(0x4D80, [0x61, 0x70, 0x70]),
+      ...(duration ? ebml(0x4489, [0x40, 0x8F, 0x40, 0, 0, 0, 0, 0]) : [])]),
+    ...ebml(0x1654AE6B, [0xAE, 0x80]),
+    ...ebml(0x1F43B675, [0xE7, 0x81, 0x00, 0xA3, 0x82, 0xAA, 0xBB], UNKNOWN),
+  ], UNKNOWN),
+]);
+
+test("a recorder's WebM gains a Duration in its Info, and nothing else moves", () => {
+  const { app } = makeRuntime();
+  const before = recorderWebm(), after = app.webmWithDuration(before, 24000);
+  assert.equal(after.length, before.length + 11);
+  const info = before.indexOf(0x15);                          // Info's ID starts 15 49 A9 66
+  assert.deepEqual([...before.slice(info, info + 4)], [0x15, 0x49, 0xA9, 0x66]);
+  const oldSize = before[info + 4] & 0x7F, end = info + 5 + oldSize;
+  assert.equal(after[info + 4], 0x80 | (oldSize + 11), "Info's size grows by the new element");
+  assert.deepEqual([...after.slice(end, end + 3)], [0x44, 0x89, 0x88], "Duration, 8-byte float");
+  assert.equal(new DataView(after.buffer).getFloat64(end + 3), 24000, "in ms, the file's TimecodeScale");
+  assert.deepEqual([...after.slice(end + 11)], [...before.slice(end)], "Tracks and the audio untouched");
+  assert.deepEqual([...after.slice(0, end)].map((b, i) => i === info + 4 ? 0 : b),
+    [...before.slice(0, end)].map((b, i) => i === info + 4 ? 0 : b));
+});
+
+test("a WebM the patcher doesn't fully understand is left exactly as recorded", () => {
+  const { app } = makeRuntime();
+  for (const [why, bytes] of [
+    ["a SeekHead's positions would be wrong", recorderWebm({ seekHead: true })],
+    ["it already has a Duration", recorderWebm({ duration: true })],
+    ["not WebM at all", new TextEncoder().encode("x".repeat(64))],
+    ["cut off inside Info", recorderWebm().slice(0, 30)],
+  ]) assert.equal(app.webmWithDuration(bytes, 1000), bytes, why);
+});
+
+test("a finished WebM take is saved with its length", async () => {
+  const { app, document } = makeRuntime({ media: { data: recorderWebm() } });
+  document.getElementById("recbtn").click();
+  await settle();
+  document.getElementById("recbtn").click();
+  await settle();
+  const take = app.getTake(), bytes = new Uint8Array(await take.blob.arrayBuffer());
+  assert.equal(bytes.length, recorderWebm().length + 11);
+  const at = bytes.findIndex((b, i) => b === 0x44 && bytes[i + 1] === 0x89 && bytes[i + 2] === 0x88);
+  assert.equal(new DataView(bytes.buffer).getFloat64(at + 3), 1000, "the decoded length: 1 s");
+  assert.equal(document.getElementById("recplay").src, take.url, "the player has the fixed file");
+  assert.match(document.getElementById("recdlc").textContent, /Download compressed \(\d+ B\)/);
 });

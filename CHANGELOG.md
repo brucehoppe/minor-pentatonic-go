@@ -19,7 +19,11 @@ a second release on the same day.
   Recording and monitoring share one open input, released after five idle
   minutes, so Safari asks for the microphone at most once per visit. Where Safari
   withholds the microphone because of Lockdown Mode, the Record row says so and
-  how to exclude the site. The page's policy
+  how to exclude the site (or the app, for another browser built on Safari's
+  engine such as DuckDuckGo).
+  A WebM take now states its length, so players show it and can seek. Browser
+  recorders write WebM as a stream and leave it out; the desk adds it before you
+  download. The page's policy
   now allows `blob:` media, which is where the take plays back from.
 - Standard MIT `LICENSE` text so GitHub recognises it; the bundled fonts are
   listed in `THIRD_PARTY_NOTICES.md`, which now ships in every release package.
