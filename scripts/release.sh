@@ -86,15 +86,20 @@ WHAT IT DOES AND DOES NOT DO
   anywhere. Your practice log and progress checklist are stored by your
   browser, on this computer.
 
-  No installer, no Go runtime, no internet connection and no extra files are
-  needed. Everything is inside the one .exe.
+  No Go runtime, no internet connection and no extra files are needed.
+  Everything is inside the one .exe.
+
+  Prefer an installer? In PowerShell, this checks the download, adds a Start
+  menu shortcut and an entry in Settings > Apps, and needs no administrator
+  rights:
+      irm https://raw.githubusercontent.com/brucehoppe/minor-pentatonic-go/main/scripts/install.ps1 | iex
 
   To remove it, delete the folder.
 
 COMMAND LINE OPTIONS (optional)
 
   $BIN.exe -no-open        start without opening a browser
-  $BIN.exe -addr 127.0.0.1:8080   use a fixed port
+  $BIN.exe -addr 127.0.0.1:8080   use a different port (the default is 7534)
   $BIN.exe -version        print the version and author
 TXT
 
@@ -176,19 +181,26 @@ Coded by $AUTHOR
 GETTING STARTED
 
   1. Drag "$APP" into the Applications folder.
-  2. THE FIRST TIME ONLY: right-click (or Control-click) the app in
-     Applications and choose Open, then click Open in the dialog.
+  2. THE FIRST TIME ONLY, macOS refuses to open it (see below):
+       macOS 15 Sequoia and later: double-click it, click Done, then open
+         System Settings > Privacy & Security, scroll down and click
+         "Open Anyway" next to $APP, and confirm.
+       macOS 11 to 14: right-click (or Control-click) the app in
+         Applications, choose Open, then click Open in the dialog.
      After that, double-click it like any other app.
 
   The practice desk opens in your default browser.
 
 WHY THE FIRST-LAUNCH STEP
 
-  macOS blocks apps that have not been notarised by Apple, which requires a
-  paid Apple Developer account. Double-clicking an un-notarised app shows
-  "cannot be opened because the developer cannot be verified" with no way
-  through; right-click > Open offers the Open button that lets it run.
-  You only have to do it once.
+  macOS blocks downloaded apps that have not been notarised by Apple, which
+  requires a paid Apple Developer account. Double-clicking one shows a warning
+  with no way through; the steps above tell macOS you trust it. You only have
+  to do it once.
+
+  To skip this entirely, install with the one-line installer instead: its
+  download is checked against the release checksums and is not blocked.
+      curl -fsSL https://raw.githubusercontent.com/brucehoppe/minor-pentatonic-go/main/scripts/install.sh | bash
 
   If macOS still refuses, run this in Terminal, then try again:
 
@@ -225,7 +237,7 @@ WHAT IT DOES AND DOES NOT DO
 COMMAND LINE OPTIONS (optional)
 
   "/Applications/$APP.app/Contents/MacOS/$BIN" -no-open
-  "/Applications/$APP.app/Contents/MacOS/$BIN" -addr 127.0.0.1:8080
+  "/Applications/$APP.app/Contents/MacOS/$BIN" -addr 127.0.0.1:8080   (a different port; the default is 7534)
   "/Applications/$APP.app/Contents/MacOS/$BIN" -version
 TXT
 
