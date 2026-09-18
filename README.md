@@ -51,11 +51,46 @@ Options, which you can combine:
 To pass options to the one-line form, use
 `& ([scriptblock]::Create((irm <url>))) -DesktopShortcut`.
 
-### macOS
+### macOS 11 and later
 
-Download the `.dmg` from [Releases](https://github.com/brucehoppe/minor-pentatonic-go/releases),
-open it and drag the app to Applications. It is not notarised, so the first time,
-**right-click → Open** it (see [Distribution packages](#distribution-packages)).
+Open **Terminal** (Spotlight → type *Terminal*) and paste:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/brucehoppe/minor-pentatonic-go/main/scripts/install.sh | bash
+```
+
+That downloads the latest release, checks it against the release's SHA-256
+checksums, puts the app in Applications and opens it. Afterwards it is in
+Launchpad and Spotlight like any other app.
+
+**Permissions**
+
+- **No password needed.** The app goes into `/Applications` if your account can
+  write there (administrator accounts can) and otherwise into `~/Applications`.
+  Add `--system` to insist on `/Applications`, which asks for an administrator
+  password with `sudo` only if your account cannot write there, or `--user` to
+  always use `~/Applications`.
+- **Gatekeeper.** The app is signed but not notarised by Apple. A file downloaded
+  with `curl` is not quarantined, so the "unidentified developer" prompt does not
+  appear. The download is verified against its checksum, and so is the app's code
+  signature.
+- **Firewall.** The app only listens on `127.0.0.1`, so macOS has nothing to ask.
+
+Options go after `bash -s --`, for example `… | bash -s -- --user`:
+
+```sh
+--user               # ~/Applications
+--system             # /Applications, with sudo if needed
+--version v2026.09.18
+--zip ~/Downloads/minor-pentatonic-2026.09.18-macos.zip   # offline
+--no-launch
+--uninstall
+```
+
+Prefer to click? Download the `.dmg` from
+[Releases](https://github.com/brucehoppe/minor-pentatonic-go/releases), open it
+and drag the app to Applications. A browser download *is* quarantined, so the
+first time, **right-click → Open** it (see [Distribution packages](#distribution-packages)).
 
 ### Anywhere Go is installed
 
@@ -90,6 +125,7 @@ tests/app.test.mjs   headless frontend suite
 docs/screenshots/    images for this README; not embedded
 scripts/release.sh   consumer packages for macOS and Windows
 scripts/install.ps1  Windows installer (see Install)
+scripts/install.sh   macOS installer (see Install)
 reference/           the original page the app was built from, with local font copies; not embedded
 ```
 

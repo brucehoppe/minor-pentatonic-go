@@ -467,8 +467,13 @@ func TestBundleLauncherStartsServesAndIsRepeatable(t *testing.T) {
 	if _, err := http.DefaultClient.Do(req); err != nil {
 		t.Fatalf("quit: %v", err)
 	}
-	if waitForServer(url, time.Second) {
-		t.Error("the background server ignored Quit")
+	// Quit answers first and shuts down gracefully after, so the server may still
+	// answer briefly. Wait for it to go quiet rather than asking whether it ever
+	// answers, which raced on slow CI machines.
+	for deadline := time.Now().Add(5 * time.Second); alreadyServing(url); time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the background server ignored Quit")
+		}
 	}
 }
 
