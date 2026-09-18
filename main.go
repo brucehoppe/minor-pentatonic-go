@@ -67,11 +67,22 @@ func appHandler(stop func()) http.Handler {
 	return appHandlerFS(stop, embeddedWeb())
 }
 
+// contentSecurityPolicy lets the pages load only what the binary itself serves.
+// Styles may be inline (the pages and generated markup use style attributes);
+// scripts may not. Audio falls back to data: URIs of rendered WAVs, and the
+// Seven Licks page is framed by the practice desk, so framing stays same-origin.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:; " +
+	"object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+
 func appHandlerFS(stop func(), content fs.FS) http.Handler {
 	files := http.FileServer(http.FS(content))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 		if r.URL.Path == "/favicon.ico" {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -130,6 +141,29 @@ func appHandlerFS(stop func(), content fs.FS) http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// loopbackOnly refuses any request whose Host is not a loopback name. The server
+// only listens on 127.0.0.1, but a hostile page can still reach it through DNS
+// rebinding (a domain that re-resolves to 127.0.0.1 is same-origin with itself),
+// and checking Host is what closes that door.
+func loopbackOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		if host != "localhost" && !isLoopbackIP(host) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isLoopbackIP(host string) bool {
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 func openBrowser(url string) error {
@@ -259,7 +293,7 @@ func run(addr string, launch bool, dev bool) error {
 		log.Printf("Development mode: serving ./web from disk, so a reload picks up edits.")
 	}
 	server := &http.Server{
-		Handler:           appHandlerFS(stop, content),
+		Handler:           loopbackOnly(appHandlerFS(stop, content)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Printf("%s %s — coded by %s", appName, version, author)

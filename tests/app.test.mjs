@@ -18,6 +18,7 @@ import vm from "node:vm";
 const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
 const script = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
 const lesson = readFileSync(new URL("../web/seven-licks.html", import.meta.url), "utf8");
+const lessonScript = readFileSync(new URL("../web/seven-licks.js", import.meta.url), "utf8");
 
 class Element {
   constructor(id = "") {
@@ -1267,11 +1268,13 @@ test("rhythm lab generates a 16-step phrase and loops it at subdivisions", () =>
 
 test("supplementary Seven Licks resource still renders all cards", () => {
   assert.doesNotMatch(lesson, /fonts\.googleapis\.com/);
-  assert.equal((lesson.match(/n:"0[1-7]"/g) ?? []).length, 7);
+  assert.match(lesson, /<script src="seven-licks.js"><\/script>/);
+  assert.doesNotMatch(lesson, /<script>/, "no inline script, so the CSP can forbid them");
+  assert.equal((lessonScript.match(/n:"0[1-7]"/g) ?? []).length, 7);
   const host = new Element("licks"), win = { addEventListener() {} };
   const context = vm.createContext({ document: { getElementById: () => host }, window: win, parent: win,
     location: { origin: "http://127.0.0.1" }, requestAnimationFrame: fn => fn() });
-  vm.runInContext(lesson.match(/<script>([\s\S]*?)<\/script>/)[1], context);
+  vm.runInContext(lessonScript, context);
   assert.equal((host.innerHTML.match(/<article class="lick">/g) ?? []).length, 7);
 });
 

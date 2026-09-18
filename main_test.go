@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -52,9 +53,79 @@ func TestAppHandlerServesSevenLicksLesson(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	for _, text := range []string{"Seven<br>Licks", "The pull-off pair", "Chuck Berry double stops"} {
+	if !strings.Contains(w.Body.String(), "Seven<br>Licks") {
+		t.Error("lesson page does not contain its title")
+	}
+
+	r = httptest.NewRequest(http.MethodGet, "/seven-licks.js", nil)
+	w = httptest.NewRecorder()
+	appHandler(func() {}).ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("seven-licks.js: status = %d, want %d", w.Code, http.StatusOK)
+	}
+	for _, text := range []string{"The pull-off pair", "Chuck Berry double stops"} {
 		if !strings.Contains(w.Body.String(), text) {
-			t.Errorf("lesson does not contain %q", text)
+			t.Errorf("lesson script does not contain %q", text)
+		}
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	for _, path := range []string{"/", "/seven-licks.html", "/app.js"} {
+		w := httptest.NewRecorder()
+		appHandler(func() {}).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		csp := w.Header().Get("Content-Security-Policy")
+		for _, want := range []string{"default-src 'self'", "script-src 'self';", "frame-ancestors 'self'"} {
+			if !strings.Contains(csp, want) {
+				t.Errorf("%s: CSP %q lacks %q", path, csp, want)
+			}
+		}
+		if got := w.Header().Get("X-Frame-Options"); got != "SAMEORIGIN" {
+			t.Errorf("%s: X-Frame-Options = %q", path, got)
+		}
+	}
+}
+
+// With script-src 'self', an inline <script> block would silently not run.
+func TestPagesHaveNoInlineScripts(t *testing.T) {
+	pages, err := fs.Glob(embeddedWeb(), "*.html")
+	if err != nil || len(pages) == 0 {
+		t.Fatalf("glob: %v %v", pages, err)
+	}
+	inline := regexp.MustCompile(`<script(\s[^>]*)?>\s*[^<\s]`)
+	handler := regexp.MustCompile(`\son[a-z]+\s*=`)
+	for _, page := range pages {
+		body, err := fs.ReadFile(embeddedWeb(), page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if inline.Match(body) {
+			t.Errorf("%s has an inline <script> the CSP will block", page)
+		}
+		if handler.Match(body) {
+			t.Errorf("%s has an inline event handler the CSP will block", page)
+		}
+	}
+}
+
+func TestLoopbackOnlyRefusesForeignHosts(t *testing.T) {
+	h := loopbackOnly(appHandler(func() {}))
+	for host, want := range map[string]int{
+		"127.0.0.1:7534":         http.StatusOK,
+		"localhost:7534":         http.StatusOK,
+		"[::1]:7534":             http.StatusOK,
+		"127.0.0.1":              http.StatusOK,
+		"attacker.example:7534":  http.StatusForbidden,
+		"attacker.example":       http.StatusForbidden,
+		"192.168.1.10:7534":      http.StatusForbidden,
+		"localhost.attacker.com": http.StatusForbidden,
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Host = host
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Host %q: status = %d, want %d", host, w.Code, want)
 		}
 	}
 }

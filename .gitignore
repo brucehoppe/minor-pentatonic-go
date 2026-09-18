@@ -5,3 +5,7 @@ dist/
 
 # macOS
 .DS_Store
+
+# Local-only files that are not part of the project
+/iTermBrowserPlugin.app/
+/guitar-program.html

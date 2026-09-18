@@ -13,6 +13,7 @@ web/index.html       the page: markup only
 web/app.css          styles
 web/app.js           the whole interactive desk
 web/seven-licks.html supplementary written lesson
+web/seven-licks.js   its script (pages carry no inline scripts; see Security)
 web/assets/*.png     images
 web/assets/fonts/    the two typefaces, plus their licences
 tests/app.test.mjs   headless frontend suite
@@ -29,6 +30,8 @@ will serve from the embedded file set rather than from a hardcoded list.
 the app grew out of, so it is never compiled into a binary.
 
 ## Run from source
+
+Requires Go 1.26.8 or newer.
 
 ```sh
 go run .
@@ -59,7 +62,7 @@ The revised practice desk includes:
 - **Practice tools:** drone, metronome, quizzes, generated sessions, chord-tone overlays, licks, and crossing drills.
 - **Practice guide licks:** the five exercises from the personal practice guide — Box 1 and Box 2 runs, the reach into Box 2, the diagonal route between them, and the call-and-answer phrase — written as root-relative offsets so they transpose to any key, plus a root reference for both boxes.
 - **Guided routines:** the two timed 25-minute practice sessions, segment by segment, each segment wired to the focus timer, with the song project, long-term focus list, finish conditions, and a device-local progress checklist.
-- **Practice theory:** a six-step cold-attempt-to-delayed-retest cycle grounded in the supplied `guitar-program.html`, with actionable guidance on self-regulation, recording, spacing, external focus, interleaving, sleep and rest. The section links the music and motor-learning evidence, labels small or indirect studies, and separates established principles from original scheduling choices.
+- **Practice theory:** a six-step cold-attempt-to-delayed-retest cycle grounded in the supplied `guitar-program.html`, with actionable guidance on self-regulation, recording, spacing, external focus, interleaving, sleep and rest. The section cites the music and motor-learning evidence by DOI or PubMed identifier, labels small or indirect studies, and separates established principles from original scheduling choices.
 - **Focused practice:** configurable countdowns, a ±5 bpm tempo ladder, and a device-local completed-session log.
 - **12-bar trainer:** fourteen twelve-bar forms in every key, grouped as core shuffles (classic dominant, quick change, final-chorus ending, stop-time verse), turnaround variants (ii–V, I–VI–ii–V, jump blues with VI7 in bar 8), jazz forms (diminished passing chord, bebop blues, Bird blues), minor forms (dominant V, quick change, ♭VI–V) and the ♭VII rock reading. Bars that change halfway carry two chords, with the second arriving on beat 3. Each form names what to listen for and where it is heard. Count-in, three groove feels, moving bar/beat display, and chord-tone targets throughout.
 - **Rhythm lab:** generated one-bar phrases with adjustable density, audible looping, subdivision grid, and a three-pass clap/root/improvise drill.
@@ -156,6 +159,22 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o minor-pentatonic.exe .
 ```
 
 Use `GOARCH=arm64` for Windows 11 on ARM.
+
+## Security
+
+The server binds to `127.0.0.1` only and serves nothing but the files embedded at
+build time. It also:
+
+- rejects requests whose `Host` is not a loopback name, which blocks DNS-rebinding
+  attacks from web pages;
+- sends a Content-Security-Policy that allows scripts only from the app itself, so
+  pages must not contain inline `<script>` blocks or `on…=` handlers (a test
+  enforces this);
+- requires `POST` plus an `X-Quit` header for `/quit`, so another site cannot stop
+  the app with a form.
+
+External sources are cited as plain text (titles, DOIs, PubMed IDs) rather than
+links, so the app never fetches from the network and has no links to go stale.
 
 ## Test
 

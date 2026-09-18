@@ -1373,7 +1373,9 @@ function readLog(){try{return JSON.parse(window.localStorage.getItem(LOG_KEY)||"
 function writeLog(log){try{window.localStorage.setItem(LOG_KEY,JSON.stringify(log));}catch(e){}}
 function renderLog(){const log=readLog(),host=document.getElementById("loglist");
   document.getElementById("logsummary").innerHTML=log.length?`<b>${log.length}</b> completed session${log.length===1?"":"s"} logged.`:"No completed sessions yet.";
-  host.innerHTML=log.slice(0,8).map(x=>`<li><span>${x.date}</span><span>${x.key} minor · ${x.bpm} bpm</span></li>`).join("");}
+  host.innerHTML=log.slice(0,8).map(x=>`<li><span>${escapeHTML(x.date)}</span><span>${escapeHTML(x.key)} minor · ${Number(x.bpm)||0} bpm</span></li>`).join("");}
+// Log entries come back from localStorage, which anything on this origin can write.
+function escapeHTML(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);}
 function completeSession(){const log=readLog(),date=new Date().toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
   log.unshift({date,key:NOTES[key],bpm});writeLog(log.slice(0,30));renderLog();
   document.getElementById("logsummary").innerHTML=`Logged today’s <b>${NOTES[key]} minor</b> session at ${bpm} bpm.`;}
@@ -2670,8 +2672,7 @@ function renderHijaz(){
       <p class="tip">The lower four degrees, 1–♭2–3–4, give a fretted-guitar approximation of the Hijaz colour.
         Arabic Jins Hijaz uses four notes; its second and third are often tuned closer together than equal temperament suggests.
         Maqam Hijaz also involves melodic pathways and choices of upper jins. A seven-note guitar shape does not capture all of that practice.</p>
-      <p class="tip">Listen to the examples at <a href="https://www.maqamworld.com/en/jins/hijaz.php" target="_blank" rel="noreferrer">MaqamWorld: Jins Hijaz</a>
-        and <a href="https://www.maqamworld.com/en/maqam/hijaz.php" target="_blank" rel="noreferrer">Maqam Hijaz</a>.
+      <p class="tip">Listen to the Jins Hijaz and Maqam Hijaz examples on MaqamWorld.
         Copy a short contour and its pauses by ear. Treat this lesson as Phrygian dominant guitar practice.</p></div>`;
   document.getElementById("hijazboxes").innerHTML=validBoxes().map(b=>{
     const {lo,hi,notes}=pdBox(b);
