@@ -1,5 +1,7 @@
 # Minor Pentatonic Practice Desk
 
+[![CI](https://github.com/brucehoppe/minor-pentatonic-go/actions/workflows/ci.yml/badge.svg)](https://github.com/brucehoppe/minor-pentatonic-go/actions/workflows/ci.yml)
+
 Coded by Bruce Hoppe
 
 A standalone Go application made from `reference/minor-pentatonic-boxes_2.html`. The full interactive page is embedded in the executable, so no web server, Go installation, or companion files are needed after compilation.
@@ -51,7 +53,21 @@ Requires Go 1.26.8 or newer.
 go run .
 ```
 
-The app listens only on localhost, chooses an available port, and opens your default browser. Press `Control-C` in the terminal to stop it.
+Or install it without cloning:
+
+```sh
+go install github.com/brucehoppe/minor-pentatonic-go@latest
+minor-pentatonic-go
+```
+
+The app listens only on localhost, at `http://127.0.0.1:7534`, and opens your default browser. That port is fixed so a second launch finds the first instead of starting another copy; if something else already holds it, the app takes a free port. Stop it with the **Quit** button on the page, or `Control-C` in the terminal.
+
+| Flag | Effect |
+|---|---|
+| `-addr 127.0.0.1:9000` | listen somewhere else |
+| `-no-open` | do not open a browser |
+| `-dev` | serve `./web` from disk, so edits show on reload without rebuilding |
+| `-version` | print the version and exit |
 
 The revised practice desk includes:
 

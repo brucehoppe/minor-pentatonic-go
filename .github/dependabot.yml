@@ -1,0 +1,16 @@
+# The app uses only the Go standard library and has no npm packages, so the
+# things that can go stale are the Go toolchain directive and the pinned
+# GitHub Actions in .github/workflows.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
