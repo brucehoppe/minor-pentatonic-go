@@ -2343,3 +2343,18 @@ test("hostile or malformed saved data can neither inject markup nor break a view
   assert.match(log, /&lt;img/, "and shown as text");
   assert.ok(app.getState().soloBoxes.every(n => typeof n === "number"), "stored boxes are numbers only");
 });
+
+test("every fret and string line in a box diagram survives being scaled down", () => {
+  const { app } = makeRuntime();
+  for (let key = 0; key < 12; key++) {
+    app.setKey(key);
+    for (const b of app.validBoxes()) {
+      const svg = app.fretboard(app.boxNotes(b));
+      const lines = svg.match(/<line [^>]*stroke="var\(--ink\)"[^>]*>/g) ?? [];
+      const frets = new Set(app.boxNotes(b).map(n => n.f));
+      const cols = Math.max(...frets) - Math.max(Math.min(...frets) - 1, 0);
+      assert.equal(lines.length, cols + 1 + 6, `key ${key} box ${b.n}: ${cols + 1} fret lines and 6 strings`);
+      for (const l of lines) assert.match(l, /vector-effect="non-scaling-stroke"/, `key ${key} box ${b.n}: ${l}`);
+    }
+  }
+});

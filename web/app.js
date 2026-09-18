@@ -111,11 +111,14 @@ function fretboard(notes,{w=52,h=26,pad=30,quiz=false,plain=false,span=null}={})
   const xOf=f=>f===0?P-20:P+(f-start-.5)*w;
   const labelX=open?9:P-13;
   let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="fretboard diagram">`;
+  // Grid lines keep their width in screen pixels (non-scaling-stroke). A five-fret
+  // box is drawn wider, so it is scaled down more to fit the same card, and its
+  // hairline frets otherwise dropped below a pixel and vanished at 1x.
   for(let i=0;i<=cols;i++){const x=P+i*w;
-    s+=`<line x1="${x}" y1="${pad}" x2="${x}" y2="${pad+5*h}" stroke="var(--ink)" stroke-width="${i===0&&start===0?4:1.2}" opacity="${i===0&&start===0?1:.42}"/>`;
+    s+=`<line x1="${x}" y1="${pad}" x2="${x}" y2="${pad+5*h}" stroke="var(--ink)" stroke-width="${i===0&&start===0?4:1.2}" opacity="${i===0&&start===0?1:.42}" vector-effect="non-scaling-stroke"/>`;
     if(i>0)s+=`<text x="${x-w/2}" y="${pad+5*h+18}" font-size="10.5" fill="var(--ink)" opacity=".5" text-anchor="middle" font-family="DM Mono,monospace">${start+i}</text>`;}
   for(let r=0;r<6;r++){const y=pad+r*h;
-    s+=`<line x1="${P}" y1="${y}" x2="${P+cols*w}" y2="${y}" stroke="var(--ink)" stroke-width="${.7+r*.28}" opacity=".55"/>`;
+    s+=`<line x1="${P}" y1="${y}" x2="${P+cols*w}" y2="${y}" stroke="var(--ink)" stroke-width="${.7+r*.28}" opacity=".55" vector-effect="non-scaling-stroke"/>`;
     s+=`<text x="${labelX}" y="${y+4}" font-size="11" fill="var(--ink)" opacity=".45" text-anchor="middle" font-family="DM Mono,monospace">${SL[r]}</text>`;}
   notes.forEach((n,i)=>{
     const x=xOf(n.f),y=pad+n.s*h,k=n.kind||kindOf(n),pc=noteAt(n.s,n.f);
