@@ -52,8 +52,11 @@ class Element {
 // on every draw still renders identically twice — without that, "did this control
 // change anything?" cannot be answered by comparing two renders.
 // userAgent is read once, as the page loads; secure is window.isSecureContext.
+// capture: AudioWorklet and IndexedDB, for the raw take master — true, or
+// { failAfter: n } to make storage fail after n writes, or { store } to start from
+// what an earlier page left in storage.
 function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false, media = false,
-  userAgent = "", secure = true } = {}) {
+  userAgent = "", secure = true, capture = false } = {}) {
   const MathForApp = deterministic
     ? new Proxy(Math, { get: (t, k) => (k === "random" ? () => 0.42 : t[k]) })
     : Math;
@@ -64,8 +67,27 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [], taps: [], untaps: [], toSpeakers: [] };
   const clock = { t: 0, wall: 0 };
   class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} cancelScheduledValues() {} }
+  // Each capture node records what the page tells it; feed() hands it audio as the
+  // real worklet would, and a stop is answered with the frames it was fed.
+  const worklets = [], modules = [];
+  class AudioWorkletNode {
+    constructor(ctx, name, opts) {
+      this.name = name; this.opts = opts; this.sent = []; this.fed = 0; worklets.push(this);
+      const node = this;
+      this.port = { onmessage: null, postMessage(m) { node.sent.push(m);
+        if (m && m.stop) queueMicrotask(() => node.port.onmessage && node.port.onmessage({ data: { done: node.fed } })); } };
+    }
+    connect() {} disconnect() {}
+    feed(frames, level = 0.5) {
+      const ch = this.opts.processorOptions.channels;
+      this.fed += frames;
+      this.port.onmessage({ data: { block: Array.from({ length: ch }, () => new Float32Array(frames).fill(level)) } });
+    }
+  }
   class AudioContext {
-    constructor() { this.state = "running"; this.destination = { speakers: true }; this.baseLatency = 0.005; this.outputLatency = audio.outputLatency ?? 0.01; }
+    constructor() { this.state = "running"; this.destination = { speakers: true }; this.sampleRate = 48000;
+      if (capture) this.audioWorklet = { addModule: url => { modules.push(url); return Promise.resolve(); } };
+      this.baseLatency = 0.005; this.outputLatency = audio.outputLatency ?? 0.01; }
     get currentTime() { return clock.t; }
     resume() { return Promise.resolve(); }
     createGain() { audio.gains++; const g = { gain: new AudioParam(), inputs: [],
@@ -175,6 +197,48 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       addEventListener() {},
     };
   }
+  // A small IndexedDB: the calls the take store makes, with keys compared the way
+  // IndexedDB compares them for [take, seq] pairs and plain strings.
+  const captureOpts = capture === true ? {} : capture || {};
+  const idb = { stores: captureOpts.store ?? new Map(), writes: 0 };
+  const keyOf = (keyPath, v) => Array.isArray(keyPath) ? keyPath.map(k => v[k]) : v[keyPath];
+  const inRange = (k, r) => Array.isArray(k) && k[0] === r.lo[0] && k[1] >= r.lo[1] && k[1] <= r.hi[1];
+  const IDBKeyRange = { bound: (lo, hi) => ({ lo, hi, range: true }) };
+  const indexedDB = {
+    open() {
+      const req = {};
+      setImmediate(() => {
+        const db = {
+          objectStoreNames: { contains: n => idb.stores.has(n) },
+          createObjectStore(n, { keyPath }) { idb.stores.set(n, { keyPath, rows: new Map() }); },
+          transaction(names, mode) {
+            const tx = { oncomplete: null, onerror: null, onabort: null, error: null };
+            let failed = false;
+            tx.objectStore = n => { const st = idb.stores.get(n); const done = v => { const r = { result: v };
+              queueMicrotask(() => r.onsuccess && r.onsuccess()); return r; };
+              return {
+                put(v) { if (captureOpts.failAfter !== undefined && ++idb.writes > captureOpts.failAfter) {
+                    failed = true; tx.error = Object.assign(new Error("full"), { name: "QuotaExceededError" }); return done(); }
+                  st.rows.set(JSON.stringify(keyOf(st.keyPath, v)), { key: keyOf(st.keyPath, v), v: structuredClone(v) }); return done(); },
+                get(k) { const r = st.rows.get(JSON.stringify(k)); return done(r && r.v); },
+                getAll(range) { return done([...st.rows.values()].filter(r => !range || inRange(r.key, range))
+                  .sort((a, b) => JSON.stringify(a.key) < JSON.stringify(b.key) ? -1 : 1).map(r => r.v)); },
+                delete(k) { for (const [s2, r] of [...st.rows]) if (k && k.range ? inRange(r.key, k) : s2 === JSON.stringify(k)) st.rows.delete(s2);
+                  return done(); },
+              }; };
+            setImmediate(() => failed ? (tx.onerror && tx.onerror()) : (tx.oncomplete && tx.oncomplete()));
+            return tx;
+          },
+        };
+        req.result = db;
+        if (!idb.stores.has("takes") && req.onupgradeneeded) req.onupgradeneeded();
+        req.onsuccess && req.onsuccess();
+      });
+      return req;
+    },
+  };
+  if (capture) navigator.storage = { persist: () => Promise.resolve(true),
+    estimate: () => Promise.resolve({ usage: 5 * 1048576, quota: 1024 * 1048576 }) };
   const URLForApp = { createObjectURL: b => { const u = `blob:${rec.urls.length}`; rec.urls.push({ u, b }); return u; },
     revokeObjectURL: u => rec.revoked.push(u) };
   const context = vm.createContext({
@@ -182,6 +246,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     btoa: (str) => Buffer.from(str, "binary").toString("base64"),
     ...(audioMode === false ? {} : { Audio: AudioEl }),
     ...(media ? { MediaRecorder } : {}), Blob, URL: URLForApp,
+    ...(capture ? { AudioWorkletNode, indexedDB, IDBKeyRange } : {}),
     // wall-clock time the tests can move on, for how long a take has run
     Date: class extends Date { static now() { return Date.now() + clock.wall * 1000; } },
     // Short timers run at once. Minute-scale ones — the shared input's idle release —
@@ -217,7 +282,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,REC_MAX_SEC,webmWithDuration,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,webmWithDuration,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -229,6 +294,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   const advance = seconds => { clock.t += seconds; for (const fn of [...intervals.values()]) fn(); };
   const runIdle = () => { for (const [id, fn] of [...idle]) { idle.delete(id); fn(); } };
   return { app: context.appTest, document, audio, intervals, fetched, audioElements, clock, advance, rec, runIdle,
+    worklets, modules, idb,
     closed: () => windowClosed };
 }
 
@@ -2622,21 +2688,6 @@ test("the hidden attribute wins over any display rule, so Quit stays hidden on t
   assert.match(css, /(^|\s)\[hidden\]\{display:none!important\}/);
 });
 
-test("a take stops itself at the 30-minute cap and says so", async () => {
-  const { app, document, rec, clock, advance } = makeRuntime({ media: true });
-  assert.equal(app.REC_MAX_SEC, 1800);
-  document.getElementById("recbtn").click();
-  await settle();
-  clock.wall = 1799; advance(0.25);
-  assert.equal(rec.recorders[0].state, "recording", "still going just under the cap");
-  assert.match(document.getElementById("recmsg").textContent, /29:59/);
-  clock.wall = 1800; advance(0.25);
-  await settle();
-  assert.equal(rec.recorders[0].state, "inactive");
-  assert.ok(app.getTake());
-  assert.match(document.getElementById("recmsg").textContent, /^Stopped at the 30-minute limit\. Take saved: 1800 s, mono\./);
-});
-
 test("a take is named for the key and tempo it started with", async () => {
   const { app, document } = makeRuntime({ media: true });
   app.setKey(4); app.setBpm(120);
@@ -2940,4 +2991,187 @@ test("a finished WebM take is saved with its length", async () => {
   assert.equal(new DataView(bytes.buffer).getFloat64(at + 3), 1000, "the decoded length: 1 s");
   assert.equal(document.getElementById("recplay").src, take.url, "the player has the fixed file");
   assert.match(document.getElementById("recdlc").textContent, /Download compressed \(\d+ B\)/);
+});
+
+// ---------- raw capture: rec-worklet.js on its own ----------
+// The worklet runs in the audio thread's scope: currentFrame, AudioWorkletProcessor
+// and registerProcessor are globals there. Each process() call is one 128-frame
+// quantum, so these tests step the clock by 128 between calls.
+function loadWorklet(opts) {
+  const src = readFileSync(new URL("../web/rec-worklet.js", import.meta.url), "utf8");
+  const scope = { currentFrame: 0, posted: [] };
+  scope.AudioWorkletProcessor = class { constructor() { this.port = { postMessage: (m) => scope.posted.push(m), onmessage: null }; } };
+  scope.registerProcessor = (name, cls) => { scope.name = name; scope.Cls = cls; };
+  vm.runInContext(src, vm.createContext(scope));
+  const p = new scope.Cls({ processorOptions: opts });
+  const quantum = (fill = (c, i) => (scope.currentFrame + i) / 1e6) => {
+    const input = Array.from({ length: opts.channels }, (_, c) => Float32Array.from({ length: 128 }, (_, i) => fill(c, i)));
+    const alive = p.process([input]);
+    scope.currentFrame += 128;
+    return alive;
+  };
+  return { scope, p, quantum, send: m => p.port.onmessage({ data: m }) };
+}
+
+test("the capture keeps audio from an exact frame, in blocks, and hands over the rest on stop", () => {
+  const { scope, quantum, send } = loadWorklet({ channels: 2, block: 256 });
+  assert.equal(scope.name, "take-capture");
+  quantum(); quantum();
+  assert.equal(scope.posted.length, 0, "nothing is kept before it is told to start");
+  send({ start: 300 });                 // mid-quantum: frames 256..383 hold frame 300
+  for (let i = 0; i < 4; i++) quantum();
+  const first = scope.posted[0].block;
+  assert.equal(first.length, 2, "one array per channel");
+  assert.equal(first[0].length, 256);
+  assert.equal(Math.round(first[0][0] * 1e6), 300, "the first sample kept is frame 300 exactly");
+  send({ stop: true });
+  assert.equal(quantum(), false, "the processor ends itself");
+  const blocks = scope.posted.filter(m => m.block), done = scope.posted.at(-1);
+  const kept = blocks.reduce((n, m) => n + m.block[0].length, 0);
+  assert.equal(done.done, kept, "done reports every frame it handed over");
+  assert.equal(kept, 768 - 300, "frames 300..767: four quanta after the start frame's");
+});
+
+test("a start in the past starts now, and a mono capture keeps one channel", () => {
+  const { scope, quantum, send } = loadWorklet({ channels: 1, block: 128 });
+  quantum(); quantum();
+  send({ start: 0 });
+  quantum();
+  assert.equal(scope.posted[0].block.length, 1);
+  assert.equal(Math.round(scope.posted[0].block[0][0] * 1e6), 256);
+});
+
+// ---------- raw capture in the recorder ----------
+test("a take streams its raw master to storage and downloads it as a WAV", async () => {
+  const { app, document, worklets, modules, idb } = makeRuntime({ media: true, capture: true });
+  app.setKey(9); app.setBpm(100);
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.deepEqual(modules, ["rec-worklet.js"], "the capture module loads from the app itself");
+  const node = worklets[0];
+  assert.equal(node.opts.processorOptions.channels, 1, "guitar only: mono");
+  sameShape(node.sent[0], { start: 0 });
+  node.feed(48000); node.feed(48000); node.feed(24000);   // 2.5 s in three blocks
+  await settle();
+  assert.equal(idb.stores.get("chunks").rows.size, 3, "written as it is recorded");
+  const meta = [...idb.stores.get("takes").rows.values()][0].v;
+  assert.equal(meta.status, "recording", "marked unfinished until it ends");
+  assert.equal(meta.frames, 120000, "the stored length keeps up, for crash recovery");
+
+  document.getElementById("recbtn").click();   // Stop
+  await settle();
+  assert.equal(node.sent.at(-1).stop, true);
+  const take = app.getTake();
+  assert.equal(take.wav.size, 44 + 120000 * 2);
+  assert.equal(document.getElementById("recdlw").textContent, `Download WAV (${app.fileSize(44 + 240000)})`);
+  assert.match(document.getElementById("recmsg").textContent, /Stored takes use 5\.0 MB of 1024\.0 MB available\./);
+  assert.equal([...idb.stores.get("takes").rows.values()][0].v.status, "done");
+
+  document.getElementById("recdlw").click();
+  await settle();
+  const link = document.body.children.at(-1);
+  assert.equal(link.download, "practice-A-100bpm-" + take.name.split("-100bpm-")[1].replace(/\.\w+$/, ".wav"));
+  const wav = new Uint8Array(await take.wav.blob.arrayBuffer()), v = new DataView(wav.buffer);
+  assert.equal(wav.length, 44 + 240000);
+  assert.equal(v.getUint16(22, true), 1);
+  assert.equal(v.getUint32(24, true), 48000);
+  assert.equal(v.getInt16(44, true), Math.trunc(0.5 * 0x7FFF), "the samples are the ones captured");
+  assert.equal(idb.stores.get("chunks").rows.size, 0, "downloaded: the stored master is dropped");
+  assert.equal(idb.stores.get("takes").rows.size, 0);
+  document.getElementById("recdlw").click();   // a second click still works, from the page's copy
+  await settle();
+  assert.equal(document.body.children.at(-1).download, link.download);
+});
+
+test("an armed take's master starts on the exact frame of bar 1's downbeat", async () => {
+  const { app, document, worklets, clock, advance } = makeRuntime({ media: true, capture: true });
+  app.setBpm(120);
+  document.getElementById("recarm").checked = true;
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(worklets[0].sent.length, 0, "armed: not started yet");
+  app.toggleTrainer();
+  for (let i = 0; i < 4; i++) advance(0.5);
+  const start = worklets[0].sent.find(m => "start" in m);
+  // The count-in is four beats of 0.5 s from the loop's first booking at t=0.
+  assert.equal(start.start, 2 * 48000, "bar 1 lands at 2.000 s: frame 96000");
+  app.toggleTrainer();
+  await settle();
+});
+
+test("a take stops cleanly when storage is full, keeping what was written", async () => {
+  const { app, document, worklets } = makeRuntime({ media: true, capture: { failAfter: 3 } });
+  document.getElementById("recbtn").click();
+  await settle();
+  worklets[0].feed(48000); await settle();
+  worklets[0].feed(48000); await settle();       // the 4th write fails
+  await settle();
+  assert.equal(app.getRec(), null, "the take ended by itself");
+  assert.match(document.getElementById("recmsg").textContent, /^Storage ran out, so the take stopped there\./);
+  assert.ok(app.getTake(), "and was saved");
+});
+
+test("masters left in storage — by a crash or not downloaded — are listed, and can be saved or discarded", async () => {
+  const first = makeRuntime({ media: true, capture: true });
+  first.document.getElementById("recbtn").click();
+  await settle();
+  first.worklets[0].feed(48000);
+  await settle();
+  // the tab closes mid-take: a new page opens on the same storage
+  const { document, idb } = makeRuntime({ media: true, capture: { store: first.idb.stores } });
+  await settle();
+  const list = document.getElementById("recsaved").innerHTML;
+  assert.match(list, /<b>Interrupted:<\/b> practice-A-90bpm-\d{8}-\d{6}\.wav · 0:01 · 94 KB/);
+  const id = [...idb.stores.get("takes").rows.values()][0].v.id;
+  await document.getElementById("recsaved").onclick({ target: { dataset: { dl: id } } });
+  await settle();
+  assert.match(document.body.children.at(-1).download, /^practice-A-90bpm-.*\.wav$/);
+  assert.equal(idb.stores.get("takes").rows.size, 0, "saved to disk, so dropped from storage");
+  assert.equal(document.getElementById("recsaved").innerHTML, "");
+});
+
+test("discarding a saved master, or cancelling a take, removes it from storage", async () => {
+  const { document, idb, worklets } = makeRuntime({ media: true, capture: true });
+  document.getElementById("recarm").checked = true;
+  document.getElementById("recbtn").click();
+  await settle();
+  document.getElementById("recbtn").click();   // Cancel while armed
+  await settle();
+  assert.equal(idb.stores.get("takes").rows.size, 0, "an armed take that never began leaves nothing");
+
+  document.getElementById("recarm").checked = false;
+  document.getElementById("recbtn").click();
+  await settle();
+  worklets[1].feed(4800);
+  await settle();
+  document.getElementById("recbtn").click();   // Stop: kept, not downloaded
+  await settle();
+  const firstId = [...idb.stores.get("takes").rows.values()][0].v.id;
+  assert.equal(document.getElementById("recsaved").innerHTML, "", "the take on screen isn't listed");
+  document.getElementById("recbtn").click();   // a newer take replaces it on screen...
+  await settle();
+  worklets[2].feed(4800);
+  await settle();
+  document.getElementById("recbtn").click();
+  await settle();                              // ...and the first is now a saved master
+  assert.match(document.getElementById("recsaved").innerHTML, new RegExp(`data-drop="${firstId}"`));
+  await document.getElementById("recsaved").onclick({ target: { dataset: { drop: firstId } } });
+  await settle();
+  assert.ok(![...idb.stores.get("takes").rows.values()].some(r => r.v.id === firstId));
+});
+
+test("damaged or foreign rows in storage are ignored, not trusted", async () => {
+  const store = new Map([["takes", { keyPath: "id", rows: new Map([
+    ['"a"', { key: "a", v: { id: "a", channels: 7, sampleRate: 48000 } }],
+    ['"b"', { key: "b", v: { id: "b", channels: 1, sampleRate: 48000, frames: 480, name: "<img src=x onerror=alert(1)>" } }],
+    ['"c"', { key: "c", v: null }],
+  ]) }], ["chunks", { keyPath: ["take", "seq"], rows: new Map() }]]);
+  const { document } = makeRuntime({ media: true, capture: { store } });
+  await settle();
+  const html = document.getElementById("recsaved").innerHTML;
+  assert.doesNotMatch(html, /data-dl="a"/, "impossible channel count");
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/, "a stored name is text, never markup");
+  await document.getElementById("recsaved").onclick({ target: { dataset: { dl: "b" } } });
+  await settle();
+  assert.match(document.getElementById("recmsg").textContent, /Nothing usable was left of that take/);
 });

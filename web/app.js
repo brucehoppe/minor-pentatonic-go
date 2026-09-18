@@ -36,7 +36,8 @@ const state={
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
   // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
   // input device, and the last finished take with its blob URLs
-  rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null, checking:false, meter:null,
+  rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null, checking:false, meter:null, savedList:[],
+  takeDB:null, workletFor:null,
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
   triadKind:"maj", triadSet:"123",
@@ -1646,24 +1647,38 @@ function webAudioEngine(ac) {
   };
 }
 
-// 16-bit PCM WAV from one Float32Array per channel. The compatibility engine renders
-// its sounds through this, and the recorder uses it for the "Download WAV" copy.
-function wavBytes(channels, sampleRate) {
-  const ch = channels.length, n = channels[0].length, size = n * ch * 2;
-  const buf = new ArrayBuffer(44 + size), v = new DataView(buf);
+// 16-bit PCM WAV, in two parts so a long take can be written a chunk at a time: the
+// 44-byte header, which needs only the total size, and the samples. The compatibility
+// engine renders its sounds through wavBytes; the recorder streams its master through
+// pcm16 into storage and puts wavHeader in front when you download it.
+function wavHeader(dataBytes, ch, sampleRate) {
+  const v = new DataView(new ArrayBuffer(44));
   const tag = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
-  tag(0, "RIFF"); v.setUint32(4, 36 + size, true); tag(8, "WAVE");
+  tag(0, "RIFF"); v.setUint32(4, 36 + dataBytes, true); tag(8, "WAVE");
   tag(12, "fmt "); v.setUint32(16, 16, true);
   v.setUint16(20, 1, true); v.setUint16(22, ch, true);                        // PCM
   v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * ch * 2, true);
   v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true);                   // 16-bit
-  tag(36, "data"); v.setUint32(40, size, true);
-  for (let i = 0, off = 44; i < n; i++)
-    for (let c = 0; c < ch; c++, off += 2) {
+  tag(36, "data"); v.setUint32(40, dataBytes, true);
+  return new Uint8Array(v.buffer);
+}
+// One Float32Array per channel to interleaved 16-bit samples. Int16Array uses the
+// platform's byte order, which is little-endian on every machine a browser runs on
+// — the order WAV wants.
+function pcm16(channels) {
+  const ch = channels.length, n = channels[0].length, out = new Int16Array(n * ch);
+  for (let i = 0, k = 0; i < n; i++)
+    for (let c = 0; c < ch; c++, k++) {
       const x = Math.max(-1, Math.min(1, channels[c][i]));
-      v.setInt16(off, x < 0 ? x * 0x8000 : x * 0x7FFF, true);
+      out[k] = x < 0 ? x * 0x8000 : x * 0x7FFF;
     }
-  return new Uint8Array(buf);
+  return out;
+}
+function wavBytes(channels, sampleRate) {
+  const pcm = pcm16(channels), out = new Uint8Array(44 + pcm.byteLength);
+  out.set(wavHeader(pcm.byteLength, channels.length, sampleRate));
+  out.set(new Uint8Array(pcm.buffer), 44);
+  return out;
 }
 
 // ---- backend 2: rendered WAV through <audio> ----
@@ -1960,12 +1975,11 @@ function restartClick() {
 // already hear your guitar, and a live mic into speakers feeds back.
 //
 // A take gives two files: the MediaRecorder original (small, for sharing) and a 16-bit
-// WAV decoded from it and written by wavBytes (for editing). The recorder can also be
-// armed to start on the downbeat of bar 1, booked on the audio clock by trainerTick.
-// A take stops itself at 30 minutes. Making its WAV holds the whole take in memory
-// three or four times over (compressed, decoded as float, then PCM), and past this
-// a long stereo take starts to risk the tab.
-const REC_MAX_SEC=30*60;
+// WAV master (for editing). The master is captured raw on the audio thread and
+// streamed to IndexedDB as it's recorded (see take storage and raw capture), so a
+// take has no length limit beyond the browser's storage, and it survives a crash.
+// Where that's unavailable, the WAV is decoded from the compressed file instead. The
+// recorder can also be armed to start on the downbeat of bar 1, to the sample.
 // Past this much delay between playing a note and the page recording it, a take
 // sounds late against the backing — typically Bluetooth headphones.
 const REC_LATE_MS=60;
@@ -1988,6 +2002,7 @@ const REC_ROW=`<div class="row" id="recrow">
     <span id="reclevel" style="font-size:11.5px;line-height:1.5"></span>
   </span>
   <span id="recmsg" style="font-size:11.5px;opacity:.75;flex-basis:100%;line-height:1.5"></span>
+  <div id="recsaved" style="flex-basis:100%;font-size:11.5px;line-height:1.7"></div>
 </div>`;
 function recUnsupported(){
   const md=typeof navigator!=="undefined"&&navigator.mediaDevices;
@@ -2114,7 +2129,11 @@ function openTake(){
   const chan=state.recChannel;
   // Web Audio downmixes a mono take itself, so the input is only asked for in mono
   // without it — which also lets the monitor share the same input.
-  return acquireInput(mono&&!(ac&&ac.createMediaStreamDestination)).then(input=>{
+  const channels=mono?1:2;
+  let input;
+  return acquireInput(mono&&!(ac&&ac.createMediaStreamDestination))
+  .then(i=>{input=i;return ac&&ac.createMediaStreamDestination?openCapture(ac,channels):null;})
+  .then(capture=>{
     let stream=input,src=null,dest=null,chanNote="";
     // Through Web Audio when there is one: that is where backing is mixed in, and a
     // one-channel destination downmixes a stereo interface to a true mono take.
@@ -2124,6 +2143,8 @@ function openTake(){
       const n=inputNode(ac,input,chan);
       src=n.src;chanNote=n.note;n.link(dest);
       if(backing)a.tap(dest);
+      // the raw capture hears exactly what the compressed recording does
+      if(capture){n.link(capture.node);if(backing)a.tap(capture.node);}
       stream=dest.stream;}
     else if(chan>=0)chanNote="Picking one input needs Web Audio, which this browser withholds, so both inputs are recorded.";
     const mime=recMime(),opts={audioBitsPerSecond:96000};
@@ -2132,8 +2153,10 @@ function openTake(){
     const late=recLatencyMs(ac,input);
     const warn=late>REC_LATE_MS?`Your audio adds about ${late} ms of delay, so the take will sound late against the backing. `
       +"Bluetooth headphones are the usual cause: use wired ones, or your interface's outputs.":"";
-    const take={phase:"ready",input,src,dest,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,
+    const take={phase:"ready",input,src,dest,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,capture,
       note:[note,chanNote,warn].filter(Boolean).join(" ")};
+    // Storage full: stop cleanly, keeping everything written so far.
+    if(capture)capture.onFail=()=>{if(state.rec===take)stopRecording();};
     recorder.ondataavailable=e=>{if(e.data&&e.data.size)take.chunks.push(e.data);};
     recorder.onstop=()=>finishTake(take);
     listInputs();
@@ -2142,7 +2165,9 @@ function openTake(){
 // when it is released.
 function closeTake(t){
   if(t.src)try{t.src.disconnect();}catch(e){/* already gone */}
-  if(t.backing&&state.engine&&state.engine.untap)state.engine.untap(t.dest);}
+  if(t.backing&&state.engine&&state.engine.untap){
+    state.engine.untap(t.dest);
+    if(t.capture)state.engine.untap(t.capture.node);}}
 function inputError(e){
   const n=e&&e.name;
   if(n==="NotAllowedError"||n==="SecurityError")return "Microphone access was refused. Allow it for this page in the browser's site settings, then press Record again.";
@@ -2165,24 +2190,34 @@ function toggleRecord(){
 function startTake(t,fromTrainer){
   t.phase="recording";t.fromTrainer=fromTrainer;t.date=new Date();t.t0=Date.now();
   t.key=state.key;t.bpm=state.bpm;
+  beginCapture(t.capture,0,takeMeta(t));   // unless bar 1 already booked it to the sample
   t.recorder.start(1000);
   const say=()=>{const s=Math.floor((Date.now()-t.t0)/1000);
-    if(s>=REC_MAX_SEC){t.capped=true;stopRecording();return;}
     recSay(`Recording ${t.backing?"guitar + backing":"guitar only"} · ${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`
       +(fromTrainer?" · stopping the trainer ends the take":"")+(t.note?" · "+t.note:""));};
   say();t.clock=setInterval(say,250);
   recButtons();}
-// Called by trainerTick for every bar-1 downbeat, when seconds before it sounds.
+// What storage keeps about a take, so a saved master can be named and listed later.
+function takeMeta(t){
+  return {name:takeName(t.date||new Date(),"wav",t.key,t.bpm),key:t.key,bpm:t.bpm,mono:t.mono,backing:t.backing};}
+// Called by trainerTick for every bar-1 downbeat, when seconds before it sounds. The
+// raw capture is told the downbeat's frame now, so the master starts on that exact
+// sample; the compressed recording starts when the beat sounds.
 function recOnBarOne(when){
   const r=state.rec;
   if(!r||r.phase!=="armed")return;
   r.phase="starting";
+  const ac=state.engine&&state.engine.context;
+  if(r.capture&&ac){
+    r.key=state.key;r.bpm=state.bpm;r.date=new Date();
+    beginCapture(r.capture,Math.round((ac.currentTime+when)*ac.sampleRate),takeMeta(r));}
   atBeat(when,()=>{if(state.rec===r&&r.phase==="starting")startTake(r,true);});}
 function stopRecording(){
   const r=state.rec;
   if(!r||r.phase!=="recording")return;
   r.phase="finishing";clearInterval(r.clock);
   recButtons();recSay("Saving the take…");
+  if(r.capture)r.capture.node.port.postMessage({stop:true});
   r.recorder.stop();}
 function cancelRecording(){
   const r=state.rec;
@@ -2190,6 +2225,7 @@ function cancelRecording(){
   state.rec=null;
   if(r.clock)clearInterval(r.clock);
   if(r.recorder){r.recorder.onstop=null;if(r.recorder.state==="recording")r.recorder.stop();closeTake(r);}
+  if(r.capture)endCapture(r.capture).then(meta=>meta&&dropTake(meta.id)).catch(()=>{});
   inputIdle();recButtons();recSay("Recording cancelled.");}
 function releaseTake(t){
   [t,t.wav].forEach(f=>{if(f&&f.url)try{URL.revokeObjectURL(f.url);}catch(e){/* already released */}});}
@@ -2206,6 +2242,110 @@ function takeToWav(blob,mono){
       for(let c=0;c<(mono?1:ab.numberOfChannels);c++)chans.push(ab.getChannelData(c));
       return {wav:new Blob([wavBytes(chans,ab.sampleRate)],{type:"audio/wav"}),seconds:ab.duration};})
     .finally(()=>{if(own&&own.close)own.close();});}
+// ---- take storage ----
+// A take's master is written to IndexedDB while it is recorded: 16-bit PCM in chunks
+// of about a second. So a long take never has to fit in memory, and what was written
+// survives a crash or a closed tab. The WAV is assembled from the chunks when you
+// download it, and the chunks are dropped once you have it (or discard it). Stored
+// data may come from an older version or be damaged, so every read checks its shape.
+const TAKE_DB="practice-desk-takes";
+function takeDB(){
+  if(state.takeDB)return state.takeDB;
+  state.takeDB=new Promise((ok,fail)=>{
+    if(typeof indexedDB==="undefined"||!indexedDB){fail(new Error("no IndexedDB"));return;}
+    const r=indexedDB.open(TAKE_DB,1);
+    r.onupgradeneeded=()=>{const db=r.result;
+      if(!db.objectStoreNames.contains("takes"))db.createObjectStore("takes",{keyPath:"id"});
+      if(!db.objectStoreNames.contains("chunks"))db.createObjectStore("chunks",{keyPath:["take","seq"]});};
+    r.onsuccess=()=>ok(r.result);
+    r.onerror=()=>fail(r.error||new Error("storage unavailable"));});
+  state.takeDB.catch(()=>{/* callers see the rejection */});
+  return state.takeDB;}
+// One transaction over one or more stores. fn gets the transaction and may return a
+// request, whose result the promise resolves with once everything is committed.
+function dbDo(stores,mode,fn){
+  return takeDB().then(db=>new Promise((ok,fail)=>{
+    const tx=db.transaction(stores,mode),req=fn(tx);let result;
+    if(req)req.onsuccess=()=>{result=req.result;};
+    tx.oncomplete=()=>ok(result);
+    tx.onerror=tx.onabort=()=>fail(tx.error||new Error("storage failed"));}));}
+const chunkRange=id=>IDBKeyRange.bound([id,0],[id,Infinity]);
+const isTake=m=>!!m&&typeof m.id==="string"&&(m.channels===1||m.channels===2)&&m.sampleRate>0;
+function savedTakes(){
+  return dbDo("takes","readonly",tx=>tx.objectStore("takes").getAll())
+    .then(list=>(Array.isArray(list)?list:[]).filter(isTake));}
+function dropTake(id){
+  return dbDo(["takes","chunks"],"readwrite",tx=>{
+    tx.objectStore("chunks").delete(chunkRange(id));tx.objectStore("takes").delete(id);});}
+// The stored master as a WAV Blob, or null if nothing usable is left of it.
+function masterWav(meta){
+  return dbDo("chunks","readonly",tx=>tx.objectStore("chunks").getAll(chunkRange(meta.id))).then(rows=>{
+    const pcm=(Array.isArray(rows)?rows:[])
+      .filter(r=>r&&ArrayBuffer.isView(r.pcm)&&r.pcm.BYTES_PER_ELEMENT===2&&r.pcm.length%meta.channels===0)
+      .sort((a,b)=>a.seq-b.seq).map(r=>r.pcm);
+    const bytes=pcm.reduce((n,p)=>n+p.byteLength,0);
+    if(!bytes)return null;
+    return new Blob([wavHeader(bytes,meta.channels,meta.sampleRate),...pcm],{type:"audio/wav"});});}
+// Ask the browser not to clear stored takes when it's short of space, and report
+// what they take up. Both are best effort: not every browser offers them.
+function storageNote(){
+  const st=typeof navigator!=="undefined"&&navigator.storage;
+  if(!st||typeof st.estimate!=="function")return Promise.resolve("");
+  const keep=typeof st.persist==="function"?st.persist().catch(()=>false):Promise.resolve(false);
+  return Promise.all([keep,st.estimate()]).then(([kept,e])=>
+    e&&e.quota?`Stored takes use ${fileSize(e.usage||0)} of ${fileSize(e.quota)} available`
+      +(kept?".":"; the browser may clear them if it runs short of space.")
+    :"").catch(()=>"");}
+
+// ---- raw capture ----
+// Runs rec-worklet.js on the audio thread beside the MediaRecorder, and streams what
+// it hands over into storage. Without AudioWorklet or IndexedDB there is no capture,
+// and the WAV falls back to decoding the compressed file (takeToWav).
+function workletReady(ac){
+  if(!ac||!ac.audioWorklet||typeof AudioWorkletNode!=="function")return Promise.resolve(false);
+  if(!state.workletFor||state.workletFor.ac!==ac)
+    state.workletFor={ac,ready:ac.audioWorklet.addModule("rec-worklet.js").then(()=>true,()=>false)};
+  return state.workletFor.ready;}
+function openCapture(ac,channels){
+  return Promise.all([workletReady(ac),takeDB().then(()=>true,()=>false)]).then(([w,db])=>{
+    if(!w||!db)return null;
+    const node=new AudioWorkletNode(ac,"take-capture",{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],
+      channelCount:channels,channelCountMode:"explicit",channelInterpretation:"speakers",
+      processorOptions:{channels,block:Math.round(ac.sampleRate)}});
+    // It writes nothing to its output; being connected is what keeps it running.
+    node.connect(ac.destination);
+    const cap={node,channels,sampleRate:ac.sampleRate,id:"take-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7),
+      seq:0,frames:0,writes:Promise.resolve(),failed:null,began:false,onFail:null,done:null};
+    cap.finished=new Promise(ok=>{cap.done=ok;});
+    node.port.onmessage=e=>{
+      const m=e.data||{};
+      if(Array.isArray(m.block)&&m.block.length){
+        const pcm=pcm16(m.block),seq=cap.seq++;
+        cap.frames+=m.block[0].length;
+        const frames=cap.frames;
+        cap.writes=cap.writes.then(()=>cap.failed?null:dbDo(["takes","chunks"],"readwrite",tx=>{
+          tx.objectStore("chunks").put({take:cap.id,seq,pcm});
+          tx.objectStore("takes").put(Object.assign({},cap.meta,{frames}));}))
+          .catch(err=>{if(!cap.failed){cap.failed=err||new Error("storage failed");if(cap.onFail)cap.onFail(cap.failed);}});}
+      if(typeof m.done==="number")cap.writes.then(()=>cap.done(cap.frames));};
+    return cap;});}
+// Starts keeping audio at an exact frame on the audio clock (0: from now).
+function beginCapture(cap,frame,meta){
+  if(!cap||cap.began)return;
+  cap.began=true;
+  cap.meta=Object.assign({id:cap.id,status:"recording",channels:cap.channels,sampleRate:cap.sampleRate,started:Date.now(),frames:0},meta);
+  cap.writes=cap.writes.then(()=>dbDo("takes","readwrite",tx=>{tx.objectStore("takes").put(cap.meta);})).catch(()=>{});
+  cap.node.port.postMessage({start:frame});}
+// Stops the capture and marks the take finished; resolves with its stored record.
+function endCapture(cap){
+  if(!cap)return Promise.resolve(null);
+  cap.node.port.postMessage({stop:true});
+  return cap.finished.then(frames=>{
+    try{cap.node.disconnect();}catch(e){/* already gone */}
+    if(!cap.began)return null;
+    const meta=Object.assign({},cap.meta,{status:"done",frames});
+    return dbDo("takes","readwrite",tx=>{tx.objectStore("takes").put(meta);}).then(()=>meta,()=>meta);});}
+
 // ---- a WebM take's length ----
 // A browser recorder writes WebM as a stream, so the file never says how long it is,
 // and some players then show no length or can't seek. This writes a Duration into
@@ -2266,10 +2406,21 @@ function finishTake(t){
   const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm),wav:null};
   state.rec=null;inputIdle();
   const secs=Math.round((Date.now()-t.t0)/1000);
-  const what=(t.capped?`Stopped at the ${REC_MAX_SEC/60}-minute limit. `:"")
+  const what=(t.capture&&t.capture.failed?"Storage ran out, so the take stopped there. ":"")
     +`Take saved: ${secs} s, ${t.mono?"mono":"stereo"}.`+(t.note?" "+t.note:"");
   showTake();recButtons();recSay(what+" Making the WAV…");
-  // The decoded length is exact; without a decoder, the recorder's own clock will do.
+  // The raw master, when there is one: its length is exact to the sample, and its WAV
+  // is assembled from storage when you download it.
+  return endCapture(t.capture).then(meta=>{
+    if(meta&&meta.frames){
+      kept.wav={meta,name:kept.name.replace(/\.\w+$/,".wav"),size:44+meta.frames*meta.channels*2,blob:null,url:null};
+      return fixTakeLength(kept,meta.frames/meta.sampleRate).then(storageNote).then(note=>{
+        if(state.recTake!==kept)return;
+        showTake();recSay(what+(note?" "+note:""));listSaved();});}
+    return decodedWav(kept,t,blob,what);});}
+// Without a raw master, the WAV is decoded from the compressed file. The decoded
+// length is exact; without a decoder, the recorder's own clock will do.
+function decodedWav(kept,t,blob,what){
   return takeToWav(blob,t.mono).then(({wav,seconds})=>fixTakeLength(kept,seconds).then(()=>{
     if(state.recTake!==kept)return;
     kept.wav={blob:wav,url:URL.createObjectURL(wav),name:kept.name.replace(/\.\w+$/,".wav")};
@@ -2284,7 +2435,48 @@ function showTake(){
   if(!t)return;
   play.src=t.url;
   c.textContent=`Download compressed (${fileSize(t.blob.size)})`;
-  if(t.wav)w.textContent=`Download WAV (${fileSize(t.wav.blob.size)})`;}
+  if(t.wav)w.textContent=`Download WAV (${fileSize(t.wav.blob?t.wav.blob.size:t.wav.size)})`;}
+// The WAV of the take on screen. A stored master is assembled on the first click and
+// then dropped from storage — the download is your copy — while this page keeps it
+// for another click.
+function downloadWav(){
+  const t=state.recTake,w=t&&t.wav;
+  if(!w)return Promise.resolve();
+  if(w.blob){saveFile(w);return Promise.resolve();}
+  return masterWav(w.meta).then(b=>{
+    if(!b){recSay("The stored master couldn't be read, so there is no WAV to download.");return;}
+    w.blob=b;w.url=URL.createObjectURL(b);saveFile(w);
+    return dropTake(w.meta.id).then(listSaved,listSaved);
+  }).catch(()=>recSay("The stored master couldn't be read, so there is no WAV to download."));}
+// ---- saved takes ----
+// Masters still in storage: not downloaded yet, or cut off by a crash or a closed
+// tab. Each can be downloaded as a WAV or discarded. The Songs view will grow from
+// this list.
+function listSaved(){
+  const box=document.getElementById("recsaved");
+  const current=[state.recTake&&state.recTake.wav&&state.recTake.wav.meta&&state.recTake.wav.meta.id,
+    state.rec&&state.rec.capture&&state.rec.capture.id];
+  return savedTakes().then(list=>{
+    list=list.filter(m=>!current.includes(m.id)).sort((a,b)=>(b.started||0)-(a.started||0));
+    state.savedList=list;
+    box.innerHTML=list.length?`<b>Saved masters</b> (not downloaded yet)<br>`+list.map(m=>{
+      const secs=Math.round((m.frames||0)/m.sampleRate),len=`${Math.floor(secs/60)}:${String(secs%60).padStart(2,"0")}`;
+      const name=typeof m.name==="string"?m.name:"practice take";
+      return `${m.status==="done"?"":"<b>Interrupted:</b> "}${escapeHTML(name)} \u00b7 ${len} \u00b7 ${fileSize(44+(m.frames||0)*m.channels*2)} `
+        +`<button data-dl="${escapeHTML(m.id)}">Download WAV</button> <button data-drop="${escapeHTML(m.id)}">Discard</button>`;}).join("<br>"):"";
+  }).catch(()=>{box.innerHTML="";});}
+function savedAction(e){
+  const d=e&&e.target&&e.target.dataset;
+  if(!d)return Promise.resolve();
+  const m=(state.savedList||[]).find(x=>x.id===d.dl||x.id===d.drop);
+  if(!m)return Promise.resolve();
+  if(d.drop)return dropTake(m.id).then(listSaved,listSaved);
+  return masterWav(m).then(b=>{
+    if(!b){recSay("Nothing usable was left of that take, so it has been discarded.");return dropTake(m.id).then(listSaved);}
+    const name=typeof m.name==="string"&&/\.wav$/.test(m.name)?m.name:"practice-take.wav";
+    saveFile({url:URL.createObjectURL(b),name});
+    return dropTake(m.id).then(listSaved,listSaved);
+  }).catch(()=>recSay("That take couldn't be read from storage."));}
 // ---- input check and level meter ----
 // While the input is open — Check input, monitoring, armed, recording, or the idle
 // minutes after — two bars show the level of Input 1 and Input 2, so you can see
@@ -3577,7 +3769,9 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
   else["recmon","reccheck"].forEach(id=>{const b=document.getElementById(id);b.disabled=true;
     b.title="This needs Web Audio, which this browser withholds.";});
   document.getElementById("recdlc").onclick=()=>saveFile(state.recTake);
-  document.getElementById("recdlw").onclick=()=>saveFile(state.recTake&&state.recTake.wav);
+  document.getElementById("recdlw").onclick=downloadWav;
+  document.getElementById("recsaved").onclick=savedAction;
+  listSaved();
   if(navigator.mediaDevices.addEventListener)navigator.mediaDevices.addEventListener("devicechange",listInputs);
   listInputs();})();
 loadSolo();

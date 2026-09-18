@@ -5,11 +5,16 @@ a second release on the same day.
 
 ## Unreleased
 
+- The WAV is now a true master rather than decoded from the compressed file. An
+  AudioWorklet (`rec-worklet.js`) captures the raw audio on the audio thread and it
+  is streamed to IndexedDB as you play, so takes have no length limit (the
+  30-minute cap is gone), survive a crash, and an armed take starts on the exact
+  sample of bar 1. Masters not yet downloaded, including interrupted takes, are
+  listed with Download WAV and Discard.
 - Record a take from any audio input, guitar only (mono) or with the backing mixed
   in (stereo), with the browser's voice processing switched off. It can start on
   bar 1 after the 12-bar trainer's count-in. Play it back, then download the
-  compressed original or a WAV; each button shows the file size. A take stops
-  itself at 30 minutes. On a two-input interface you can record just the input
+  compressed original or a WAV; each button shows the file size. On a two-input interface you can record just the input
   the guitar is in, centred. Monitor input plays the input through the
   computer's output, for headphones on a USB amp rather than the interface.
   Check input shows a live level for each of the interface's two inputs, so
