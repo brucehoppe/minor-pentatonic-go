@@ -12,19 +12,38 @@ const BOXES=[
   {n:4,off:[[7,10],[8,10],[7,9],[7,9],[7,10],[7,10]],tip:"Box 1's shape moved across a string set."},
   {n:5,off:[[10,12],[10,12],[9,12],[9,12],[10,12],[10,12]],tip:"Closes the loop — its top edge is Box 1, an octave up."}
 ];
-let key=9, view="path", labelMode="name", chord=null, reg=0, chartOpen=null, boxLock=[];
-let showB5=false, blueLock=null;
-let majorKey=0, majorDegrees=false, majorArrows=true;
-let modeId="dorian";
-// Solo lab: which shapes are in play, and the run being built inside them.
-// The run is stored as offsets from the zone's root fret, so it follows the key,
-// the register and the box selection instead of being pinned to absolute frets.
-let soloBoxes=[1], soloRun=[], soloTimer=null, soloStep=-1;
-
+// All mutable app state, in one place, grouped by the feature that owns it. Code
+// reads and writes it as state.key, state.bpm and so on, so a search for
+// "state.<name>" finds everything that touches a value.
+const state={
+  // what is on screen - key, view and the shared toolbar
+  key:9, view:"path", labelMode:"name", chord:null, reg:0, chartOpen:null, boxLock:[],
+  showB5:false, blueLock:null,
+  // major pentatonic and modes views
+  majorKey:0, majorDegrees:false, majorArrows:true,
+  modeId:"dorian", lastMode:null,
+  // Solo lab - which shapes are in play, and the run being built inside them. The run
+  // is stored as offsets from the zone's root fret, so it follows the key, the
+  // register and the box selection instead of being pinned to absolute frets.
+  soloBoxes:[1], soloRun:[], soloTimer:null, soloStep:-1,
+  // practice - find-the-note quiz, focus timer and tempo ladder
+  quiz:null,
+  timerSeconds:300, timerInitial:300, timerHandle:null, ladderStart:90, ladderRound:1,
+  // 12-bar trainer and rhythm lab
+  trainerTimer:null, trainerBar:-1, trainerBeat:0, trainerCount:4,
+  rhythm:[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0], rhythmTimer:null, rhythmStep:0,
+  // audio - the chosen engine, why there is none, and what is sounding
+  engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
+  // note names, triads, inversions and open tunings views
+  noteHL:null, noteString:null,
+  triadKind:"maj", triadSet:"123",
+  invSet:"123", invProg:"145", invStep:0, invMoved:false, invRunTimer:null, invRunLeft:0,
+  openTuning:"open-d",
+};
 const MAXFRET=24;
 const REGS=[[-12,"Octave down"],[0,"Standard"],[12,"Octave up"]];
 const REGLBL=Object.fromEntries(REGS);
-const baseFret=()=>{const f=(key-OPEN[5]+12)%12;return f===0?12:f;};
+const baseFret=()=>{const f=(state.key-OPEN[5]+12)%12;return f===0?12:f;};
 const fitsNeck=(b,R)=>Math.min(...b.off.flat())+R>=0&&Math.max(...b.off.flat())+R<=MAXFRET;
 // The register is a direction, not a fixed transposition. Each shape is moved by whole
 // octaves as far as the register asks and the neck allows; a shape with nowhere to go
@@ -33,14 +52,14 @@ const fitsNeck=(b,R)=>Math.min(...b.off.flat())+R>=0&&Math.max(...b.off.flat())+
 function fitRoot(offs){
   const lo=Math.min(...offs),hi=Math.max(...offs);
   let r=baseFret();
-  if(reg<0){while(r-12+lo>=0)r-=12;}
-  else if(reg>0){while(r+12+hi<=MAXFRET)r+=12;}
+  if(state.reg<0){while(r-12+lo>=0)r-=12;}
+  else if(state.reg>0){while(r+12+hi<=MAXFRET)r+=12;}
   return r;}
 const boxRoot=b=>fitRoot(b.off.flat());
 function regNote(b){
-  if(!reg||moved(b))return "";
+  if(!state.reg||moved(b))return "";
   return `<p class="tip stayed">Standard position — there is no room for this shape ${
-    reg<0?"an octave lower; its bottom note would fall past the nut":"an octave higher; its top note would run past fret "+MAXFRET}.</p>`;}
+    state.reg<0?"an octave lower; its bottom note would fall past the nut":"an octave higher; its top note would run past fret "+MAXFRET}.</p>`;}
 const groupRoot=(...bs)=>fitRoot(bs.flatMap(b=>b.off.flat()));
 const boxSpan=b=>{const R=boxRoot(b),fl=b.off.flat();
   return {R,lo:Math.min(...fl)+R,hi:Math.max(...fl)+R};};
@@ -50,34 +69,34 @@ const boxesAt=r=>BOXES;            // every box exists at every register now
 // what a register actually does to the neck: the span it puts the five boxes in,
 // and how many of them it managed to move off their standard position
 function regInfo(r){
-  const keep=reg;reg=r;
+  const keep=state.reg;state.reg=r;
   const spans=BOXES.map(boxSpan),shifted=BOXES.filter(moved).length;
-  reg=keep;
+  state.reg=keep;
   return {lo:Math.min(...spans.map(s=>s.lo)),hi:Math.max(...spans.map(s=>s.hi)),shifted};}
 const validBoxes=()=>BOXES;
 const rootFret=()=>fitRoot([0]);
 const noteAt=(s,f)=>(OPEN[s]+f)%12;
-const deg=pc=>(pc-key+12)%12;
+const deg=pc=>(pc-state.key+12)%12;
 const isScale=pc=>[0,3,5,7,10].includes(deg(pc));
 const isB5=pc=>deg(pc)===6;
 // ghost b5 dots inside a fret window, for any note list
 function b5Notes(lo,hi,strings=[0,1,2,3,4,5]){const o=[];
   strings.forEach(st=>{for(let f=Math.max(0,lo);f<=hi;f++)if(isB5(noteAt(st,f)))o.push({s:st,f,kind:"ghost"});});
   return o;}
-function withB5(notes){if(!showB5||!notes.length)return notes;
+function withB5(notes){if(!state.showB5||!notes.length)return notes;
   const fs=notes.map(n=>n.f),lo=Math.min(...fs),hi=Math.max(...fs);
   const have=new Set(notes.map(n=>n.s+":"+n.f));
   const strings=[...new Set(notes.map(n=>n.s))];
   return notes.concat(b5Notes(lo,hi,strings).filter(n=>!have.has(n.s+":"+n.f)));}
 const CHORDS={i:[0,3,7],iv:[5,8,0],v:[7,10,2]};
-const isChordTone=pc=>chord?CHORDS[chord].includes(deg(pc)):false;
+const isChordTone=pc=>state.chord?CHORDS[state.chord].includes(deg(pc)):false;
 function boxNotes(b,R=boxRoot(b)){const o=[];b.off.forEach((p,s)=>p.forEach(x=>o.push({s,f:x+R})));return o;}
-const kindOf=n=>noteAt(n.s,n.f)===key?"root":"tone";
+const kindOf=n=>noteAt(n.s,n.f)===state.key?"root":"tone";
 function dotText(n){
   if(n.ord!==undefined)return n.ord;
-  if(labelMode==="none")return "";
+  if(state.labelMode==="none")return "";
   const pc=noteAt(n.s,n.f);
-  return labelMode==="interval"?(IV[deg(pc)]||""):NOTES[pc];
+  return state.labelMode==="interval"?(IV[deg(pc)]||""):NOTES[pc];
 }
 
 // span forces the fret window instead of fitting it to the notes, so two diagrams
@@ -131,13 +150,13 @@ function fullMap(hl=[]){
   for(let r=0;r<6;r++)o+=`<line x1="${pad}" y1="${pad+r*h}" x2="${pad+cols*w}" y2="${pad+r*h}" stroke="var(--ink)" stroke-width="${.7+r*.25}" opacity=".5"/>`;
   for(let r=0;r<6;r++)for(let f=0;f<=last;f++){const pc=noteAt(r,f);
     if(!isScale(pc)){
-      if(!showB5||!isB5(pc))continue;
+      if(!state.showB5||!isB5(pc))continue;
       const cx=f===0?pad-11:pad+(f-.5)*w,y=pad+r*h,on=hl.length===0||inBox(r,f,true);
       o+=`<circle cx="${cx}" cy="${y}" r="8" fill="var(--card)" stroke="var(--gold)" stroke-width="2" stroke-dasharray="3 2" opacity="${on?1:.12}"/>`;
       continue;}
     const cx=f===0?pad-11:pad+(f-.5)*w,y=pad+r*h,on=hl.length===0||inBox(r,f);
     if(isChordTone(pc)&&on)o+=`<circle cx="${cx}" cy="${y}" r="11" fill="none" stroke="var(--gold)" stroke-width="2"/>`;
-    o+=`<circle cx="${cx}" cy="${y}" r="8.5" fill="${pc===key?'var(--pink)':'var(--blue)'}" opacity="${on?1:.12}"/>`;}
+    o+=`<circle cx="${cx}" cy="${y}" r="8.5" fill="${pc===state.key?'var(--pink)':'var(--blue)'}" opacity="${on?1:.12}"/>`;}
   return o+"</svg>";
 }
 
@@ -214,7 +233,7 @@ const PCPAIR={5:2,4:2,3:2,2:3};          // string index -> fret offset to the f
 const STRNAME=["high e","B","G","D","A","low E"];
 const strNo=s=>s+1;                       // index 0 = high e = "string 1"
 // fret of the current key's note on string s; 12 rather than 0 so the shape is movable
-const rootOn=s=>{const f=(key-OPEN[s]+12)%12;return f===0?12:f;};
+const rootOn=s=>{const f=(state.key-OPEN[s]+12)%12;return f===0?12:f;};
 const pcName=(s,f)=>NOTES[noteAt(s,f)]+"5";
 // two-note power chord rooted on string s at fret f
 function pc2(s,f){const o=PCPAIR[s];
@@ -315,11 +334,11 @@ function bluesMap(hl=null){
     if(blue){
       o+=`<g class="pn" data-s="${r}" data-f="${f}" role="button" tabindex="0" aria-label="play ${NOTES[pc]} flat five, fret ${f} on the ${SL[r]} string" opacity="${op}">`
        +`<circle cx="${x}" cy="${y}" r="8.5" fill="var(--card)" stroke="var(--gold)" stroke-width="2" stroke-dasharray="3 2"/>`
-       +`<text x="${x}" y="${y+3.2}" font-size="8.5" fill="var(--ink)" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${labelMode==="none"?"":labelMode==="interval"?"♭5":NOTES[pc]}</text></g>`;
+       +`<text x="${x}" y="${y+3.2}" font-size="8.5" fill="var(--ink)" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${state.labelMode==="none"?"":state.labelMode==="interval"?"♭5":NOTES[pc]}</text></g>`;
     }else{
       o+=`<g class="pn" data-s="${r}" data-f="${f}" role="button" tabindex="0" aria-label="play ${NOTES[pc]}, fret ${f} on the ${SL[r]} string" opacity="${op}">`
-       +`<circle cx="${x}" cy="${y}" r="8.5" fill="${pc===key?'var(--pink)':'var(--blue)'}"/>`
-       +`<text x="${x}" y="${y+3.2}" font-size="8.5" fill="var(--card)" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${labelMode==="none"?"":labelMode==="interval"?(IV[deg(pc)]||""):NOTES[pc]}</text></g>`;}}
+       +`<circle cx="${x}" cy="${y}" r="8.5" fill="${pc===state.key?'var(--pink)':'var(--blue)'}"/>`
+       +`<text x="${x}" y="${y+3.2}" font-size="8.5" fill="var(--card)" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${state.labelMode==="none"?"":state.labelMode==="interval"?(IV[deg(pc)]||""):NOTES[pc]}</text></g>`;}}
   return o+"</svg>";
 }
 
@@ -330,30 +349,30 @@ function renderBoxes(){
     return `<div class="card" data-box="${b.n}" tabindex="0"><h2>Box ${b.n}<em>fret ${lo}–${hi}</em></h2>${
       fretboard(boxNotes(b,R))}<p class="tip">${b.tip}</p>${regNote(b)}</div>`;}).join("");
   const ord=document.getElementById("boxorder");
-  if(ord)ord.innerHTML=reg&&laid.some((b,i)=>b.n!==i+1)
+  if(ord)ord.innerHTML=state.reg&&laid.some((b,i)=>b.n!==i+1)
     ?`Laid out low to high on the neck: <b>${laid.map(b=>"Box "+b.n).join(" · ")}</b>. At this register the boxes no longer run in numeric order — Box 1 is a shape, not a place.`
     :"";
   const ml=document.getElementById("maplabel");
   const show=()=>{
-    document.getElementById("fullmap").innerHTML=fullMap(boxLock);
-    ml.textContent=boxLock.length
-      ?`Full neck — ${boxLock.length===1?"Box":"Boxes"} ${boxLock.join(" + ")} selected`
+    document.getElementById("fullmap").innerHTML=fullMap(state.boxLock);
+    ml.textContent=state.boxLock.length
+      ?`Full neck — ${state.boxLock.length===1?"Box":"Boxes"} ${state.boxLock.join(" + ")} selected`
       :"Full neck — all boxes";
     document.querySelectorAll("#boxselect button").forEach(b=>{
-      b.setAttribute("aria-pressed",boxLock.includes(+b.dataset.box));});
+      b.setAttribute("aria-pressed",state.boxLock.includes(+b.dataset.box));});
     document.querySelectorAll("#boxes .card").forEach(c=>{
-      const selected=boxLock.includes(+c.dataset.box);
+      const selected=state.boxLock.includes(+c.dataset.box);
       c.classList.toggle("now",selected);
       c.setAttribute("aria-pressed",selected);});
   };
   const toggle=n=>{
-    boxLock=boxLock.includes(n)?boxLock.filter(x=>x!==n):[...boxLock,n].sort((a,b)=>a-b);
+    state.boxLock=state.boxLock.includes(n)?state.boxLock.filter(x=>x!==n):[...state.boxLock,n].sort((a,b)=>a-b);
     show();
   };
   const choices=document.getElementById("boxselect");
   choices.innerHTML="";
   BOXES.forEach(b=>mk(choices,{box:b.n},`Box ${b.n}`,()=>toggle(b.n)));
-  document.getElementById("boxreset").onclick=()=>{boxLock=[];show();};
+  document.getElementById("boxreset").onclick=()=>{state.boxLock=[];show();};
   document.querySelectorAll("#boxes .card").forEach(c=>{
     c.setAttribute("role","button");
     c.setAttribute("aria-label",`Select Box ${c.dataset.box}`);
@@ -371,7 +390,7 @@ const SLIDE=["Slide the two top strings with your first finger — Box 1's fourt
 
 // ---------- solo lab ----------
 const SOLO_KEY="minor-pentatonic-solo-v1";
-const soloSel=()=>BOXES.filter(b=>soloBoxes.includes(b.n));
+const soloSel=()=>BOXES.filter(b=>state.soloBoxes.includes(b.n));
 // The whole selection has to sit at one position or the shared notes do not line up.
 const soloRoot=()=>{const sel=soloSel();return sel.length?groupRoot(...sel):boxRoot(BOXES[0]);};
 // every note in the zone, tagged with which of the selected boxes it belongs to
@@ -382,8 +401,8 @@ function soloZone(){
     if(e)e.boxes.push(b.n);
     else m.set(k,{s:st,f:o+R,boxes:[b.n]});})));
   return [...m.values()].map(n=>({...n,
-    kind:noteAt(n.s,n.f)===key?"root":n.boxes.length>1?"pivot":"tone",
-    ring:n.boxes.length>1&&noteAt(n.s,n.f)===key}));}
+    kind:noteAt(n.s,n.f)===state.key?"root":n.boxes.length>1?"pivot":"tone",
+    ring:n.boxes.length>1&&noteAt(n.s,n.f)===state.key}));}
 const inZone=(s,f)=>soloZone().some(n=>n.s===s&&n.f===f);
 
 // ---- run patterns, written as generators over the current zone ----
@@ -409,45 +428,45 @@ function buildRun(id){
 
 // ---- persistence: the zone and the run survive a reload ----
 function saveSolo(){try{window.localStorage.setItem(SOLO_KEY,
-  JSON.stringify({boxes:soloBoxes,run:soloRun}));}catch(e){}}
+  JSON.stringify({boxes:state.soloBoxes,run:state.soloRun}));}catch(e){}}
 function loadSolo(){try{const v=JSON.parse(window.localStorage.getItem(SOLO_KEY)||"null");
-  if(v&&Array.isArray(v.boxes)&&v.boxes.length){soloBoxes=v.boxes.filter(n=>n>=1&&n<=5);
-    if(Array.isArray(v.run))soloRun=v.run.filter(n=>n&&typeof n.s==="number"&&typeof n.o==="number");}
+  if(v&&Array.isArray(v.boxes)&&v.boxes.length){state.soloBoxes=v.boxes.filter(n=>n>=1&&n<=5);
+    if(Array.isArray(v.run))state.soloRun=v.run.filter(n=>n&&typeof n.s==="number"&&typeof n.o==="number");}
   }catch(e){}}
 
 // ---- playback, at whatever the tempo slider says ----
-function stopSolo(){if(soloTimer){clearInterval(soloTimer);soloTimer=null;}
-  soloStep=-1;markSoloStep(-1);
+function stopSolo(){if(state.soloTimer){clearInterval(state.soloTimer);state.soloTimer=null;}
+  state.soloStep=-1;markSoloStep(-1);
   const b=document.getElementById("soloplay");
   if(b){b.textContent="Play run";b.setAttribute("aria-pressed",false);}}
 function markSoloStep(i){
   const host=document.getElementById("solorun");
   if(!host)return;
   host.querySelectorAll("g.pn").forEach(g=>g.classList.remove("playing"));
-  if(i<0||i>=soloRun.length)return;
-  const R=soloRoot(),n=soloRun[i];
+  if(i<0||i>=state.soloRun.length)return;
+  const R=soloRoot(),n=state.soloRun[i];
   const g=host.querySelector(`g.pn[data-s="${n.s}"][data-f="${n.o+R}"]`);
   if(g)g.classList.add("playing");}
 function playSolo(){
-  if(soloTimer){stopSolo();return;}
+  if(state.soloTimer){stopSolo();return;}
   const note=document.getElementById("soloplaymsg");
-  if(!soloRun.length){
+  if(!state.soloRun.length){
     if(note)note.textContent="Nothing to play yet — tap notes on the zone map above, or use Fill with.";
     return;}
-  if(!audio()){if(note)note.innerHTML=audioFault||"Audio is unavailable in this browser.";return;}
+  if(!audio()){if(note)note.innerHTML=state.audioFault||"Audio is unavailable in this browser.";return;}
   if(note)note.textContent="";
-  const R=soloRoot(),gap=30/bpm;          // eighth notes at the current tempo
-  soloStep=0;
+  const R=soloRoot(),gap=30/state.bpm;          // eighth notes at the current tempo
+  state.soloStep=0;
   const tick=when=>{
-    if(soloStep>=soloRun.length){
+    if(state.soloStep>=state.soloRun.length){
       // The last note is already booked; stop once it has sounded, not before.
-      const t=soloTimer;clearInterval(t);
-      atBeat(when,()=>{if(soloTimer===t)stopSolo();});return;}
-    const n=soloRun[soloStep],step=soloStep;
+      const t=state.soloTimer;clearInterval(t);
+      atBeat(when,()=>{if(state.soloTimer===t)stopSolo();});return;}
+    const n=state.soloRun[state.soloStep],step=state.soloStep;
     pluck(midiAt(n.s,n.o+R),when,Math.max(.18,gap*1.7),.5);
-    atBeat(when,()=>{if(soloTimer)markSoloStep(step);});
-    soloStep++;};
-  soloTimer=beatLoop(gap,tick);
+    atBeat(when,()=>{if(state.soloTimer)markSoloStep(step);});
+    state.soloStep++;};
+  state.soloTimer=beatLoop(gap,tick);
   const b=document.getElementById("soloplay");
   b.textContent="Stop";b.setAttribute("aria-pressed",true);}
 
@@ -459,17 +478,17 @@ function renderSolo(){
   // box toggles
   const bx=document.getElementById("soloboxes");
   bx.innerHTML='<span class="lbl">Boxes</span>';
-  BOXES.forEach(b=>{const on=soloBoxes.includes(b.n),btn=document.createElement("button");
+  BOXES.forEach(b=>{const on=state.soloBoxes.includes(b.n),btn=document.createElement("button");
     btn.textContent="Box "+b.n;btn.setAttribute("aria-pressed",on);
     btn.onclick=()=>{stopSolo();
-      soloBoxes=on?soloBoxes.filter(n=>n!==b.n):[...soloBoxes,b.n].sort((x,y)=>x-y);
-      if(!soloBoxes.length)soloBoxes=[b.n];
+      state.soloBoxes=on?state.soloBoxes.filter(n=>n!==b.n):[...state.soloBoxes,b.n].sort((x,y)=>x-y);
+      if(!state.soloBoxes.length)state.soloBoxes=[b.n];
       saveSolo();renderSolo();};
     bx.appendChild(btn);});
   [["All",()=>[1,2,3,4,5]],["Just Box 1",()=>[1]],["1 + 2",()=>[1,2]],["1 + 4",()=>[1,4]]]
     .forEach(([t,f])=>{const btn=document.createElement("button");
       btn.textContent=t;btn.style.opacity=".75";
-      btn.onclick=()=>{stopSolo();soloBoxes=f();saveSolo();renderSolo();};
+      btn.onclick=()=>{stopSolo();state.soloBoxes=f();saveSolo();renderSolo();};
       bx.appendChild(btn);});
 
   // pattern fills
@@ -477,7 +496,7 @@ function renderSolo(){
   pt.innerHTML='<span class="lbl">Fill with</span>';
   SOLOPATTERNS.forEach(p=>{const btn=document.createElement("button");
     btn.textContent=p.t;btn.title=p.tip;
-    btn.onclick=()=>{stopSolo();soloRun=buildRun(p.id);saveSolo();renderSolo();};
+    btn.onclick=()=>{stopSolo();state.soloRun=buildRun(p.id);saveSolo();renderSolo();};
     pt.appendChild(btn);});
 
   // the zone map — every note here is tappable
@@ -495,32 +514,32 @@ function renderSolo(){
   // clicking the zone map builds the run
   document.getElementById("solomap").querySelectorAll("g.pn").forEach(g=>{
     const add=()=>{stopSolo();
-      soloRun=[...soloRun,{s:+g.dataset.s,o:+g.dataset.f-R}];saveSolo();renderSolo();};
+      state.soloRun=[...state.soloRun,{s:+g.dataset.s,o:+g.dataset.f-R}];saveSolo();renderSolo();};
     g.addEventListener("click",add);
     g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();add();}});});
 
   // ---- the run ----
   const c=[];
-  if(!soloRun.length){
+  if(!state.soloRun.length){
     c.push(`<div class="card wide"><h2>Your run<em>nothing yet</em></h2>
       <p class="tip">Tap notes on the zone map above to build a run one note at a time, or use
       <b>Fill with</b> to drop in a practice pattern and edit from there. Everything you build is kept on
       this device, so it is still here next time.</p></div>`);
   }else{
     const map=new Map();
-    soloRun.forEach((n,i)=>{const k=n.s+":"+n.o;
+    state.soloRun.forEach((n,i)=>{const k=n.s+":"+n.o;
       if(map.has(k))map.get(k).ord+="·"+(i+1);
       else map.set(k,{s:n.s,f:n.o+R,ord:String(i+1),
-        kind:noteAt(n.s,n.o+R)===key?"root":"tone"});});
-    const frets=soloRun.map(n=>n.o+R);
-    const outside=soloRun.filter(n=>!inZone(n.s,n.o+R)).length;
-    const strings=new Set(soloRun.map(n=>n.s)).size;
-    const roots=soloRun.filter(n=>noteAt(n.s,n.o+R)===key).length;
-    const last=soloRun[soloRun.length-1];
-    const endsOnRoot=noteAt(last.s,last.o+R)===key;
-    c.push(`<div class="card wide"><h2>Your run<em>${soloRun.length} notes · fret ${Math.min(...frets)}–${Math.max(...frets)}</em></h2>
+        kind:noteAt(n.s,n.o+R)===state.key?"root":"tone"});});
+    const frets=state.soloRun.map(n=>n.o+R);
+    const outside=state.soloRun.filter(n=>!inZone(n.s,n.o+R)).length;
+    const strings=new Set(state.soloRun.map(n=>n.s)).size;
+    const roots=state.soloRun.filter(n=>noteAt(n.s,n.o+R)===state.key).length;
+    const last=state.soloRun[state.soloRun.length-1];
+    const endsOnRoot=noteAt(last.s,last.o+R)===state.key;
+    c.push(`<div class="card wide"><h2>Your run<em>${state.soloRun.length} notes · fret ${Math.min(...frets)}–${Math.max(...frets)}</em></h2>
       <div id="solorun">${fretboard([...map.values()],{w:44,plain:true})}</div>
-      <pre>${tab(soloRun.map(n=>[n.s,n.o]),R)}</pre>
+      <pre>${tab(state.soloRun.map(n=>[n.s,n.o]),R)}</pre>
       <div class="row" style="margin-top:10px">
         <button id="soloplay">Play run</button>
         <button id="solorev">Reverse</button>
@@ -536,7 +555,7 @@ function renderSolo(){
         selected above.</p>`:""}</div>`);
     c.push(`<div class="card"><h2>What you've built<em>read it back</em></h2>
       <ul class="checklist" style="border-bottom:1px solid var(--rule)">
-        <li><label>${soloRun.length} notes across ${strings} string${strings>1?"s":""}</label></li>
+        <li><label>${state.soloRun.length} notes across ${strings} string${strings>1?"s":""}</label></li>
         <li><label>${roots} root${roots===1?"":"s"} in the run</label></li>
         <li><label>Ends on ${endsOnRoot?"the root":"a "+(IV[deg(noteAt(last.s,last.o+R))]||"note")}</label></li>
         <li><label>Spans ${Math.max(...frets)-Math.min(...frets)+1} frets</label></li>
@@ -559,9 +578,9 @@ function renderSolo(){
 
   const bind=(id,fn)=>{const el=document.getElementById(id);if(el)el.onclick=fn;};
   bind("soloplay",playSolo);
-  bind("solorev",()=>{stopSolo();soloRun=[...soloRun].reverse();saveSolo();renderSolo();});
-  bind("soloundo",()=>{stopSolo();soloRun=soloRun.slice(0,-1);saveSolo();renderSolo();});
-  bind("soloclear",()=>{stopSolo();soloRun=[];saveSolo();renderSolo();});
+  bind("solorev",()=>{stopSolo();state.soloRun=[...state.soloRun].reverse();saveSolo();renderSolo();});
+  bind("soloundo",()=>{stopSolo();state.soloRun=state.soloRun.slice(0,-1);saveSolo();renderSolo();});
+  bind("soloclear",()=>{stopSolo();state.soloRun=[];saveSolo();renderSolo();});
 }
 
 function renderConnect(){
@@ -569,10 +588,10 @@ function renderConnect(){
     const a=BOXES[i],b=BOXES[i+1],R=groupRoot(a,b),map=new Map();
     const add=(s,f)=>{const k=s+":"+f;
       if(map.has(k))map.get(k).kind="pivot";
-      else map.set(k,{s,f,kind:noteAt(s,f)===key?"root":"tone"});};
+      else map.set(k,{s,f,kind:noteAt(s,f)===state.key?"root":"tone"});};
     a.off.forEach((p,s)=>p.forEach(o=>add(s,o+R)));
     b.off.forEach((p,s)=>p.forEach(o=>add(s,o+R)));
-    const notes=[...map.values()].map(n=>({...n,ring:n.kind==="pivot"&&noteAt(n.s,n.f)===key}));
+    const notes=[...map.values()].map(n=>({...n,ring:n.kind==="pivot"&&noteAt(n.s,n.f)===state.key}));
     // arrow on the high e: slide out of the lower box into the upper one
     const from=notes.find(n=>n.s===0&&n.f===a.off[0][1]+R), toF=b.off[0][1]+R;
     if(from&&toF>from.f)from.to=toF;
@@ -597,7 +616,7 @@ function formStrip(secs){
     <p class="tip" style="margin:6px 0 0;font-size:11px;opacity:.6">${total} bars — block width is bar count</p>`;}
 
 function renderPower(){
-  const c=[],k=NOTES[key];
+  const c=[],k=NOTES[state.key];
   c.push(`<div class="card"><h2>What it is<em>root + 5th, and nothing else</em></h2>
     <p class="tip">A power chord is <b>two notes</b>: a root and the fifth above it. That is not a full chord —
     it has no third, and <b>the third is the note that decides major or minor</b>. Leaving it out means the
@@ -632,7 +651,7 @@ function renderPower(){
   let rows="";
   for(let i=0;i<12;i++){
     const e6=((i-OPEN[5]+12)%12),a5=((i-OPEN[4]+12)%12),d4=((i-OPEN[3]+12)%12);
-    rows+=`<tr${i===key?' class="me"':''}><td>${NOTES[i]}5</td><td>${e6}${e6===0?" (open)":""}</td>`
+    rows+=`<tr${i===state.key?' class="me"':''}><td>${NOTES[i]}5</td><td>${e6}${e6===0?" (open)":""}</td>`
         +`<td>${a5}${a5===0?" (open)":""}</td><td>${d4}${d4===0?" (open)":""}</td></tr>`;}
   c.push(`<div class="card"><h2>Every power chord<em>root fret on each string</em></h2>
     <table><tr><th>Chord</th><th>Low E root</th><th>A root</th><th>D root</th></tr>${rows}</table>
@@ -640,7 +659,7 @@ function renderPower(){
     the next string — <b>except</b> on the G string, where it is three.</p></div>`);
 
   PCPROG.forEach(pg=>{
-    const ch=pg.d.map(d=>{const pcs=(key+d)%12,f=(pcs-OPEN[5]+12)%12;
+    const ch=pg.d.map(d=>{const pcs=(state.key+d)%12,f=(pcs-OPEN[5]+12)%12;
       return {nm:NOTES[pcs]+"5",f:f===0?12:f};});
     c.push(`<div class="card"><h2>${pg.t}<em>${pg.e}</em></h2>
       <p class="tip" style="font-size:15px;margin:0 0 8px"><b>${ch.map(x=>x.nm).join("  –  ")}</b></p>
@@ -701,7 +720,7 @@ function renderPower(){
     to drill the chorus's straight eighths.</p></div>`);
   document.getElementById("pcsong").innerHTML=sc.join("");
   const sk=document.getElementById("pcsetkey");
-  if(sk)sk.onclick=()=>{key=SONGKEY;stopDrone();blueLock=null;
+  if(sk)sk.onclick=()=>{state.key=SONGKEY;stopDrone();state.blueLock=null;
     render();};
 }
 
@@ -740,28 +759,28 @@ function renderBlues(){
   // --- whole-neck map: every box, every octave, with the flat five in place ---
   const ml=document.getElementById("bluesmaplabel"),bt=document.getElementById("bluestip");
   const drawMap=()=>{
-    document.getElementById("bluesmap").innerHTML=bluesMap(blueLock);
-    if(!blueLock){ml.textContent="Whole neck — all five boxes with the ♭5 dropped in";
+    document.getElementById("bluesmap").innerHTML=bluesMap(state.blueLock);
+    if(!state.blueLock){ml.textContent="Whole neck — all five boxes with the ♭5 dropped in";
       bt.innerHTML="Every pentatonic note on the neck, plus every <b>♭5</b> as a dashed dot. The blues boxes below are slices of this. Isolate one to see where it repeats — each shape comes back twelve frets away, so a lick learned once is available twice. <b>Tap any dot to hear it.</b>";}
-    else{const z=ZONES[blueLock];
+    else{const z=ZONES[state.blueLock];
       if(z){ml.textContent=`Whole neck — ${z.t} isolated`;bt.innerHTML=z.tip;}
-      else{const n=+blueLock.slice(3),b=BOXES[n-1],fl=b.off.flat();
+      else{const n=+state.blueLock.slice(3),b=BOXES[n-1],fl=b.off.flat();
         ml.textContent=`Whole neck — Box ${n} isolated`;
         bt.innerHTML=`<b>Box ${n}, fret ${Math.min(...fl)+R}–${Math.max(...fl)+R}</b> and again an octave either side. ${b.tip} The dashed ♭5s inside it are the blues notes available without leaving the shape.`;}}
     document.querySelectorAll("#bluesfocus button").forEach(b=>
-      b.setAttribute("aria-pressed",(b.dataset.z||null)===blueLock));};
+      b.setAttribute("aria-pressed",(b.dataset.z||null)===state.blueLock));};
   const focus=document.getElementById("bluesfocus");
   focus.innerHTML='<span class="lbl">Isolate</span>';
   const addBtn=(z,t)=>{const b=document.createElement("button");
     if(z)b.dataset.z=z;b.textContent=t;
-    b.onclick=()=>{blueLock=(blueLock===z)?null:z;drawMap();};focus.appendChild(b);};
+    b.onclick=()=>{state.blueLock=(state.blueLock===z)?null:z;drawMap();};focus.appendChild(b);};
   addBtn(null,"All");
   [1,2,3,4,5].forEach(n=>addBtn("box"+n,"Box "+n));
   addBtn("blues","Blues box");addBtn("bb","B.B.");addBtn("ak","Albert King");
   drawMap();
 
   // --- close-up cards for the boxes that fit at this register ---
-  {const R=boxRoot(BOXES[0]),b5=(key+6)%12;
+  {const R=boxRoot(BOXES[0]),b5=(state.key+6)%12;
    let n1=boxNotes(BOXES[0],R).map(n=>({...n,kind:kindOf(n)}));
    for(let s=0;s<6;s++)for(let f=R;f<=R+3;f++)if(noteAt(s,f)===b5)n1.push({s,f,kind:"ghost"});
    c.push({b:BOXES[0],t:"Blues box",e:`fret ${R}–${R+3}`,n:n1,tip:ZONES.blues.tip});}
@@ -814,7 +833,7 @@ function tab(n,R=fitRoot(n.map(e=>e[1]))){const rows=SL.map(l=>l+"|-");
     for(let i=0;i<6;i++)rows[i]+=(i===s?cell:"-".repeat(cell.length))+"--";});
   return rows.map(r=>r+"|").join("\n");}
 function renderLicks(){
-  const R=groupRoot(BOXES[0],BOXES[1]),k=NOTES[key];
+  const R=groupRoot(BOXES[0],BOXES[1]),k=NOTES[state.key];
   // root reference for the two boxes the guide works in
   const rootCard=`<div class="card wide"><h2>Roots in Box 1 and Box 2<em>${k} minor · what you are aiming at</em></h2>
     ${fretboard((()=>{const m=new Map();
@@ -830,17 +849,17 @@ function renderLicks(){
     belongs to <b>both</b>, which is why it is the natural place to change position. Box 1 has three roots,
     Box 2 has two. <b>Identify them without looking at the diagram</b> before moving on.</p>
     <div class="row" style="margin-top:10px"><span class="lbl">Guide keys</span>${
-      GUIDEKEYS.map(i=>`<button class="guidekey" data-k="${i}"${i===key?' aria-pressed="true"':''}>${NOTES[i]}m</button>`).join("")}</div></div>`;
+      GUIDEKEYS.map(i=>`<button class="guidekey" data-k="${i}"${i===state.key?' aria-pressed="true"':''}>${NOTES[i]}m</button>`).join("")}</div></div>`;
   document.getElementById("licks").innerHTML=rootCard+LICKS.map(l=>{
     const LR=fitRoot(l.n.map(e=>e[1])),map=new Map();
     l.n.forEach(([s,o],i)=>{const k=s+":"+o;
       if(map.has(k))map.get(k).ord+="·"+(i+1);
-      else map.set(k,{s,f:o+LR,ord:String(i+1),kind:noteAt(s,o+LR)===key?"root":"tone"});});
+      else map.set(k,{s,f:o+LR,ord:String(i+1),kind:noteAt(s,o+LR)===state.key?"root":"tone"});});
     return `<div class="card${l.g?" fromguide":""}"><h2>${l.t}<em>${l.e}</em></h2>${
       l.g?`<p class="badge">Practice guide</p>`:""}${fretboard([...map.values()],{w:44})}<pre>${tab(l.n,LR)}</pre>
       <p class="tip">${l.tip.replace(/\$\{K\}/g,k)}</p></div>`;}).join("");
   document.querySelectorAll(".guidekey").forEach(b=>b.onclick=()=>{
-    key=+b.dataset.k;stopDrone();blueLock=null;
+    state.key=+b.dataset.k;stopDrone();state.blueLock=null;
     render();});
 }
 
@@ -907,12 +926,12 @@ function renderPath(){
       </div>`).join("")
    +HOWTO.map(h=>`<div class="card"><h2>${h.t}</h2><ol>${h.items.map(i=>`<li>${i}</li>`).join("")}</ol></div>`).join("");
   document.querySelectorAll("#path button[data-goto]").forEach(b=>
-    b.onclick=()=>{view=b.dataset.goto;render();window.scrollTo({top:0,behavior:"smooth"});});
+    b.onclick=()=>{state.view=b.dataset.goto;render();window.scrollTo({top:0,behavior:"smooth"});});
 }
 
 // ---------- over a song ----------
 function renderSong(){
-  const rel=NOTES[(key+3)%12], k=NOTES[key];
+  const rel=NOTES[(state.key+3)%12], k=NOTES[state.key];
   const steps=[
    {n:"1",t:"Find the home note",
     b:`Play the song and hum the note it keeps wanting to settle on — usually the chord it starts and ends on. Now find that note on the low E string. That's your root, and everything else follows from it. <b>Test it:</b> hold that one note through the whole progression. If it sounds settled and at rest, you're right. If it fights the chords, try the note a fret or two either side until one stops fighting.`},
@@ -980,14 +999,14 @@ const RUN_DN=[[2,9],[2,7],[3,9],[3,7],[4,7,5],[4,5],[4,2],[5,5,3],[5,3],[5,0]];
 function runNotes(run,R=fitRoot(run.map(e=>e[1]))){const m=new Map();
   run.forEach(([st,o,to],i)=>{const k=st+":"+o,e=m.get(k);
     if(e){e.ord+="\u00b7"+(i+1);if(to!==undefined)e.to=to+R;}
-    else m.set(k,{s:st,f:o+R,ord:String(i+1),kind:noteAt(st,o+R)===key?"root":"tone",...(to!==undefined?{to:to+R}:{})});});
+    else m.set(k,{s:st,f:o+R,ord:String(i+1),kind:noteAt(st,o+R)===state.key?"root":"tone",...(to!==undefined?{to:to+R}:{})});});
   return [...m.values()];}
 function runTab(run,R){return tab(run.map(([st,o,to])=>to!==undefined?[st,o,"/"]:[st,o]),R);}
 const PHRASE=[[1,3],[0,0],[0,3,"~"],[1,10],[1,8],[2,9,"~"]];
 function renderLand(){
   // Box 1 and Box 4 are taught as a pair and the slide runs travel between them,
   // so the whole view sits at the lowest position that holds both shapes.
-  const R=groupRoot(BOXES[0],BOXES[3]),k=NOTES[key],host=document.getElementById("land");
+  const R=groupRoot(BOXES[0],BOXES[3]),k=NOTES[state.key],host=document.getElementById("land");
   const c=[];
   c.push(`<div class="card"><h2>Box 1 — landmark A<em>fret ${R}\u2013${R+3}</em></h2>
     ${fretboard(boxNotes(BOXES[0],R))}
@@ -1029,19 +1048,19 @@ function renderLand(){
       <p class="tip">Practise both in one breath: up, pause on the root, back down. When that feels
       like one movement rather than two shapes joined end to end, the pair is yours.</p></div>`);
     c.push(`<div class="card"><h2>Call and answer<em>phrase across the pair</em></h2>
-      ${fretboard(PHRASE.map(([s,o],i)=>({s,f:o+R,ord:String(i+1),kind:noteAt(s,o+R)===key?"root":"tone"})),{w:38})}
+      ${fretboard(PHRASE.map(([s,o],i)=>({s,f:o+R,ord:String(i+1),kind:noteAt(s,o+R)===state.key?"root":"tone"})),{w:38})}
       <pre>${tab(PHRASE,R)}</pre>
       <p class="tip">First three notes ask the question down in Box 1, ending on a held note with vibrato.
       <b>Leave a full bar of silence.</b> Then answer up in Box 4 and land on the root on the G string.
       Same idea, two landmarks — this is what using both shapes actually sounds like, and it's four
       seconds of music, not an exercise.</p></div>`);
   }
-  if(reg&&R===baseFret())c.unshift(`<p class="tip stayed" style="grid-column:1/-1">Standard position — Box 1 and Box 4 are taught as a pair and the slide runs travel between them, so they share one position, and in ${k} minor the pair has no room to move ${reg<0?"an octave lower":"an octave higher"}. Each box on its own does move: see <b>5 boxes</b>.</p>`);
+  if(state.reg&&R===baseFret())c.unshift(`<p class="tip stayed" style="grid-column:1/-1">Standard position — Box 1 and Box 4 are taught as a pair and the slide runs travel between them, so they share one position, and in ${k} minor the pair has no room to move ${state.reg<0?"an octave lower":"an octave higher"}. Each box on its own does move: see <b>5 boxes</b>.</p>`);
   // all-keys reference
   let rows="";
   for(let i=0;i<12;i++){
     const base=((i-OPEN[5]+12)%12)||12, low=base-12;
-    rows+=`<tr${i===key?' class="me"':''}><td>${NOTES[i]}m</td><td>${base}\u2013${base+3}</td>`
+    rows+=`<tr${i===state.key?' class="me"':''}><td>${NOTES[i]}m</td><td>${base}\u2013${base+3}</td>`
         +`<td>${base+7}\u2013${base+10}</td>`
         +`<td>${low>=0?`${low}\u2013${low+3}`:"\u2014"}</td>`
         +`<td>${low+7>=0?`${low+7}\u2013${low+10}`:"\u2014"}</td></tr>`;}
@@ -1123,8 +1142,8 @@ function keyStrip(ki,{w=25,h=11,pad=16,last=22,big=false}={}){
 }
 function renderChart(){
   document.getElementById("chart").innerHTML=NOTES.map((n,i)=>{
-    const open=i===chartOpen;
-    return `<div class="card strip${i===key?" now":""}${open?" open":""}" data-key="${i}" tabindex="0" role="button" aria-expanded="${open}">
+    const open=i===state.chartOpen;
+    return `<div class="card strip${i===state.key?" now":""}${open?" open":""}" data-key="${i}" tabindex="0" role="button" aria-expanded="${open}">
        <h2>${n} minor<em>${open?"tap to close":"tap to enlarge"}</em></h2>
        ${open?keyStrip(i,{w:46,h:26,pad:26,big:true}):keyStrip(i)}
        ${open?`<p class="tip">Dots are labelled with scale degrees. <b style="color:var(--blue)">Blue = Box 1</b>,
@@ -1132,8 +1151,8 @@ function renderChart(){
          <b style="color:#5D5F65">grey rings are the rest of the scale</b> — hollow rather than filled, but
          every one of them is a note you can play. This key is now loaded into every other view.</p>`:""}</div>`;}).join("");
   document.querySelectorAll("#chart .strip").forEach(c=>{
-    const go=()=>{const i=+c.dataset.key;chartOpen=(chartOpen===i)?null:i;
-      if(chartOpen!==null){key=i;stopDrone();
+    const go=()=>{const i=+c.dataset.key;state.chartOpen=(state.chartOpen===i)?null:i;
+      if(state.chartOpen!==null){state.key=i;stopDrone();
         }
       render();
       const el=document.querySelector("#chart .strip.open");
@@ -1174,7 +1193,7 @@ function renderCross(){
     body:`<pre>${motifTab()}</pre>`,
     tip:"Four notes on the top two strings, played in every box. Same rhythm every time. Note there's no slide marked — the shift happens as you cross back down to the B string, and <b>a position change made while moving across strings is inaudible</b>. That's the trick behind position changes you can't hear. This drill forces the crossings to happen under musical pressure instead of as an exercise."});
   const db=BOXES[0],dbs=boxSpan(db);
-  const doors=boxNotes(db,dbs.R).map(n=>({...n,kind:"pivot",ring:noteAt(n.s,n.f)===key}));
+  const doors=boxNotes(db,dbs.R).map(n=>({...n,kind:"pivot",ring:noteAt(n.s,n.f)===state.key}));
   c.push({t:"4 · Every note is a door",e:`Box ${db.n}, fret ${dbs.lo}–${dbs.hi}`,
     body:fretboard(doors,{w:46}),
     tip:"Each string in a box holds two notes: the lower one is shared with the box below, the upper one with the box above. So <b>every note you play is already a doorway</b>. Drill: drone on, wander in the box above, and shift position the moment you hit the ♭7 — land on a root or chord tone straight after, and the move sounds deliberate instead of lost. Shift in the gaps between phrases, never mid-run."});
@@ -1183,31 +1202,30 @@ function renderCross(){
 }
 
 // ---------- practice ----------
-let quiz=null;
 function newQuiz(){
   const vs=validBoxes(),b=vs[Math.floor(Math.random()*vs.length)],t=[0,3,5,7,10][Math.floor(Math.random()*5)];
   const notes=boxNotes(b);
-  quiz={box:b,target:t,total:notes.filter(n=>deg(noteAt(n.s,n.f))===t).length,found:0,wrong:0,notes};
+  state.quiz={box:b,target:t,total:notes.filter(n=>deg(noteAt(n.s,n.f))===t).length,found:0,wrong:0,notes};
   document.getElementById("quizboard").innerHTML=fretboard(notes,{w:46,quiz:true});
   document.getElementById("quizstatus").innerHTML=
-    `Box ${b.n}, key ${NOTES[key]} minor — tap every <b>${IV[t]}</b> (${NOTES[(key+t)%12]}). 0 of ${quiz.total}.`;
+    `Box ${b.n}, key ${NOTES[state.key]} minor — tap every <b>${IV[t]}</b> (${NOTES[(state.key+t)%12]}). 0 of ${state.quiz.total}.`;
   document.querySelectorAll("#quizboard .qn").forEach(g=>{
     const hit=()=>answer(g);
     g.addEventListener("click",hit);
     g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();hit();}});});
 }
 function answer(g){
-  if(g.dataset.done||quiz.found===quiz.total)return;
+  if(g.dataset.done||state.quiz.found===state.quiz.total)return;
   const pc=+g.dataset.pc,c=g.querySelector("circle"),t=g.querySelector("text"),st=document.getElementById("quizstatus");
-  if(deg(pc)===quiz.target){
-    g.dataset.done=1;quiz.found++;c.setAttribute("fill","var(--pink)");t.textContent=IV[quiz.target];
-    st.innerHTML=quiz.found===quiz.total
-      ? `All ${quiz.total} found${quiz.wrong?` with ${quiz.wrong} miss${quiz.wrong>1?"es":""}`:" clean"}. Now play them, lowest to highest, saying <b>${IV[quiz.target]}</b> out loud.`
-      : `Tap every <b>${IV[quiz.target]}</b> (${NOTES[(key+quiz.target)%12]}). ${quiz.found} of ${quiz.total}.`;
+  if(deg(pc)===state.quiz.target){
+    g.dataset.done=1;state.quiz.found++;c.setAttribute("fill","var(--pink)");t.textContent=IV[state.quiz.target];
+    st.innerHTML=state.quiz.found===state.quiz.total
+      ? `All ${state.quiz.total} found${state.quiz.wrong?` with ${state.quiz.wrong} miss${state.quiz.wrong>1?"es":""}`:" clean"}. Now play them, lowest to highest, saying <b>${IV[state.quiz.target]}</b> out loud.`
+      : `Tap every <b>${IV[state.quiz.target]}</b> (${NOTES[(state.key+state.quiz.target)%12]}). ${state.quiz.found} of ${state.quiz.total}.`;
   }else{
-    quiz.wrong++;c.setAttribute("fill","var(--gold)");
+    state.quiz.wrong++;c.setAttribute("fill","var(--gold)");
     setTimeout(()=>c.setAttribute("fill","var(--blue)"),320);
-    st.innerHTML=`That one's the <b>${IV[deg(pc)]}</b>. Still looking for the ${IV[quiz.target]} — ${quiz.found} of ${quiz.total}.`;
+    st.innerHTML=`That one's the <b>${IV[deg(pc)]}</b>. Still looking for the ${IV[state.quiz.target]} — ${state.quiz.found} of ${state.quiz.total}.`;
   }
 }
 const POOL=[...BOXES.map(b=>`<b>Box ${b.n}</b> — two notes per string, up and back, eyes off the neck`),
@@ -1218,7 +1236,7 @@ const POOL=[...BOXES.map(b=>`<b>Box ${b.n}</b> — two notes per string, up and 
 function newSession(){
   const p=[...POOL].sort(()=>Math.random()-.5).slice(0,3);
   document.getElementById("session").innerHTML=
-    [`Warm up: root drone on, ${NOTES[key]} minor, wander for 3 min`,...p.map(x=>x+" — 5 min"),
+    [`Warm up: root drone on, ${NOTES[state.key]} minor, wander for 3 min`,...p.map(x=>x+" — 5 min"),
      "Interleave: cycle back through all three once more, 4 min",
      "Record one take over the drone. Listen once. Stop."].map(x=>`<li>${x}</li>`).join("");
 }
@@ -1278,7 +1296,7 @@ function readChecks(){try{return JSON.parse(window.localStorage.getItem(CHECK_KE
 function writeChecks(v){try{window.localStorage.setItem(CHECK_KEY,JSON.stringify(v));}catch(e){}}
 
 function renderGuide(){
-  const k=NOTES[key],done=readChecks();
+  const k=NOTES[state.key],done=readChecks();
   const g=[];
   g.push(`<div class="card"><h2>Song project<em>the point of all of it</em></h2>
     <p class="tip" style="font-size:15px;margin:0 0 6px"><b>${SONGPROJ.t}</b></p>
@@ -1289,7 +1307,7 @@ function renderGuide(){
   g.push(`<div class="card"><h2>Long-term focus<em>where this is going</em></h2>
     <ol>${FOCUS.map(f=>`<li>${f}</li>`).join("")}</ol>
     <div class="row" style="margin-top:10px"><span class="lbl">Work in</span>${
-      GUIDEKEYS.map(i=>`<button class="guidekey" data-k="${i}"${i===key?' aria-pressed="true"':''}>${NOTES[i]}m</button>`).join("")}</div>
+      GUIDEKEYS.map(i=>`<button class="guidekey" data-k="${i}"${i===state.key?' aria-pressed="true"':''}>${NOTES[i]}m</button>`).join("")}</div>
     <p class="tip">The exercises below are written relative to the root, so they move with the key. Set the
     key to <b>Em</b> and the tabs read exactly as the guide has them, at the 12th fret.</p></div>`);
   ROUTINES.forEach(r=>{
@@ -1314,7 +1332,7 @@ function renderGuide(){
     const tf=document.getElementById("timerface");
     if(tf.scrollIntoView)tf.scrollIntoView({block:"nearest",behavior:"smooth"});});
   host.querySelectorAll(".guidekey").forEach(b=>b.onclick=()=>{
-    key=+b.dataset.k;stopDrone();blueLock=null;
+    state.key=+b.dataset.k;stopDrone();state.blueLock=null;
     render();});
   host.querySelectorAll(".gchk").forEach(b=>b.onchange=()=>{
     const v=readChecks();v[+b.dataset.i]=b.checked;writeChecks(v);renderGuide();});
@@ -1347,28 +1365,27 @@ function renderTheory(){
       ?"Song projects saved on this device.":"Browser storage is unavailable; copy these notes before closing.";};}
 
 // ---------- focused practice tools ----------
-let timerSeconds=300,timerInitial=300,timerHandle=null,ladderStart=90,ladderRound=1;
 function timerText(n){return String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");}
-function paintTimer(){document.getElementById("timerface").textContent=timerText(timerSeconds);}
-function setTimer(minutes){stopTimer();timerInitial=timerSeconds=minutes*60;paintTimer();
+function paintTimer(){document.getElementById("timerface").textContent=timerText(state.timerSeconds);}
+function setTimer(minutes){stopTimer();state.timerInitial=state.timerSeconds=minutes*60;paintTimer();
   document.getElementById("timerstatus").textContent=`Ready for ${minutes} focused minute${minutes===1?"":"s"}.`;
   document.querySelectorAll(".timerpreset").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.min===minutes));}
-function stopTimer(){if(timerHandle){clearInterval(timerHandle);timerHandle=null;}
+function stopTimer(){if(state.timerHandle){clearInterval(state.timerHandle);state.timerHandle=null;}
   const b=document.getElementById("toggletimer");if(b){b.textContent="Start";b.setAttribute("aria-pressed",false);}}
 function timerCue(){const a=audio();if(!a)return;a.blip(880,{dur:.35,vol:.18});}
-function toggleTimer(){if(timerHandle){stopTimer();document.getElementById("timerstatus").textContent="Paused — your time is preserved.";return;}
-  if(timerSeconds===0)timerSeconds=timerInitial;
+function toggleTimer(){if(state.timerHandle){stopTimer();document.getElementById("timerstatus").textContent="Paused — your time is preserved.";return;}
+  if(state.timerSeconds===0)state.timerSeconds=state.timerInitial;
   const b=document.getElementById("toggletimer");b.textContent="Pause";b.setAttribute("aria-pressed",true);
   document.getElementById("timerstatus").textContent="Focus on one thing until the cue.";
-  timerHandle=setInterval(()=>{timerSeconds=Math.max(0,timerSeconds-1);paintTimer();if(timerSeconds===0){stopTimer();timerCue();
+  state.timerHandle=setInterval(()=>{state.timerSeconds=Math.max(0,state.timerSeconds-1);paintTimer();if(state.timerSeconds===0){stopTimer();timerCue();
     document.getElementById("timerstatus").innerHTML="Time. <b>Stop, breathe, and name what improved.</b>";}},1000);}
-function resetTimer(){stopTimer();timerSeconds=timerInitial;paintTimer();document.getElementById("timerstatus").textContent="Reset and ready.";}
-function ladder(delta){bpm=Math.max(40,Math.min(220,bpm+delta));ladderRound++;
-  document.getElementById("bpm").value=bpm;document.getElementById("bpmv").textContent=bpm+" bpm";
-  document.getElementById("ladderbpm").textContent=bpm;restartClick();
-  document.getElementById("ladderstatus").innerHTML=`Round ${ladderRound} · ${delta>0?"clean — keep the motion relaxed":"miss — rebuild cleanly"}`;}
-function resetLadder(){bpm=ladderStart;ladderRound=1;document.getElementById("bpm").value=bpm;
-  document.getElementById("bpmv").textContent=bpm+" bpm";document.getElementById("ladderbpm").textContent=bpm;
+function resetTimer(){stopTimer();state.timerSeconds=state.timerInitial;paintTimer();document.getElementById("timerstatus").textContent="Reset and ready.";}
+function ladder(delta){state.bpm=Math.max(40,Math.min(220,state.bpm+delta));state.ladderRound++;
+  document.getElementById("bpm").value=state.bpm;document.getElementById("bpmv").textContent=state.bpm+" bpm";
+  document.getElementById("ladderbpm").textContent=state.bpm;restartClick();
+  document.getElementById("ladderstatus").innerHTML=`Round ${state.ladderRound} · ${delta>0?"clean — keep the motion relaxed":"miss — rebuild cleanly"}`;}
+function resetLadder(){state.bpm=state.ladderStart;state.ladderRound=1;document.getElementById("bpm").value=state.bpm;
+  document.getElementById("bpmv").textContent=state.bpm+" bpm";document.getElementById("ladderbpm").textContent=state.bpm;
   document.getElementById("ladderstatus").textContent="Round 1 · starting tempo";restartClick();}
 const LOG_KEY="minor-pentatonic-practice-log-v1";
 function readLog(){try{return JSON.parse(window.localStorage.getItem(LOG_KEY)||"[]");}catch(e){return [];}}
@@ -1379,8 +1396,8 @@ function renderLog(){const log=readLog(),host=document.getElementById("loglist")
 // Log entries come back from localStorage, which anything on this origin can write.
 function escapeHTML(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);}
 function completeSession(){const log=readLog(),date=new Date().toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
-  log.unshift({date,key:NOTES[key],bpm});writeLog(log.slice(0,30));renderLog();
-  document.getElementById("logsummary").innerHTML=`Logged today’s <b>${NOTES[key]} minor</b> session at ${bpm} bpm.`;}
+  log.unshift({date,key:NOTES[state.key],bpm:state.bpm});writeLog(log.slice(0,30));renderLog();
+  document.getElementById("logsummary").innerHTML=`Logged today’s <b>${NOTES[state.key]} minor</b> session at ${state.bpm} bpm.`;}
 function clearLog(){writeLog([]);renderLog();}
 
 // ---------- 12-bar blues trainer ----------
@@ -1467,67 +1484,65 @@ const CHORD_KIND={
 const barSymbols=entry=>Array.isArray(entry)?entry:[entry];
 // In a split bar the second chord takes over on beat 3.
 const symbolAt=(entry,beat)=>{const s=barSymbols(entry);return s.length>1&&beat>=2?s[1]:s[0];};
-let trainerTimer=null,trainerBar=-1,trainerBeat=0,trainerCount=4;
 function currentForm(){return BLUES_FORMS[document.getElementById("bluesform").value]||BLUES_FORMS.classic;}
 function chordInfo(symbol){const roman=symbol.match(/^[b#]?[IV]+/)[0],kind=symbol.slice(roman.length),
   roots={I:0,bII:1,II:2,bIII:3,III:4,IV:5,"#IV":6,V:7,bVI:8,VI:9,bVII:10,VII:11};
   return {symbol,root:roots[roman],kind,intervals:CHORD_KIND[kind]};}
-function chordName(symbol){const c=chordInfo(symbol);return NOTES[(key+c.root)%12]+c.kind;}
+function chordName(symbol){const c=chordInfo(symbol);return NOTES[(state.key+c.root)%12]+c.kind;}
 // bar and beat default to the live position; the beat clock passes the ones being
 // drawn, because it books beats slightly before they sound.
-function renderTrainer(bar=trainerBar,beat=trainerBeat){const form=currentForm();
+function renderTrainer(bar=state.trainerBar,beat=state.trainerBeat){const form=currentForm();
   document.getElementById("bluesbars").innerHTML=form.chords.map((entry,i)=>{
     const syms=barSymbols(entry);
     return `<div class="bluesbar${i===bar?" now":""}${syms.length>1?" split":""}"><span>${i+1}</span>${
       syms.map(sym=>`<b>${chordName(sym)}</b>`).join("")}<span>${syms.join(" ")}</span></div>`;}).join("");
   const entry=bar<0?form.chords[0]:form.chords[bar];
   const symbol=symbolAt(entry,bar<0?0:beat),c=chordInfo(symbol),roles=["root","3rd","5th","7th"];
-  const targets=c.intervals.map((x,i)=>`${roles[i]} (${NOTES[(key+c.root+x)%12]})`).join(" · ");
+  const targets=c.intervals.map((x,i)=>`${roles[i]} (${NOTES[(state.key+c.root+x)%12]})`).join(" · ");
   document.getElementById("trainertarget").innerHTML=`Target tones for <b>${chordName(symbol)}</b>: ${targets}`;
   document.getElementById("formtip").textContent=form.tip;
   document.getElementById("formheard").textContent=form.heard;
   document.getElementById("trainerreadout").textContent=bar<0?"ready":`bar ${bar+1} · beat ${beat+1}`;}
 function trainerSound(symbol,beat,when=0){
   const a=audio();if(!a)return;
-  const c=chordInfo(symbol),pc=(key+c.root)%12,groove=document.getElementById("groove").value;
+  const c=chordInfo(symbol),pc=(state.key+c.root)%12,groove=document.getElementById("groove").value;
   const hzs=c.intervals.map((iv,i)=>freq((pc+iv)%12)*(i?1:.5));
   const hold=groove==="slow"?.38:.1;
   a.chord(hzs,{when,dur:hold,vol:beat===0?.06:.032});
-  if(groove==="shuffle")a.chord(hzs,{when:when+(60/bpm)*2/3,dur:hold,vol:.018});}
+  if(groove==="shuffle")a.chord(hzs,{when:when+(60/state.bpm)*2/3,dur:hold,vol:.018});}
 function trainerTick(when=0){const form=currentForm();
-  if(trainerCount>0){const text=`count in · ${5-trainerCount}`;
-    trainerSound(symbolAt(form.chords[0],0),4-trainerCount,when);trainerCount--;
-    atBeat(when,()=>{if(trainerTimer)document.getElementById("trainerreadout").textContent=text;});return;}
-  if(trainerBar<0)trainerBar=0;
-  const bar=trainerBar,beat=trainerBeat;
+  if(state.trainerCount>0){const text=`count in · ${5-state.trainerCount}`;
+    trainerSound(symbolAt(form.chords[0],0),4-state.trainerCount,when);state.trainerCount--;
+    atBeat(when,()=>{if(state.trainerTimer)document.getElementById("trainerreadout").textContent=text;});return;}
+  if(state.trainerBar<0)state.trainerBar=0;
+  const bar=state.trainerBar,beat=state.trainerBeat;
   trainerSound(symbolAt(form.chords[bar],beat),beat,when);
-  atBeat(when,()=>{if(trainerTimer)renderTrainer(bar,beat);});
-  trainerBeat++;if(trainerBeat===4){trainerBeat=0;trainerBar=(trainerBar+1)%12;}}
-function stopTrainer(){if(trainerTimer){clearInterval(trainerTimer);trainerTimer=null;}const b=document.getElementById("toggletrainer");
+  atBeat(when,()=>{if(state.trainerTimer)renderTrainer(bar,beat);});
+  state.trainerBeat++;if(state.trainerBeat===4){state.trainerBeat=0;state.trainerBar=(state.trainerBar+1)%12;}}
+function stopTrainer(){if(state.trainerTimer){clearInterval(state.trainerTimer);state.trainerTimer=null;}const b=document.getElementById("toggletrainer");
   if(b){b.textContent="Start with count-in";b.setAttribute("aria-pressed",false);}}
-function toggleTrainer(){if(trainerTimer){stopTrainer();return;}trainerCount=4;trainerBar=-1;trainerBeat=0;
+function toggleTrainer(){if(state.trainerTimer){stopTrainer();return;}state.trainerCount=4;state.trainerBar=-1;state.trainerBeat=0;
   const b=document.getElementById("toggletrainer");b.textContent="Stop";b.setAttribute("aria-pressed",true);
-  trainerTimer=beatLoop(60/bpm,trainerTick);}
-function resetTrainer(){stopTrainer();trainerBar=-1;trainerBeat=0;trainerCount=4;renderTrainer();}
+  state.trainerTimer=beatLoop(60/state.bpm,trainerTick);}
+function resetTrainer(){stopTrainer();state.trainerBar=-1;state.trainerBeat=0;state.trainerCount=4;renderTrainer();}
 
 // ---------- rhythm and phrasing generator ----------
-let rhythm=[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0],rhythmTimer=null,rhythmStep=0;
 function generateRhythm(){stopRhythm();const density=document.getElementById("density").value,prob={sparse:.24,medium:.4,busy:.62}[density];
-  rhythm=Array.from({length:16},(_,i)=>i===0?1:(Math.random()<prob?1:0));rhythmStep=0;renderRhythm();return rhythm;}
-function renderRhythm(now=rhythmStep){const syllables=["1","e","&","a","2","e","&","a","3","e","&","a","4","e","&","a"];
-  document.getElementById("beatgrid").innerHTML=rhythm.map((hit,i)=>`<div class="beat${hit?" hit":""}${rhythmTimer&&i===now?" now":""}">${hit?syllables[i]:"·"}</div>`).join("");
-  const hits=rhythm.reduce((a,b)=>a+b,0);document.getElementById("rhythmcount").innerHTML=`${hits} attacks · ${16-hits} rests · <b>count the rests too</b>`;
-  document.getElementById("rhythmroot").textContent=NOTES[key];document.getElementById("rhythmtip").innerHTML=
-    `At ${bpm} bpm, one loop lasts ${(240/bpm).toFixed(1)} seconds. Accent beats 2 and 4 without changing the written rhythm.`;}
+  state.rhythm=Array.from({length:16},(_,i)=>i===0?1:(Math.random()<prob?1:0));state.rhythmStep=0;renderRhythm();return state.rhythm;}
+function renderRhythm(now=state.rhythmStep){const syllables=["1","e","&","a","2","e","&","a","3","e","&","a","4","e","&","a"];
+  document.getElementById("beatgrid").innerHTML=state.rhythm.map((hit,i)=>`<div class="beat${hit?" hit":""}${state.rhythmTimer&&i===now?" now":""}">${hit?syllables[i]:"·"}</div>`).join("");
+  const hits=state.rhythm.reduce((a,b)=>a+b,0);document.getElementById("rhythmcount").innerHTML=`${hits} attacks · ${16-hits} rests · <b>count the rests too</b>`;
+  document.getElementById("rhythmroot").textContent=NOTES[state.key];document.getElementById("rhythmtip").innerHTML=
+    `At ${state.bpm} bpm, one loop lasts ${(240/state.bpm).toFixed(1)} seconds. Accent beats 2 and 4 without changing the written rhythm.`;}
 function rhythmSound(accent,when=0){const a=audio();if(!a)return;a.blip(accent?1100:720,{when,dur:.045,vol:.16});}
-function rhythmTick(when=0){const step=rhythmStep;
-  if(rhythm[step])rhythmSound(step===4||step===12,when);
-  atBeat(when,()=>{if(rhythmTimer)renderRhythm(step);});
-  rhythmStep=(rhythmStep+1)%16;}
-function stopRhythm(){if(rhythmTimer){clearInterval(rhythmTimer);rhythmTimer=null;}const b=document.getElementById("togglerhythm");
+function rhythmTick(when=0){const step=state.rhythmStep;
+  if(state.rhythm[step])rhythmSound(step===4||step===12,when);
+  atBeat(when,()=>{if(state.rhythmTimer)renderRhythm(step);});
+  state.rhythmStep=(state.rhythmStep+1)%16;}
+function stopRhythm(){if(state.rhythmTimer){clearInterval(state.rhythmTimer);state.rhythmTimer=null;}const b=document.getElementById("togglerhythm");
   if(b){b.textContent="Play loop";b.setAttribute("aria-pressed",false);}}
-function toggleRhythm(){if(rhythmTimer){stopRhythm();renderRhythm();return;}rhythmStep=0;const b=document.getElementById("togglerhythm");
-  b.textContent="Stop";b.setAttribute("aria-pressed",true);rhythmTimer=beatLoop(60/bpm/4,rhythmTick);}
+function toggleRhythm(){if(state.rhythmTimer){stopRhythm();renderRhythm();return;}state.rhythmStep=0;const b=document.getElementById("togglerhythm");
+  b.textContent="Stop";b.setAttribute("aria-pressed",true);state.rhythmTimer=beatLoop(60/state.bpm/4,rhythmTick);}
 
 // ---------- audio ----------
 // The app asks for musical events — a note, a click, a chord strike, a drone — and a
@@ -1765,7 +1780,6 @@ function wavEngine() {
 }
 
 // ---- choosing one ----
-let engine = null, audioFault = null, clickTimer = null, droneHandle = null, bpm = 90;
 
 const isSafari = () => {
   const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
@@ -1793,29 +1807,29 @@ function compatibilityReason() {
 // Built on first use, which is always inside a click: browsers require a gesture
 // before they will start audio, and this is never called before one.
 function audio() {
-  if (engine) return engine;
-  if (audioFault) return null;
+  if (state.engine) return state.engine;
+  if (state.audioFault) return null;
   const Ctor = audioContextCtor();
   if (Ctor) {
-    try { engine = webAudioEngine(new Ctor()); } catch (e) { engine = null; }
+    try { state.engine = webAudioEngine(new Ctor()); } catch (e) { state.engine = null; }
   }
-  if (!engine && typeof Audio === "function") {
-    try { engine = wavEngine(); } catch (e) { engine = null; }
+  if (!state.engine && typeof Audio === "function") {
+    try { state.engine = wavEngine(); } catch (e) { state.engine = null; }
   }
-  if (!engine) { audioFault = noAudioReason(); check(); return null; }
-  engine.resume().then(check).catch(check);
+  if (!state.engine) { state.audioFault = noAudioReason(); check(); return null; }
+  state.engine.resume().then(check).catch(check);
   check();
-  return engine;
+  return state.engine;
 }
 
 // One place decides what the status line says and whether the controls are usable.
 function check() {
   const m = document.getElementById("audiomsg");
   if (!m) return;
-  if (audioFault) { m.innerHTML = audioFault; audioOff(true); return; }
+  if (state.audioFault) { m.innerHTML = state.audioFault; audioOff(true); return; }
   audioOff(false);
-  if (engine && engine.name === "Compatibility") m.innerHTML = compatibilityReason();
-  else if (engine && engine.state() === "suspended")
+  if (state.engine && state.engine.name === "Compatibility") m.innerHTML = compatibilityReason();
+  else if (state.engine && state.engine.state() === "suspended")
     m.textContent = "Audio is waiting for a click — press the button once more and it will start.";
   else m.textContent = "";
 }
@@ -1827,7 +1841,7 @@ function audioOff(dead) {
     if (!b) return;
     b.disabled = dead;
     b.style.opacity = dead ? .4 : 1;
-    b.title = dead ? (audioFault || "Audio unavailable").replace(/<[^>]+>/g, "") : "";
+    b.title = dead ? (state.audioFault || "Audio unavailable").replace(/<[^>]+>/g, "") : "";
   });
 }
 
@@ -1883,33 +1897,33 @@ document.addEventListener("keydown", e => {
   e.preventDefault(); soundDot(g);
 });
 function toggleDrone(btn) {
-  if (droneHandle) { droneHandle.stop(); droneHandle = null; btn.setAttribute("aria-pressed", false); return; }
+  if (state.droneHandle) { state.droneHandle.stop(); state.droneHandle = null; btn.setAttribute("aria-pressed", false); return; }
   const a = audio(); if (!a) return;
-  droneHandle = a.startDrone([freq(key), freq(key) * 2, freq(key) * 3]);
+  state.droneHandle = a.startDrone([freq(state.key), freq(state.key) * 2, freq(state.key) * 3]);
   btn.setAttribute("aria-pressed", true);
 }
 function stopDrone() {
-  if (!droneHandle) return;
-  droneHandle.stop(); droneHandle = null;
+  if (!state.droneHandle) return;
+  state.droneHandle.stop(); state.droneHandle = null;
   const b = document.getElementById("drone");
   if (b) b.setAttribute("aria-pressed", false);
 }
 function toggleClick(btn) {
-  if (clickTimer) { clearInterval(clickTimer); clickTimer = null; btn.setAttribute("aria-pressed", false); return; }
+  if (state.clickTimer) { clearInterval(state.clickTimer); state.clickTimer = null; btn.setAttribute("aria-pressed", false); return; }
   let beat = 0;
   const tick = when => {
     const a = audio(); if (!a) return;
     a.blip(beat % 4 === 0 ? 1400 : 900, { when, dur: .05, vol: .22 });
     beat++;
   };
-  clickTimer = beatLoop(60 / bpm, tick);
+  state.clickTimer = beatLoop(60 / state.bpm, tick);
   btn.setAttribute("aria-pressed", true);
 }
 function restartClick() {
   const b = document.getElementById("click");
-  if (clickTimer) { clearInterval(clickTimer); clickTimer = null; toggleClick(b); }
-  if (trainerTimer) { stopTrainer(); toggleTrainer(); }
-  if (rhythmTimer) { stopRhythm(); toggleRhythm(); }
+  if (state.clickTimer) { clearInterval(state.clickTimer); state.clickTimer = null; toggleClick(b); }
+  if (state.trainerTimer) { stopTrainer(); toggleTrainer(); }
+  if (state.rhythmTimer) { stopRhythm(); toggleRhythm(); }
 }
 // ---------- major pentatonic: the diagonal shape ----------
 // A different diagram from everything above: the neck runs downwards, low E on the
@@ -1929,10 +1943,10 @@ const MAJKEYS=[
 const majName=(sem,flat)=>(flat?FLATS:NOTES)[((sem%12)+12)%12];
 // The root sits on the A string, so its fret is the distance from that string's
 // open A up to the key.
-const majRoot=()=>(((MAJKEYS[majorKey].s-9)%12)+12)%12;
+const majRoot=()=>(((MAJKEYS[state.majorKey].s-9)%12)+12)%12;
 
 function majorBoard(){
-  const K=MAJKEYS[majorKey],R=majRoot(),start=Math.max(0,R-1),rows=13;
+  const K=MAJKEYS[state.majorKey],R=majRoot(),start=Math.max(0,R-1),rows=13;
   const X=[62,110,158,206,254,302],TOP=44,BH=42,H=TOP+rows*BH+16;
   let o=`<svg viewBox="0 0 340 ${H}" role="img" aria-label="${K.n} major pentatonic, root at fret ${R} on the A string">`;
   o+=`<defs><marker id="majarrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">`
@@ -1945,7 +1959,7 @@ function majorBoard(){
     if(DBLMARK.includes(f))o+=`<circle cx="134" cy="${yc}" r="3.5" fill="var(--ink)" opacity=".3"/><circle cx="230" cy="${yc}" r="3.5" fill="var(--ink)" opacity=".3"/>`;}
   for(let st=0;st<6;st++)o+=`<line x1="${X[st]}" y1="${TOP}" x2="${X[st]}" y2="${TOP+rows*BH}" stroke="var(--ink)" stroke-width="${1.6-st*.2}" opacity=".45"/>`;
   for(let st=0;st<6;st++){const p=MAJ_PAT[st];
-    if(majorArrows&&p.length===3){
+    if(state.majorArrows&&p.length===3){
       const y2=TOP+((R+p[1])-start)*BH+BH/2,y3=TOP+((R+p[2])-start)*BH+BH/2;
       o+=`<line x1="${X[st]}" y1="${y2+18}" x2="${X[st]}" y2="${y3-19}" stroke="var(--gold)" stroke-width="1.8" marker-end="url(#majarrow)"/>`;}
     for(let i=0;i<p.length;i++){
@@ -1953,7 +1967,7 @@ function majorBoard(){
       const iv=(((MAJ_OPEN[st]+fr-K.s)%12)+12)%12,rt=iv===0;
       o+=`<circle cx="${X[st]+1.5}" cy="${y+1.5}" r="15" fill="${rt?"var(--blue)":"var(--pink)"}" opacity=".2"/>`;
       o+=`<circle class="majdot" fill="${rt?"var(--pink)":"var(--blue)"}" cx="${X[st]}" cy="${y}" r="15"/>`;
-      o+=`<text x="${X[st]}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="500" fill="var(--card)" font-family="DM Mono,monospace">${majorDegrees?MAJ_DEG[iv]:majName(MAJ_OPEN[st]+fr,K.f)}</text>`;}}
+      o+=`<text x="${X[st]}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="500" fill="var(--card)" font-family="DM Mono,monospace">${state.majorDegrees?MAJ_DEG[iv]:majName(MAJ_OPEN[st]+fr,K.f)}</text>`;}}
   return o+"</svg>";
 }
 
@@ -1962,7 +1976,7 @@ function majorTab(){const R=majRoot(),rows=[];
   return rows.join("\n");}
 
 function renderMajor(){
-  const K=MAJKEYS[majorKey],R=majRoot();
+  const K=MAJKEYS[state.majorKey],R=majRoot();
   document.getElementById("majorboard").innerHTML=majorBoard();
   document.getElementById("majorpos").textContent=`root \u00b7 A string, fret ${R}`;
   document.getElementById("majorcap").textContent=
@@ -2052,13 +2066,13 @@ const MODES=[
    vamp:"I7#11 — the #4 sits on top of a dominant chord instead of fighting it."},
 ];
 const modeById=id=>MODES.find(m=>m.id===id)||MODES[1];
-const currentMode=()=>modeById(modeId);
+const currentMode=()=>modeById(state.modeId);
 
 // A mode note carries its own label, because a mode spells its degrees its own way:
 // the raised fourth is #4 in lydian, not the ♭5 the pentatonic table would call it.
 function modeLabel(mode,i,pc){
-  if(labelMode==="none")return "";
-  return labelMode==="interval"?mode.degs[i]:NOTES[pc];
+  if(state.labelMode==="none")return "";
+  return state.labelMode==="interval"?mode.degs[i]:NOTES[pc];
 }
 // Every note of the mode inside one fret window, across all six strings. The windows
 // are the five pentatonic box neighbourhoods, so the shapes land where the hand
@@ -2066,7 +2080,7 @@ function modeLabel(mode,i,pc){
 function modeNotes(mode,lo,hi){
   const out=[];
   for(let s=0;s<6;s++)for(let f=Math.max(0,lo);f<=hi;f++){
-    const d=(noteAt(s,f)-key+12)%12,i=mode.offs.indexOf(d);
+    const d=(noteAt(s,f)-state.key+12)%12,i=mode.offs.indexOf(d);
     if(i<0)continue;
     out.push({s,f,kind:d===0?"root":mode.colour.includes(d)?"pivot":"tone",
       ord:modeLabel(mode,i,noteAt(s,f))});}
@@ -2094,13 +2108,13 @@ function modeOrigins(mode){
 function modeMap(mode,moved=false){
   const w=36,h=23,pad=30,cols=MAXFRET,W=pad+cols*w+14,H=pad+5*h+24;
   const from=modeOrigins(mode), anim=moved?" anim":"";
-  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${NOTES[key]} ${mode.name} across the neck">`;
+  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${NOTES[state.key]} ${mode.name} across the neck">`;
   for(let i=0;i<=cols;i++){const x=pad+i*w;
     o+=`<line x1="${x}" y1="${pad}" x2="${x}" y2="${pad+5*h}" stroke="var(--ink)" stroke-width="${i===0?4:1.1}" opacity="${i===0?1:.32}"/>`;
     if(i>0)o+=`<text x="${x-w/2}" y="${pad+5*h+17}" font-size="10" fill="var(--ink)" opacity=".45" text-anchor="middle" font-family="DM Mono,monospace">${i}</text>`;}
   for(let r=0;r<6;r++)o+=`<line x1="${pad}" y1="${pad+r*h}" x2="${pad+cols*w}" y2="${pad+r*h}" stroke="var(--ink)" stroke-width="${.7+r*.25}" opacity=".5"/>`;
   for(let r=0;r<6;r++)for(let f=0;f<=cols;f++){
-    const d=(noteAt(r,f)-key+12)%12;
+    const d=(noteAt(r,f)-state.key+12)%12;
     if(!mode.offs.includes(d))continue;
     const cx=f===0?pad-11:pad+(f-.5)*w,y=pad+r*h;
     const was=from.get(d), shift=was===undefined?null:f+(was-d);
@@ -2112,15 +2126,14 @@ function modeMap(mode,moved=false){
     o+=`<circle cx="${cx}" cy="${y}" r="8.5" fill="${d===0?"var(--pink)":mode.colour.includes(d)?"var(--gold)":"var(--blue)"}"/>`;}
   return o+"</svg>";
 }
-let lastMode=null;
 function renderModes(){
-  const mode=currentMode(),root=NOTES[key];
-  const moved=lastMode!==null&&lastMode!==mode.id;   // a redraw is not a change
-  lastMode=mode.id;
+  const mode=currentMode(),root=NOTES[state.key];
+  const moved=state.lastMode!==null&&state.lastMode!==mode.id;   // a redraw is not a change
+  state.lastMode=mode.id;
   const origins=modeOrigins(mode);
-  document.querySelectorAll("#modes button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===modeId));
-  const spelled=mode.offs.map((d,i)=>`${mode.degs[i]} <b>${NOTES[(key+d)%12]}</b>`).join(" · ");
-  const colours=mode.colour.map(d=>`${mode.degs[mode.offs.indexOf(d)]} (${NOTES[(key+d)%12]})`).join(" and ");
+  document.querySelectorAll("#modes button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===state.modeId));
+  const spelled=mode.offs.map((d,i)=>`${mode.degs[i]} <b>${NOTES[(state.key+d)%12]}</b>`).join(" · ");
+  const colours=mode.colour.map(d=>`${mode.degs[mode.offs.indexOf(d)]} (${NOTES[(state.key+d)%12]})`).join(" and ");
   document.getElementById("modesummary").innerHTML=
     `<div class="card wide"><h2>${root} ${mode.name}<em>${mode.sub}</em></h2>
       <p class="tip" style="font-size:13px">${spelled}</p>
@@ -2140,7 +2153,7 @@ function renderModes(){
   const laid=[...validBoxes()].sort((x,y)=>boxSpan(x).lo-boxSpan(y).lo);
   document.getElementById("modeboxes").innerHTML=laid.map((b,i)=>{
     const {lo,hi}=boxSpan(b),notes=modeNotes(mode,lo,hi);
-    const has=d=>notes.some(n=>(noteAt(n.s,n.f)-key+12)%12===d);
+    const has=d=>notes.some(n=>(noteAt(n.s,n.f)-state.key+12)%12===d);
     return `<div class="card"><h2>Position ${i+1}<em>fret ${Math.max(0,lo)}–${hi}</em></h2>
       ${fretboard(notes,{plain:true})}
       <p class="tip">${has(0)?"The root is in this shape — start and end phrases on it.":"No root in this window; lean on the note above or below it."}
@@ -2173,7 +2186,6 @@ const OCTAVES=[
   {n:"Low E to high e",from:[5,5],to:[0,5],
    tip:"The outer strings are the same note two octaves apart, so anything you know on one you already know on the other — at the same fret, no counting."},
 ];
-let noteHL=null, noteString=null;
 
 // The whole neck, every position named. Naturals are drawn solid and sharps hollow,
 // because the naturals are the map — the sharps are just the gaps between them.
@@ -2188,8 +2200,8 @@ function neckNames(){
     o+=`<line x1="${pad}" y1="${y}" x2="${pad+cols*w}" y2="${y}" stroke="var(--ink)" stroke-width="${.7+r*.25}" opacity=".45"/>`;
     o+=`<text x="${pad-16}" y="${y+4}" font-size="11" fill="var(--ink)" opacity=".55" text-anchor="middle" font-family="DM Mono,monospace">${SL[r]}</text>`;}
   for(let r=0;r<6;r++)for(let f=0;f<=cols;f++){
-    const pc=noteAt(r,f),nat=NATURALS.includes(pc),lit=noteHL===pc,dim=noteString!==null&&noteString!==r;
-    if(!nat&&!lit&&noteHL!==null)continue;
+    const pc=noteAt(r,f),nat=NATURALS.includes(pc),lit=state.noteHL===pc,dim=state.noteString!==null&&state.noteString!==r;
+    if(!nat&&!lit&&state.noteHL!==null)continue;
     const cx=f===0?pad-11:pad+(f-.5)*w,y=pad+r*h,op=dim?.12:1;
     if(lit)o+=`<circle cx="${cx}" cy="${y}" r="12" fill="var(--pink)" opacity="${op}"/>`;
     else if(nat)o+=`<circle cx="${cx}" cy="${y}" r="11" fill="var(--card)" stroke="var(--ink)" stroke-width="1.1" opacity="${op*.9}"/>`;
@@ -2209,13 +2221,13 @@ function octaveCard(o){
 }
 function renderNotes(){
   document.getElementById("neck").innerHTML=neckNames();
-  document.querySelectorAll("#notepick button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.pc===noteHL));
-  document.querySelectorAll("#stringpick button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.st===noteString));
+  document.querySelectorAll("#notepick button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.pc===state.noteHL));
+  document.querySelectorAll("#stringpick button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.st===state.noteString));
   document.getElementById("necklabel").innerHTML=
-    noteHL===null
+    state.noteHL===null
       ? `Naturals are circled; the sharps between them are faint. <b>Pick a note above</b> to light up every place it lives.`
-      : `Every <b>${NOTES[noteHL]}</b> on the neck — ${
-          [0,1,2,3,4,5].reduce((n,r)=>n+[...Array(MAXFRET+1).keys()].filter(f=>noteAt(r,f)===noteHL).length,0)
+      : `Every <b>${NOTES[state.noteHL]}</b> on the neck — ${
+          [0,1,2,3,4,5].reduce((n,r)=>n+[...Array(MAXFRET+1).keys()].filter(f=>noteAt(r,f)===state.noteHL).length,0)
         } of them in 24 frets. The same note, over and over: that is all the neck is.`;
   document.getElementById("octaves").innerHTML=OCTAVES.map(octaveCard).join("");
 }
@@ -2245,7 +2257,6 @@ const TRIAD_SETS=[
   {id:"456",name:"Strings 4–5–6",sub:"D A E",strings:[3,4,5],
    tip:"The bottom set. Muddy on a clean amp and worse with distortion — useful, but use it sparingly."},
 ];
-let triadKind="maj", triadSet="123";
 const triadKindById=id=>TRIAD_KINDS.find(k=>k.id===id)||TRIAD_KINDS[0];
 const triadSetById=id=>TRIAD_SETS.find(s=>s.id===id)||TRIAD_SETS[0];
 
@@ -2290,7 +2301,7 @@ function allTriadVoicings(rootPc,kind,set){
 }
 // The three inversions of one triad on one string set, lowest on the neck first.
 // Which chord tone is on the bottom string names the inversion.
-function triadShapes(kind,set,rootPc=key){
+function triadShapes(kind,set,rootPc=state.key){
   const out=[];
   for(const v of allTriadVoicings(rootPc,kind,set)){
     if(out.some(o=>o.inv===v.inv))continue;
@@ -2300,10 +2311,10 @@ function triadShapes(kind,set,rootPc=key){
 }
 const INVERSION=["Root position","1st inversion","2nd inversion"];
 function renderTriads(){
-  const kind=triadKindById(triadKind),set=triadSetById(triadSet),root=NOTES[key];
-  document.querySelectorAll("#triadkinds button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.tk===triadKind));
-  document.querySelectorAll("#triadsets button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.ts===triadSet));
-  const spelled=kind.iv.map((iv,i)=>`${kind.degs[i]} <b>${NOTES[(key+iv)%12]}</b>`).join(" · ");
+  const kind=triadKindById(state.triadKind),set=triadSetById(state.triadSet),root=NOTES[state.key];
+  document.querySelectorAll("#triadkinds button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.tk===state.triadKind));
+  document.querySelectorAll("#triadsets button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.ts===state.triadSet));
+  const spelled=kind.iv.map((iv,i)=>`${kind.degs[i]} <b>${NOTES[(state.key+iv)%12]}</b>`).join(" · ");
   document.getElementById("triadsummary").innerHTML=
     `<div class="card wide"><h2>${root}${kind.sym} on ${set.name.toLowerCase()}<em>${set.sub}</em></h2>
       <p class="tip" style="font-size:13px">${spelled}</p>
@@ -2315,8 +2326,8 @@ function renderTriads(){
   const shapes=triadShapes(kind,set);
   document.getElementById("triadshapes").innerHTML=shapes.map(sh=>{
     const notes=sh.notes.map(n=>{
-      const d=(noteAt(n.s,n.f)-key+12)%12,i=kind.iv.indexOf(d);
-      return {...n,kind:d===0?"root":"tone",ord:labelMode==="none"?"":labelMode==="interval"?kind.degs[i]:NOTES[noteAt(n.s,n.f)]};});
+      const d=(noteAt(n.s,n.f)-state.key+12)%12,i=kind.iv.indexOf(d);
+      return {...n,kind:d===0?"root":"tone",ord:state.labelMode==="none"?"":state.labelMode==="interval"?kind.degs[i]:NOTES[noteAt(n.s,n.f)]};});
     const bass=notes[notes.length-1],lo=Math.min(...sh.notes.map(n=>n.f)),hi=Math.max(...sh.notes.map(n=>n.f));
     return `<div class="card"><h2>${INVERSION[sh.inv]}<em>fret ${lo}${hi>lo?"–"+hi:""}</em></h2>
       ${fretboard(notes,{plain:true,w:46})}
@@ -2360,7 +2371,6 @@ const PROGRESSIONS=[
    steps:[[0,"maj"],[5,"maj"],[0,"maj"],[7,"maj"]],
    tip:"Bars 1, 5, 7 and 9 of a twelve-bar. Practise the move to IV and back until it needs no thought."},
 ];
-let invSet="123", invProg="145";
 const progById=id=>PROGRESSIONS.find(p=>p.id===id)||PROGRESSIONS[0];
 
 // C, C/E, C/G — the slash name says which note is in the bass, which is exactly what
@@ -2376,7 +2386,7 @@ function chordLabel(rootPc,kind,inv){
 function voiceLead(prog,set,rootOnly){
   const out=[];let prev=null;
   for(const [deg,kindId] of prog.steps){
-    const kind=triadKindById(kindId),rootPc=(key+deg)%12;
+    const kind=triadKindById(kindId),rootPc=(state.key+deg)%12;
     let options=allTriadVoicings(rootPc,kind,set);
     if(rootOnly)options=options.filter(v=>v.inv===0);
     if(!options.length)return out;
@@ -2403,16 +2413,15 @@ function progBoard(steps,span){
 // bottom of one stack to the top of the next — which is the entire operation, and
 // the thing a fretboard diagram hides rather than shows.
 const CHIP=["root","third","fifth"];
-let invStep=0, invMoved=false, invRunTimer=null, invRunLeft=0;
-function stopInvRun(){if(invRunTimer){clearInterval(invRunTimer);invRunTimer=null;}invRunLeft=0;}
+function stopInvRun(){if(state.invRunTimer){clearInterval(state.invRunTimer);state.invRunTimer=null;}state.invRunLeft=0;}
 // Three moves on a timer, so the whole cycle can be watched rather than clicked
 // through. It is the repetition an instructor gives you without being asked.
 function runInvCycle(){
   stopInvRun();
-  invStep=0;invMoved=false;invRunLeft=3;renderInversions();
-  invRunTimer=setInterval(()=>{
-    if(invRunLeft<=0){stopInvRun();renderInversions();return;}
-    invRunLeft--;invStep=(invStep+1)%3;invMoved=true;renderInversions();
+  state.invStep=0;state.invMoved=false;state.invRunLeft=3;renderInversions();
+  state.invRunTimer=setInterval(()=>{
+    if(state.invRunLeft<=0){stopInvRun();renderInversions();return;}
+    state.invRunLeft--;state.invStep=(state.invStep+1)%3;state.invMoved=true;renderInversions();
   },1300);
 }
 
@@ -2476,12 +2485,12 @@ function fingerBoard(notes,opt={}){
 // draws the chips where they have just landed; the CSS keyframes start them where
 // they were, so the page animates by being redrawn rather than by scripting frames.
 function bigStack(kind){
-  const names=kind.iv.map(iv=>NOTES[(key+iv)%12]);
-  const order=[0,1,2].map(i=>(invStep+i)%3).reverse();   // top of the stack first
-  const flier=(invStep+2)%3;                             // whichever note just came up
+  const names=kind.iv.map(iv=>NOTES[(state.key+iv)%12]);
+  const order=[0,1,2].map(i=>(state.invStep+i)%3).reverse();   // top of the stack first
+  const flier=(state.invStep+2)%3;                             // whichever note just came up
   const chips=order.map((ci,row)=>{
     const bottom=row===2;
-    const anim=!invMoved?"":ci===flier?" fly":" settle";
+    const anim=!state.invMoved?"":ci===flier?" fly":" settle";
     return `<div class="chip ${CHIP[ci]}${bottom?" moved":""}${anim}">${names[ci]}<i>${kind.degs[ci]}${bottom?" · bottom":""}</i></div>`;
   }).join("");
   return `<div class="stack bigstack">${chips}</div>`;
@@ -2496,22 +2505,22 @@ function positionsStrip(kind,set){
   const span=[Math.max(0,Math.min(...fs)-1),Math.max(...fs)+1];
   const notes=[];
   shapes.forEach(v=>v.notes.forEach(n=>{
-    const here=v.inv===invStep,pc=noteAt(n.s,n.f);
+    const here=v.inv===state.invStep,pc=noteAt(n.s,n.f);
     notes.push({s:n.s,f:n.f,
-      kind:here?(pc===key?"root":"tone"):"ghost",
+      kind:here?(pc===state.key?"root":"tone"):"ghost",
       ord:here?NOTES[pc]:String(v.inv+1)});}));
   return fretboard(notes,{plain:true,w:40,span});
 }
 function moveCaption(kind){
-  const names=kind.iv.map(iv=>NOTES[(key+iv)%12]),flier=(invStep+2)%3;
-  if(!invMoved&&invStep===0)
+  const names=kind.iv.map(iv=>NOTES[(state.key+iv)%12]),flier=(state.invStep+2)%3;
+  if(!state.invMoved&&state.invStep===0)
     return `<b>${names[0]}</b> is at the bottom, so this is root position. Press the button and watch what happens to it.`;
   return `<b>${names[flier]}</b> left the bottom and went over the top. Same three notes, nothing added —
-    but <b>${names[invStep]}</b> is underneath now, so this is ${["root position","first inversion","second inversion"][invStep]}${
-    invStep===0?", back where you started. Three moves and it comes full circle.":"."}`;
+    but <b>${names[state.invStep]}</b> is underneath now, so this is ${["root position","first inversion","second inversion"][state.invStep]}${
+    state.invStep===0?", back where you started. Three moves and it comes full circle.":"."}`;
 }
 function rotationStrip(kind){
-  const names=kind.iv.map(iv=>NOTES[(key+iv)%12]);
+  const names=kind.iv.map(iv=>NOTES[(state.key+iv)%12]);
   const cols=[0,1,2].map(inv=>{
     // reading order for a stack is top first; the chord sounds bottom to top
     const order=[0,1,2].map(i=>(inv+i)%3).reverse();
@@ -2521,19 +2530,19 @@ function rotationStrip(kind){
     }).join("");
     return `<div><div class="rotname">${["Root position","1st inversion","2nd inversion"][inv]}</div>
       <div class="stack">${chips}</div>
-      <div class="rotfoot">${chordLabel(key,kind,inv)}</div></div>`;});
+      <div class="rotfoot">${chordLabel(state.key,kind,inv)}</div></div>`;});
   return `<div class="rot">${cols.join("")}</div>`;
 }
 function renderInversions(){
-  const set=triadSetById(invSet),prog=progById(invProg),kind=triadKindById("maj");
-  document.querySelectorAll("#invsets button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.ts===invSet));
-  document.querySelectorAll("#invprogs button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.pg===invProg));
+  const set=triadSetById(state.invSet),prog=progById(state.invProg),kind=triadKindById("maj");
+  document.querySelectorAll("#invsets button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.ts===state.invSet));
+  document.querySelectorAll("#invprogs button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.pg===state.invProg));
 
   // ---- the move, in letters ----
-  const root=NOTES[key],nm=kind.iv.map(iv=>NOTES[(key+iv)%12]);
-  const shapeNow=triadShapes(kind,set).find(v=>v.inv===invStep);
+  const root=NOTES[state.key],nm=kind.iv.map(iv=>NOTES[(state.key+iv)%12]);
+  const shapeNow=triadShapes(kind,set).find(v=>v.inv===state.invStep);
   document.getElementById("invdemo").innerHTML=
-    `<div class="card wide"><h2>Watch the move<em>${["root position","first inversion","second inversion"][invStep]} · ${chordLabel(key,kind,invStep)}</em></h2>
+    `<div class="card wide"><h2>Watch the move<em>${["root position","first inversion","second inversion"][state.invStep]} · ${chordLabel(state.key,kind,state.invStep)}</em></h2>
       <p class="tip" style="font-size:13px">The bottom note of the stack lifts off, travels over the other
         two, and lands on top. That is the entire operation. Press it three times and you are back to the
         beginning.</p>
@@ -2549,7 +2558,7 @@ function renderInversions(){
         faint ones are where the other inversions sit. Press the button again and watch the chord climb.</p>
       ${positionsStrip(kind,set)}
       <p class="tip" style="text-align:center;opacity:.7">
-        Step ${invStep+1} of 3 &middot; ${["root position","first inversion","second inversion"][invStep]}
+        Step ${state.invStep+1} of 3 &middot; ${["root position","first inversion","second inversion"][state.invStep]}
         &middot; lowest note <b>${shapeNow?NOTES[noteAt(shapeNow.notes[2].s,shapeNow.notes[2].f)]:""}</b>
         on the ${shapeNow?SL[shapeNow.notes[2].s]:""} string</p>
       ${shapeNow?`<p class="tip" style="text-align:center;margin-top:14px"><b>How to hold this one.</b>
@@ -2562,11 +2571,11 @@ function renderInversions(){
     </div>`;
   // The animation is spent once it has been drawn. Without this, changing the string
   // set or the progression would re-run the flight for no reason.
-  invMoved=false;
+  state.invMoved=false;
 
   // rebound on every render, because the card they live on is redrawn each time
-  document.getElementById("invdo").onclick=()=>{stopInvRun();invStep=(invStep+1)%3;invMoved=true;renderInversions();};
-  document.getElementById("invback").onclick=()=>{stopInvRun();invStep=0;invMoved=false;renderInversions();};
+  document.getElementById("invdo").onclick=()=>{stopInvRun();state.invStep=(state.invStep+1)%3;state.invMoved=true;renderInversions();};
+  document.getElementById("invback").onclick=()=>{stopInvRun();state.invStep=0;state.invMoved=false;renderInversions();};
   document.getElementById("invrun").onclick=runInvCycle;
 
   document.getElementById("invmove").innerHTML=
@@ -2585,13 +2594,13 @@ function renderInversions(){
   // ---- the three things beginners are told wrong ----
   document.getElementById("invnot").innerHTML=
     `<div class="card wide"><h2>Three things it is not<em>clear these up first</em></h2>
-      <p class="notthis"><b>It is not a different chord.</b> ${chordLabel(key,kind,1)} is still ${root} major.
-        Same three notes, same name, same job in the song. If a chart says ${chordLabel(key,kind,1)} and you
+      <p class="notthis"><b>It is not a different chord.</b> ${chordLabel(state.key,kind,1)} is still ${root} major.
+        Same three notes, same name, same job in the song. If a chart says ${chordLabel(state.key,kind,1)} and you
         play a plain ${root}, you are not wrong — just less specific.</p>
       <p class="notthis"><b>It is not about the top note.</b> People reach for the highest note because it is
         the loudest. The <b>lowest</b> note names the inversion. ${nm[1]} on the bottom makes it first
         inversion no matter what is on top.</p>
-      <p class="notthis"><b>A slash chord is not decoration.</b> ${chordLabel(key,kind,1)} means
+      <p class="notthis"><b>A slash chord is not decoration.</b> ${chordLabel(state.key,kind,1)} means
         &ldquo;${root} chord, ${nm[1]} in the bass&rdquo;. The letter after the slash is just the bottom note.
         That is the whole notation.</p>
     </div>`;
@@ -2600,11 +2609,11 @@ function renderInversions(){
   const shapes=triadShapes(kind,set);
   document.getElementById("invwhat").innerHTML=shapes.map(sh=>{
     const notes=sh.notes.map(n=>{
-      const d=(noteAt(n.s,n.f)-key+12)%12,i=kind.iv.indexOf(d);
-      return {...n,kind:d===0?"root":"tone",ord:labelMode==="interval"?kind.degs[i]:NOTES[noteAt(n.s,n.f)]};});
+      const d=(noteAt(n.s,n.f)-state.key+12)%12,i=kind.iv.indexOf(d);
+      return {...n,kind:d===0?"root":"tone",ord:state.labelMode==="interval"?kind.degs[i]:NOTES[noteAt(n.s,n.f)]};});
     const stack=sh.notes.slice().reverse().map(n=>NOTES[noteAt(n.s,n.f)]);
-    const degs=sh.notes.slice().reverse().map(n=>kind.degs[kind.iv.indexOf((noteAt(n.s,n.f)-key+12)%12)]);
-    return `<div class="card"><h2>${INVERSION[sh.inv]}<em>${chordLabel(key,kind,sh.inv)}</em></h2>
+    const degs=sh.notes.slice().reverse().map(n=>kind.degs[kind.iv.indexOf((noteAt(n.s,n.f)-state.key+12)%12)]);
+    return `<div class="card"><h2>${INVERSION[sh.inv]}<em>${chordLabel(state.key,kind,sh.inv)}</em></h2>
       ${fretboard(notes,{plain:true,w:46})}
       <p class="tip" style="margin-top:12px"><b>Fingering</b> — the dots are finger numbers:</p>
       ${fingerBoard(sh.notes,{w:46})}
@@ -2615,14 +2624,14 @@ function renderInversions(){
            "The 3rd is underneath. Lighter, and it leans forward — it wants to go somewhere.",
            "The 5th is underneath. The most open and the least settled of the three."][sh.inv]}</p>
       <p class="tip" style="opacity:.6">${sh.inv===0?"Written plainly, as "+root+kind.sym+"."
-        :"Written "+chordLabel(key,kind,sh.inv)+" — the letter after the slash is the note in the bass. That is all a slash chord is."}</p>
+        :"Written "+chordLabel(state.key,kind,sh.inv)+" — the letter after the slash is the note in the bass. That is all a slash chord is."}</p>
     </div>`;}).join("");
 
   // ---- the same chord, all the way up the neck ----
-  const all=allTriadVoicings(key,kind,set);
+  const all=allTriadVoicings(state.key,kind,set);
   const upNeck=new Map();
   all.forEach(v=>v.notes.forEach(n=>upNeck.set(n.s+":"+n.f,
-    {s:n.s,f:n.f,kind:noteAt(n.s,n.f)===key?"root":"tone",ord:String(v.inv+1)})));
+    {s:n.s,f:n.f,kind:noteAt(n.s,n.f)===state.key?"root":"tone",ord:String(v.inv+1)})));
   document.getElementById("invneck").innerHTML=fretboard([...upNeck.values()],{plain:true,w:38,span:[0,MAXFRET]});
   document.getElementById("invnecklabel").innerHTML=
     `<b>${root} major on ${set.sub}</b>, every position. The numbers are which inversion:
@@ -2632,14 +2641,14 @@ function renderInversions(){
   // ---- the smallest useful version: two chords ----
   // A whole progression is too much to hold on a first read. Two chords is the drill
   // that makes the point in ten seconds of playing.
-  const four=(key+5)%12,rootC=triadShapes(kind,set,key)[0];
+  const four=(state.key+5)%12,rootC=triadShapes(kind,set,state.key)[0];
   const farF=triadShapes(kind,set,four).find(v=>v.inv===0);
   const nearF=allTriadVoicings(four,kind,set)
     .reduce((a,b)=>Math.abs(b.centre-rootC.centre)<Math.abs(a.centre-rootC.centre)?b:a);
   const twoSpan=[Math.max(0,Math.min(...[rootC,farF,nearF].flatMap(v=>v.notes.map(n=>n.f)))-1),
                  Math.max(...[rootC,farF,nearF].flatMap(v=>v.notes.map(n=>n.f)))+1];
-  const one=(v,label,note)=>`<div class="card"><h2>${label}<em>${chordLabel(v===rootC?key:four,kind,v.inv)}</em></h2>
-    ${fretboard(v.notes.map(n=>({...n,kind:noteAt(n.s,n.f)===(v===rootC?key:four)?"root":"tone",
+  const one=(v,label,note)=>`<div class="card"><h2>${label}<em>${chordLabel(v===rootC?state.key:four,kind,v.inv)}</em></h2>
+    ${fretboard(v.notes.map(n=>({...n,kind:noteAt(n.s,n.f)===(v===rootC?state.key:four)?"root":"tone",
       ord:NOTES[noteAt(n.s,n.f)]})),{plain:true,w:44,span:twoSpan})}
     <p class="tip">${note}</p></div>`;
   document.getElementById("invtwo").innerHTML=
@@ -2677,7 +2686,7 @@ function renderInversions(){
 // and joins the table below like any other.
 function renderPractice(){
   renderGuide();newQuiz();newSession();paintTimer();renderLog();
-  document.getElementById("ladderbpm").textContent=bpm;
+  document.getElementById("ladderbpm").textContent=state.bpm;
 }
 
 // Copyright © 2026 Bruce Hoppe.
@@ -2686,25 +2695,25 @@ const PD_OFFSETS=[0,1,4,5,7,8,10], PD_DEGREES=["1","♭2","3","4","5","♭6","�
 // Spell by letter and scale degree, so A's flat second is B-flat, not A-sharp.
 function pdName(offset,degree){
   const letters="CDEFGAB",natural=[0,2,4,5,7,9,11];
-  const idx=(letters.indexOf(NOTES[key][0])+degree-1)%7;
-  let delta=((key+offset-natural[idx])%12+12)%12;
+  const idx=(letters.indexOf(NOTES[state.key][0])+degree-1)%7;
+  let delta=((state.key+offset-natural[idx])%12+12)%12;
   if(delta>6)delta-=12;
   return letters[idx]+(delta>0?"♯".repeat(delta):"♭".repeat(-delta));
 }
 function pdBox(b){
   const span=boxSpan(b),lo=Math.max(0,span.lo),hi=Math.min(MAXFRET,span.hi+1),notes=[];
   for(let st=0;st<6;st++)for(let f=lo;f<=hi;f++){
-    const d=(noteAt(st,f)-key+12)%12,i=PD_OFFSETS.indexOf(d);
+    const d=(noteAt(st,f)-state.key+12)%12,i=PD_OFFSETS.indexOf(d);
     if(i<0)continue;
     notes.push({s:st,f,kind:d===0?"root":[1,4,8].includes(d)?"pivot":"tone",
-      ord:labelMode==="none"?"":labelMode==="interval"?PD_DEGREES[i]:pdName(d,i+1)});
+      ord:state.labelMode==="none"?"":state.labelMode==="interval"?PD_DEGREES[i]:pdName(d,i+1)});
   }
   return {lo,hi,notes};
 }
 function renderHijaz(){
   const n=(d,degree)=>pdName(d,degree),root=n(0,1),minorThird=n(3,3),third=n(4,3),flatTwo=n(1,2),flatSix=n(8,6);
   const scale=PD_OFFSETS.map((d,i)=>`${PD_DEGREES[i]} <b>${n(d,i+1)}</b>`).join(" · ");
-  document.getElementById("hijazexample").onclick=()=>{stopDrone();key=4;reg=0;render();};
+  document.getElementById("hijazexample").onclick=()=>{stopDrone();state.key=4;state.reg=0;render();};
   document.getElementById("hijazlesson").innerHTML=`
     <div class="card"><h2>${root} pentatonic → Phrygian dominant<em>change one note, add two</em></h2>
       <p>${scale}</p>
@@ -2842,12 +2851,11 @@ function tuningRootMap(t){
   }
   return svg+"</svg>";
 }
-let openTuning="open-d";
 function renderOpen(){
-  const t=OPEN_TUNINGS.find(x=>x.id===openTuning)||OPEN_TUNINGS[0];
+  const t=OPEN_TUNINGS.find(x=>x.id===state.openTuning)||OPEN_TUNINGS[0];
   const pick=document.getElementById("opentuningpick");
   pick.innerHTML='<span class="lbl">Tuning</span>';
-  OPEN_TUNINGS.forEach(x=>mk(pick,{t:x.id},x.name,()=>{openTuning=x.id;renderOpen();}));
+  OPEN_TUNINGS.forEach(x=>mk(pick,{t:x.id},x.name,()=>{state.openTuning=x.id;renderOpen();}));
   pick.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===t.id));
   document.getElementById("opentuninglesson").innerHTML=`<div class="card wide"><h2>Find home in ${t.name}<em>${t.notes.join(" · ")}</em></h2>
     <p class="tip">Pink dots = ${NOTES[TUNING_EXAMPLES[t.id].root]} roots. Numbers = frets. Thin string at top.</p>
@@ -2918,7 +2926,7 @@ const viewCfg=v=>(VIEWS.find(([id])=>id===v)||[])[3]||{};
 // bar keeps its shape, and the greying itself teaches which view uses what.
 const TOOLROWS=["keys","labels","chords","regs","extras"];
 function applyTools(){
-  const live=new Set((viewCfg(view).tools||"").split(" ").filter(Boolean));
+  const live=new Set((viewCfg(state.view).tools||"").split(" ").filter(Boolean));
   TOOLROWS.forEach(id=>{
     const row=document.getElementById(id),on=live.has(id);
     row.classList.toggle("off",!on);
@@ -2931,7 +2939,7 @@ function applyTools(){
 // Triads, Inversions and Modes all take the key as a bare root — a major triad
 // built on A is not A minor, and calling it Am on screen is simply a lie.
 function applyKeyNames(){
-  const asRoot=viewCfg(view).key==="root";
+  const asRoot=viewCfg(state.view).key==="root";
   document.getElementById("keylbl").textContent=asRoot?"Root":"Key";
   document.querySelectorAll("#keys button").forEach(b=>{
     const n=NOTES[+b.dataset.k];
@@ -2942,16 +2950,16 @@ function applyKeyNames(){
 function render(){
   // Hide everything first, then draw: a view's own renderer may measure or reach
   // into the page, and should not see a half-switched shell.
-  VIEWS.forEach(([v])=>document.getElementById("v-"+v).hidden=(v!==view));
-  VIEWS.forEach(([v,,draw])=>{if(v===view)draw();});
-  document.querySelectorAll("#keys button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.k===key));
-  document.querySelectorAll("#views button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===view));
-  document.querySelectorAll("#majorkeys button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.mk===majorKey));
-  document.querySelectorAll("#labels button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.l===labelMode));
-  document.querySelectorAll("#chords button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.c===(chord||"off")));
+  VIEWS.forEach(([v])=>document.getElementById("v-"+v).hidden=(v!==state.view));
+  VIEWS.forEach(([v,,draw])=>{if(v===state.view)draw();});
+  document.querySelectorAll("#keys button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.k===state.key));
+  document.querySelectorAll("#views button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===state.view));
+  document.querySelectorAll("#majorkeys button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.mk===state.majorKey));
+  document.querySelectorAll("#labels button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.l===state.labelMode));
+  document.querySelectorAll("#chords button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.c===(state.chord||"off")));
   document.querySelectorAll("#regs button").forEach(b=>{
     const r=+b.dataset.r,i=regInfo(r);
-    b.setAttribute("aria-pressed",r===reg);
+    b.setAttribute("aria-pressed",r===state.reg);
     b.disabled=false;b.style.opacity=1;
     b.textContent=r===0?`Standard · frets ${i.lo}–${i.hi}`
       :`${REGLBL[r]} · frets ${i.lo}–${i.hi}${i.shifted<5?` (${i.shifted} of 5 move)`:""}`;
@@ -2959,8 +2967,8 @@ function render(){
       :`All five boxes, each as ${r<0?"low":"high"} as it goes. ${
         i.shifted===5?"All five move an octave.":`${i.shifted} of the five have room to move; the rest stay at their standard position.`}`;});
   document.querySelectorAll("#extras button").forEach(b=>{
-    b.setAttribute("aria-pressed",showB5);
-    b.textContent=`♭5 blue note: ${showB5?"on":"off"}`;});
+    b.setAttribute("aria-pressed",state.showB5);
+    b.textContent=`♭5 blue note: ${state.showB5?"on":"off"}`;});
   // Last, because both of these overrule what the loops above just set.
   applyKeyNames();
   applyTools();
@@ -2969,7 +2977,7 @@ function render(){
 const mk=(host,data,txt,fn)=>{const b=document.createElement("button");
   Object.entries(data).forEach(([k,v])=>b.dataset[k]=v);b.textContent=txt;b.onclick=fn;
   (typeof host==="string"?document.getElementById(host):host).appendChild(b);};
-NOTES.forEach((n,i)=>mk("keys",{k:i},n+"m",()=>{key=i;stopDrone();blueLock=null;
+NOTES.forEach((n,i)=>mk("keys",{k:i},n+"m",()=>{state.key=i;stopDrone();state.blueLock=null;
   render()}));
 // Twenty-one buttons in one strip is a wall. The same twenty-one under five
 // headings is a table of contents, and the headings say what each group is for.
@@ -2981,26 +2989,26 @@ BANDS.forEach(band=>{
   row.appendChild(lbl);
   document.getElementById("views").appendChild(row);
   VIEWS.filter(([,,,c])=>c.band===band).forEach(([v,label])=>
-    mk(row,{v},label,()=>{view=v;render();}));});
+    mk(row,{v},label,()=>{state.view=v;render();}));});
 [["name","Note names"],["interval","Intervals"],["none","Blank"]]
-  .forEach(([l,t])=>mk("labels",{l},t,()=>{labelMode=l;render()}));
+  .forEach(([l,t])=>mk("labels",{l},t,()=>{state.labelMode=l;render()}));
 [["off","Off"],["i","i"],["iv","iv"],["v","v"]]
-  .forEach(([c,t])=>mk("chords",{c},t,()=>{chord=c==="off"?null:c;render()}));
-REGS.forEach(([r,t])=>mk("regs",{r},t,()=>{reg=r;blueLock=null;render()}));
-mk("extras",{},"♭5 blue note: off",function(){showB5=!showB5;render();});
-MAJKEYS.forEach((k,i)=>mk("majorkeys",{mk:i},k.n,()=>{majorKey=i;render();}));
-MODES.forEach(m=>mk("modes",{m:m.id},m.name,()=>{modeId=m.id;render();}));
-NOTES.forEach((n,pc)=>mk("notepick",{pc},n,()=>{noteHL=noteHL===pc?null:pc;render();}));
-SL.forEach((n,st)=>mk("stringpick",{st},n,()=>{noteString=noteString===st?null:st;render();}));
-TRIAD_KINDS.forEach(k=>mk("triadkinds",{tk:k.id},k.name,()=>{triadKind=k.id;render();}));
-TRIAD_SETS.forEach(t=>mk("triadsets",{ts:t.id},t.name,()=>{triadSet=t.id;render();}));
-TRIAD_SETS.forEach(t=>mk("invsets",{ts:t.id},t.name,()=>{invSet=t.id;render();}));
-PROGRESSIONS.forEach(p=>mk("invprogs",{pg:p.id},p.name,()=>{invProg=p.id;render();}));
-document.getElementById("majormode").onclick=function(){majorDegrees=!majorDegrees;
-  this.textContent=majorDegrees?"Scale degrees":"Note names";
-  this.setAttribute("aria-pressed",majorDegrees);render();};
-document.getElementById("majorarrows").onclick=function(){majorArrows=!majorArrows;
-  this.setAttribute("aria-pressed",majorArrows);render();};
+  .forEach(([c,t])=>mk("chords",{c},t,()=>{state.chord=c==="off"?null:c;render()}));
+REGS.forEach(([r,t])=>mk("regs",{r},t,()=>{state.reg=r;state.blueLock=null;render()}));
+mk("extras",{},"♭5 blue note: off",function(){state.showB5=!state.showB5;render();});
+MAJKEYS.forEach((k,i)=>mk("majorkeys",{mk:i},k.n,()=>{state.majorKey=i;render();}));
+MODES.forEach(m=>mk("modes",{m:m.id},m.name,()=>{state.modeId=m.id;render();}));
+NOTES.forEach((n,pc)=>mk("notepick",{pc},n,()=>{state.noteHL=state.noteHL===pc?null:pc;render();}));
+SL.forEach((n,st)=>mk("stringpick",{st},n,()=>{state.noteString=state.noteString===st?null:st;render();}));
+TRIAD_KINDS.forEach(k=>mk("triadkinds",{tk:k.id},k.name,()=>{state.triadKind=k.id;render();}));
+TRIAD_SETS.forEach(t=>mk("triadsets",{ts:t.id},t.name,()=>{state.triadSet=t.id;render();}));
+TRIAD_SETS.forEach(t=>mk("invsets",{ts:t.id},t.name,()=>{state.invSet=t.id;render();}));
+PROGRESSIONS.forEach(p=>mk("invprogs",{pg:p.id},p.name,()=>{state.invProg=p.id;render();}));
+document.getElementById("majormode").onclick=function(){state.majorDegrees=!state.majorDegrees;
+  this.textContent=state.majorDegrees?"Scale degrees":"Note names";
+  this.setAttribute("aria-pressed",state.majorDegrees);render();};
+document.getElementById("majorarrows").onclick=function(){state.majorArrows=!state.majorArrows;
+  this.setAttribute("aria-pressed",state.majorArrows);render();};
 // Quitting has to mean the app is gone, not merely quiet. The server stops itself
 // the moment /quit is answered, so everything ticking in the page is now driving a
 // desk that no longer exists: stop it all, ask the browser to close the tab, and
@@ -3009,7 +3017,7 @@ document.getElementById("majorarrows").onclick=function(){majorArrows=!majorArro
 // live and answers no requests.
 function silenceEverything(){
   stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();
-  if(clickTimer){clearInterval(clickTimer);clickTimer=null;}
+  if(state.clickTimer){clearInterval(state.clickTimer);state.clickTimer=null;}
 }
 function farewellPage(){
   document.title="Practice desk \u2014 stopped";
@@ -3042,8 +3050,8 @@ if(typeof location!=="undefined"&&typeof fetch==="function"&&/^https?:$/.test(lo
 }
 document.getElementById("drone").onclick=e=>toggleDrone(e.currentTarget);
 document.getElementById("click").onclick=e=>toggleClick(e.currentTarget);
-document.getElementById("bpm").oninput=e=>{bpm=+e.target.value;
-  document.getElementById("bpmv").textContent=bpm+" bpm";restartClick();};
+document.getElementById("bpm").oninput=e=>{state.bpm=+e.target.value;
+  document.getElementById("bpmv").textContent=state.bpm+" bpm";restartClick();};
 document.getElementById("newquiz").onclick=newQuiz;
 document.getElementById("newsession").onclick=newSession;
 document.getElementById("completesession").onclick=completeSession;
