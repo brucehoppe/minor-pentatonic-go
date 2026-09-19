@@ -1703,6 +1703,7 @@ function trainerTick(when=0){const form=currentForm();
   else if(state.trainerBar===0&&state.trainerBeat===0){state.trainerChorus++;if(!startChorus(when,false))return;}
   const bar=state.trainerBar,beat=state.trainerBeat;
   if(bar===0&&beat===0)recOnBarOne(when);
+  if(beat===0)drillBar(when);
   // a split bar's second chord arrives on beat 3, and its line starts from the root there
   const entry=form.chords[bar],split=barSymbols(entry).length>1,c=chordInfo(symbolAt(entry,beat));
   const chord={pc:(state.key+c.root)%12,intervals:c.intervals},chordKey=chord.pc+":"+c.kind;
@@ -2227,9 +2228,12 @@ const REC_ROW=`<div class="row" id="recrow">
   <select id="recchan" aria-label="Input channel"><option value="-1">Both inputs</option><option value="0">Input 1</option><option value="1">Input 2</option></select>
   <button id="reccheck" aria-pressed="false">Check input</button>
   <button id="recmon" aria-pressed="false">Monitor input</button>
-  <select id="recmix" aria-label="What to record"><option value="guitar">Guitar only</option><option value="backing">Guitar + backing</option></select>
+  <select id="recmix" aria-label="What to record"><option value="backing" selected>Guitar + backing</option><option value="guitar">Guitar only</option></select>
   <label style="font-size:12px;display:flex;gap:5px;align-items:center"><input type="checkbox" id="recarm">Start on bar 1 of the 12-bar trainer</label>
-  <button id="recbtn" aria-pressed="false">Record</button>
+  <span class="lbl" style="flex-basis:100%;margin-top:4px">This take</span>
+  <select id="recmode" aria-label="Take length"><option value="full" selected>Full run-through (no limit)</option><option value="chorus">One 12-bar chorus</option><option value="drill8">Drill: 8 bars</option><option value="drill4">Drill: 4 bars</option><option value="section" disabled>One song section (add a song first)</option></select>
+  <select id="recfocus" aria-label="Focus: pick one"><option value="timing" selected>Focus: timing</option><option value="clean">Focus: clean notes</option><option value="bends">Focus: bends in tune</option><option value="phrasing">Focus: phrasing and space</option><option value="vibrato">Focus: vibrato</option><option value="through">Focus: getting through without stopping</option></select>
+  <select id="recattempt" aria-label="Attempt"><option value="cold" selected>Cold attempt</option><option value="retest">Retest</option></select>
   <audio id="recplay" controls hidden style="height:32px;max-width:100%"></audio>
   <button id="recdlc" hidden>Download compressed</button>
   <button id="recdlw" hidden>Download WAV</button>
@@ -2282,10 +2286,23 @@ const fileSize=n=>n<1024?n+" B":n<1048576?Math.round(n/1024)+" KB":(n/1048576).t
 // practice-<key>-<bpm>bpm-<yyyymmdd-hhmmss>.<ext>; the sharp is spelled out because
 // "#" in a file name breaks the link to it. Key and tempo are the ones the take
 // started with: moving the tempo slider ends a trainer take before it is named.
-function takeName(date,ext,key=state.key,bpm=state.bpm){
+// <song>-<section|full>-<bpm>bpm-<date>-<cold|retest>.<ext>. Until songs arrive the
+// song is "12bar" over the trainer or "practice", with the key; the section is the
+// drill's length. The sharp is spelt out because "#" in a file name breaks a link.
+const TAKE_MODES={full:{part:"full",bars:0},chorus:{part:"chorus",bars:12},drill8:{part:"8bars",bars:8},drill4:{part:"4bars",bars:4}};
+const TAKE_FOCUS={timing:"timing",clean:"clean notes",bends:"bends in tune",phrasing:"phrasing and space",vibrato:"vibrato",through:"getting through without stopping"};
+const slug=v=>String(v).replace(/#|\u266f/g,"sharp").replace(/\u266d/g,"flat").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"take";
+function takeName(date,ext,key=state.key,bpm=state.bpm,info={}){
   const p=n=>String(n).padStart(2,"0");
   const stamp=`${date.getFullYear()}${p(date.getMonth()+1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
-  return `practice-${NOTES[key].replace("#","sharp")}-${bpm}bpm-${stamp}.${ext}`;}
+  const song=info.song||`${info.trainer?"12bar":"practice"}-${NOTES[key]}`;
+  const part=info.part||(TAKE_MODES[info.mode]||TAKE_MODES.full).part;
+  return `${slug(song)}-${slug(part)}-${bpm}bpm-${stamp}-${info.attempt==="retest"?"retest":"cold"}.${ext}`;}
+// This take's settings, read when it starts.
+function takeSettings(){
+  const pick=(id,ok,dflt)=>{const v=document.getElementById(id).value;return ok(v)?v:dflt;};
+  return {mode:pick("recmode",v=>v in TAKE_MODES,"full"),focus:pick("recfocus",v=>v in TAKE_FOCUS,"timing"),
+    attempt:pick("recattempt",v=>v==="retest"||v==="cold","cold")};}
 // What the browser reports for output plus input delay, in ms, or 0 when it can't
 // say. You play to what you hear, and the input then lags again, so both count.
 function recLatencyMs(ac,input){
@@ -2301,7 +2318,7 @@ function recButtons(){
   b.disabled=phase==="finishing";
   b.setAttribute("aria-pressed",phase!=="idle");
   // what a take records is fixed once its input is open
-  ["recinput","recchan","recmix","recarm","recbits"].forEach(id=>{document.getElementById(id).disabled=phase!=="idle";});}
+  ["recinput","recchan","recmix","recarm","recbits","recmode","recfocus","recattempt"].forEach(id=>{document.getElementById(id).disabled=phase!=="idle";});}
 // Device labels stay blank until the page has been allowed an input once, so this
 // runs again after every take opens its input.
 function listInputs(){
@@ -2446,18 +2463,25 @@ function toggleRecord(){
     else startTake(take,false);
   }).catch(e=>{if(state.rec===pending){state.rec=null;recButtons();recSay(inputError(e));inputIdle();}});}
 function startTake(t,fromTrainer){
-  t.phase="recording";t.fromTrainer=fromTrainer;t.date=new Date();t.t0=Date.now();
+  t.phase="recording";t.fromTrainer=fromTrainer;t.date=t.date||new Date();t.t0=Date.now();
   t.key=state.key;t.bpm=state.bpm;
+  if(!t.info)t.info={...takeSettings(),trainer:fromTrainer};
+  const bars=TAKE_MODES[t.info.mode].bars;
   beginCapture(t.capture,0,takeMeta(t));   // unless bar 1 already booked it to the sample
   t.recorder.start(1000);
   const say=()=>{const s=Math.floor((Date.now()-t.t0)/1000);
+    // A drill on its own, off the trainer, stops after its bars at the current tempo.
+    if(bars&&!fromTrainer&&(Date.now()-t.t0)/1000>=bars*4*60/t.bpm){stopRecording();return;}
     recSay(`Recording ${t.backing?"guitar + backing":"guitar only"} · ${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`
-      +(fromTrainer?" · stopping the trainer ends the take":"")+(t.note?" · "+t.note:""));};
+      +(bars?` · ${TAKE_MODES[t.info.mode].part}, stops by itself`:fromTrainer?" · stopping the trainer ends the take":"")
+      +` · focus: ${TAKE_FOCUS[t.info.focus]}`+(t.note?" · "+t.note:""));};
   say();t.clock=setInterval(say,250);
   recButtons();}
 // What storage keeps about a take, so a saved master can be named and listed later.
 function takeMeta(t){
-  return {name:takeName(t.date||new Date(),"wav",t.key,t.bpm),key:t.key,bpm:t.bpm,mono:t.mono,backing:t.backing};}
+  const info=t.info||{};
+  return {name:takeName(t.date||new Date(),"wav",t.key,t.bpm,info),key:t.key,bpm:t.bpm,mono:t.mono,backing:t.backing,
+    mode:info.mode,focus:info.focus,attempt:info.attempt};}
 // Called by trainerTick for every bar-1 downbeat, when seconds before it sounds. The
 // raw capture is told the downbeat's frame now, so the master starts on that exact
 // sample; the compressed recording starts when the beat sounds.
@@ -2467,15 +2491,29 @@ function recOnBarOne(when){
   r.phase="starting";
   const ac=state.engine&&state.engine.context;
   if(r.capture&&ac){
-    r.key=state.key;r.bpm=state.bpm;r.date=new Date();
-    beginCapture(r.capture,Math.round((ac.currentTime+when)*ac.sampleRate),takeMeta(r));}
+    r.key=state.key;r.bpm=state.bpm;r.date=new Date();r.info={...takeSettings(),trainer:true};
+    r.startFrame=Math.round((ac.currentTime+when)*ac.sampleRate);
+    beginCapture(r.capture,r.startFrame,takeMeta(r));}
   atBeat(when,()=>{if(state.rec===r&&r.phase==="starting")startTake(r,true);});}
+// Every downbeat the trainer books: a drill over the trainer ends on the downbeat after
+// its last bar, to the sample for the raw master.
+function drillBar(when){
+  const r=state.rec;
+  if(!r||!r.fromTrainer||!r.info||(r.phase!=="recording"&&r.phase!=="starting"))return;
+  const bars=TAKE_MODES[r.info.mode].bars;
+  if(!bars)return;
+  r.bars=(r.bars||0)+1;
+  if(r.bars<=bars)return;
+  const ac=state.engine&&state.engine.context;
+  if(r.capture&&ac){r.capture.node.port.postMessage({stopAt:Math.round((ac.currentTime+when)*ac.sampleRate)});r.capture.ending=true;}
+  atBeat(when,()=>{if(state.rec===r)stopRecording();});}
 function stopRecording(){
   const r=state.rec;
   if(!r||r.phase!=="recording")return;
   r.phase="finishing";clearInterval(r.clock);
   recButtons();recSay("Saving the take…");
-  if(r.capture)r.capture.node.port.postMessage({stop:true});
+  // a drill's capture was told its last frame; otherwise it stops now
+  if(r.capture&&!r.capture.ending)r.capture.node.port.postMessage({stop:true});
   r.recorder.stop();}
 function cancelRecording(){
   const r=state.rec;
@@ -2671,7 +2709,7 @@ function finishTake(t){
   closeTake(t);
   const blob=new Blob(t.chunks,{type:t.mime||"audio/webm"});
   if(state.recTake)releaseTake(state.recTake);
-  const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm),wav:null};
+  const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm,t.info),wav:null,info:t.info};
   state.rec=null;inputIdle();
   const secs=Math.round((Date.now()-t.t0)/1000);
   const what=(t.capture&&t.capture.failed?"Storage ran out, so the take stopped there. ":"")
@@ -4130,7 +4168,7 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
 (()=>{const play=document.getElementById("play");
   if(play.insertAdjacentHTML)play.insertAdjacentHTML("afterend",REC_ROW);
   const why=recUnsupported();
-  if(why){["recinput","recchan","reccheck","recmon","recmix","recarm","recbtn"].forEach(id=>{document.getElementById(id).disabled=true;});
+  if(why){["recinput","recchan","reccheck","recmon","recmix","recarm","recbtn","recmode","recfocus","recattempt"].forEach(id=>{document.getElementById(id).disabled=true;});
     document.getElementById("recrow").classList.add("off");recSay(why);return;}
   document.getElementById("recbtn").onclick=toggleRecord;
   document.getElementById("recinput").onchange=e=>{state.recDevice=e.target.value;restartMonitor();restartCheck();};

@@ -339,7 +339,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,webmWithDuration,tapTempo,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -2602,7 +2602,7 @@ test("a guitar-only take asks for an unprocessed mono input and records it at 96
   runIdle();
   assert.equal(rec.tracksStopped, 1, "and released after the idle minutes");
   const take = app.getTake();
-  assert.match(take.name, /^practice-A-120bpm-\d{8}-\d{6}\.webm$/);
+  assert.match(take.name, /^practice-A-full-120bpm-\d{8}-\d{6}-cold\.webm$/, "<song>-<section|full>-<bpm>bpm-<date>-<cold|retest>");
   assert.equal(take.wav.name, take.name.replace(".webm", ".wav"));
   assert.equal(document.getElementById("recplay").hidden, false);
   assert.equal(document.getElementById("recplay").src, take.url);
@@ -2629,7 +2629,11 @@ test("the container falls back to MP4/AAC, then to the browser's own choice", ()
   assert.equal(app.recExt("audio/mp4;codecs=mp4a.40.2"), "m4a");
   assert.equal(app.recExt("audio/webm;codecs=opus"), "webm");
   app.setKey(1); app.setBpm(96);
-  assert.equal(app.takeName(new Date(2026, 8, 18, 9, 5, 7), "m4a"), "practice-Csharp-96bpm-20260918-090507.m4a");
+  assert.equal(app.takeName(new Date(2026, 8, 18, 9, 5, 7), "m4a"), "practice-Csharp-full-96bpm-20260918-090507-cold.m4a");
+  assert.equal(app.takeName(new Date(2026, 8, 18, 9, 5, 7), "wav", 9, 120, { trainer: true, mode: "chorus", attempt: "retest" }),
+    "12bar-A-chorus-120bpm-20260918-090507-retest.wav");
+  assert.equal(app.takeName(new Date(2026, 8, 18, 9, 5, 7), "mp3", 9, 80, { song: "Sweet Home Chicago", part: "verse 1" }),
+    "Sweet-Home-Chicago-verse-1-80bpm-20260918-090507-cold.mp3");
   assert.equal(app.fileSize(512), "512 B");
   assert.equal(app.fileSize(4.2 * 1048576), "4.2 MB");
 });
@@ -2767,7 +2771,7 @@ test("a take is named for the key and tempo it started with", async () => {
   app.setKey(9); app.setBpm(90);   // e.g. the tempo slider moved, which ends a trainer take
   document.getElementById("recbtn").click();
   await settle();
-  assert.match(app.getTake().name, /^practice-E-120bpm-/);
+  assert.match(app.getTake().name, /^practice-E-full-120bpm-/);
 });
 
 test("a slow audio path (Bluetooth) is flagged; a normal one is not", async () => {
@@ -3143,7 +3147,8 @@ test("a take streams its raw master to storage and downloads it as a WAV", async
   document.getElementById("recdlw").click();
   await settle();
   const link = document.body.children.at(-1);
-  assert.equal(link.download, "practice-A-100bpm-" + take.name.split("-100bpm-")[1].replace(/\.\w+$/, ".wav"));
+  assert.equal(link.download, take.name.replace(/\.\w+$/, ".wav"));
+  assert.match(link.download, /^practice-A-full-100bpm-\d{8}-\d{6}-cold\.wav$/);
   const wav = new Uint8Array(await take.wav.blob.arrayBuffer()), v = new DataView(wav.buffer);
   assert.equal(wav.length, 44 + 240000);
   assert.equal(v.getUint16(22, true), 1);
@@ -3194,11 +3199,11 @@ test("masters left in storage — by a crash or not downloaded — are listed, a
   const { document, idb } = makeRuntime({ media: true, capture: { store: first.idb.stores } });
   await settle();
   const list = document.getElementById("recsaved").innerHTML;
-  assert.match(list, /<b>Interrupted:<\/b> practice-A-90bpm-\d{8}-\d{6}\.wav · 0:01 · 94 KB/);
+  assert.match(list, /<b>Interrupted:<\/b> practice-A-full-90bpm-\d{8}-\d{6}-cold\.wav · 0:01 · 94 KB/);
   const id = [...idb.stores.get("takes").rows.values()][0].v.id;
   await document.getElementById("recsaved").onclick({ target: { dataset: { dl: id } } });
   await settle();
-  assert.match(document.body.children.at(-1).download, /^practice-A-90bpm-.*\.wav$/);
+  assert.match(document.body.children.at(-1).download, /^practice-A-full-90bpm-.*-cold\.wav$/);
   assert.equal(idb.stores.get("takes").rows.size, 0, "saved to disk, so dropped from storage");
   assert.equal(document.getElementById("recsaved").innerHTML, "");
 });
@@ -4080,4 +4085,87 @@ test("on the compatibility engine a key change between choruses renders the new 
   assert.equal(chorus.length, 2);
   assert.notEqual(chorus[1].firstSrc, chorus[0].firstSrc, "up a 4th: a different chorus");
   app.toggleTrainer();
+});
+
+// ---------- take settings: mode, focus, attempt ----------
+test("Record sits in the Play along bar; backing is the default; each take picks a length, one focus and an attempt", () => {
+  const play = html.slice(html.indexOf('<div class="row" id="play">'), html.indexOf('<div class="row" id="approw"'));
+  assert.match(play, /<button id="recbtn"[^>]*>Record<\/button>/, "usable from any view, beside the tempo");
+  const { app } = makeRuntime();
+  const row = app.REC_ROW;
+  assert.match(row, /<select id="recmix"[^>]*><option value="backing" selected>Guitar \+ backing<\/option>/);
+  assert.doesNotMatch(row, /id="recbtn"/, "not duplicated in the Record row");
+  for (const f of ["timing", "clean notes", "bends in tune", "phrasing and space", "vibrato", "getting through without stopping"])
+    assert.match(row, new RegExp(`Focus: ${f}<`), f);
+  assert.match(row, /<option value="cold" selected>Cold attempt<\/option><option value="retest">Retest<\/option>/);
+  assert.match(row, /<option value="drill4">Drill: 4 bars<\/option>/);
+  assert.match(row, /<option value="section" disabled>/, "sections arrive with songs");
+});
+
+test("a take's settings go into its name and its stored record", async () => {
+  const { app, document, worklets, idb } = makeRuntime({ media: true, capture: true });
+  app.setKey(9); app.setBpm(100);
+  document.getElementById("recfocus").value = "bends";
+  document.getElementById("recattempt").value = "retest";
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(document.getElementById("recfocus").disabled, true, "fixed once the take starts");
+  assert.match(document.getElementById("recmsg").textContent, /focus: bends in tune/);
+  worklets[0].feed(4800);
+  await settle();
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.match(app.getTake().name, /^practice-A-full-100bpm-\d{8}-\d{6}-retest\.webm$/);
+  const meta = [...idb.stores.get("takes").rows.values()][0].v;
+  assert.equal(meta.focus, "bends"); assert.equal(meta.attempt, "retest"); assert.equal(meta.mode, "full");
+  assert.match(meta.name, /-retest\.wav$/);
+});
+
+test("a drill on the trainer stops by itself on the downbeat after its last bar, to the frame", async () => {
+  const { app, document, worklets, advance, rec } = makeRuntime({ media: true, capture: true });
+  app.setBpm(120);                                   // 0.5 s a beat, 2 s a bar, 96,000 frames a bar
+  document.getElementById("recmode").value = "chorus";
+  document.getElementById("recarm").checked = true;
+  document.getElementById("recbtn").click();
+  await settle();
+  app.toggleTrainer();
+  for (let i = 0; i < 4; i++) advance(0.5);          // count-in, then bar 1 is booked
+  const start = worklets[0].sent.find(m => "start" in m).start;
+  assert.equal(start, 96000, "bar 1 at 2.000 s");
+  for (let i = 0; i < 48; i++) advance(0.5);         // twelve bars
+  await settle();
+  const stopAt = worklets[0].sent.find(m => "stopAt" in m);
+  assert.ok(stopAt, "the capture was told where to end");
+  assert.equal(stopAt.stopAt - start, 12 * 96000, "exactly twelve bars");
+  const order = worklets[0].sent.map(m => "stopAt" in m ? "stopAt" : m.stop ? "stop" : "start");
+  assert.ok(order.indexOf("stopAt") < order.indexOf("stop"), "the end frame is given before the cleanup stop, so it decides the length");
+  assert.equal(rec.recorders[0].state, "inactive", "the take ended");
+  assert.match(app.getTake().name, /^12bar-A-chorus-120bpm-/, "named for the trainer and the drill");
+  assert.ok(app.getState().trainerTimer, "the band plays on");
+  app.toggleTrainer();
+});
+
+test("a drill off the trainer stops after its bars at the current tempo", async () => {
+  const { app, document, clock, advance, rec } = makeRuntime({ media: true });
+  app.setBpm(120);
+  document.getElementById("recmode").value = "drill4";   // 4 bars at 120: 8 s
+  document.getElementById("recbtn").click();
+  await settle();
+  clock.wall = 7.9; advance(0.25);
+  assert.equal(rec.recorders[0].state, "recording");
+  clock.wall = 8; advance(0.25);
+  await settle();
+  assert.equal(rec.recorders[0].state, "inactive");
+  assert.match(app.getTake().name, /-4bars-120bpm-/);
+});
+
+test("the capture stops by itself at the frame it was given", () => {
+  const { scope, quantum, send } = loadWorklet({ channels: 1, block: 1024 });
+  send({ start: 0 });
+  send({ stopAt: 300 });
+  quantum(); quantum(); quantum();           // frames 0–383: stops inside the third
+  quantum();                                 // the next call hands over and finishes
+  const kept = scope.posted.filter(m => m.block).reduce((n, m) => n + m.block[0].length, 0);
+  assert.equal(kept, 300, "frames 0..299");
+  assert.equal(scope.posted.at(-1).done, 300);
 });

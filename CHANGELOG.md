@@ -5,6 +5,11 @@ a second release on the same day.
 
 ## Unreleased
 
+- Record button moves into the Play along bar, usable from every view, and
+  guitar + backing is the default. Each take picks its length (full run-through,
+  a 12-bar chorus, or a drill of 8 or 4 bars), one focus, and cold attempt or
+  retest. A drill over the trainer ends on the exact downbeat after its last
+  bar. Files are named `<song>-<section|full>-<bpm>bpm-<date>-<cold|retest>`.
 - Triads and Inversions each open with an interactive explorer (from the
   drafts in `triads-explorer/` and `inversions-explorer/`), with the existing
   material below. Triads: Build it, Change one note, Inside barre chords.
