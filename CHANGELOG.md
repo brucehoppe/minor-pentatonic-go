@@ -5,6 +5,12 @@ a second release on the same day.
 
 ## Unreleased
 
+- Fixed: `install.sh --zip` (and `install.ps1 -ZipPath`) checked a ZIP against
+  the first `SHA256SUMS-*.txt` in its folder, so a folder holding several
+  releases, such as `dist/`, refused a good download. They now use the file that
+  lists the ZIP. A regression test covers it. Verified end to end: a full
+  `release.sh` build installed and ran, its signature verifies, and a tampered
+  ZIP is refused.
 - Security review recorded in SECURITY.md: the client, the server, the
   installers and the workflows. The installers now accept only a well-formed
   release tag, and an imported song is limited to 300 MB. `govulncheck` finds

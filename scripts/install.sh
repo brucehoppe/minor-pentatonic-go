@@ -105,8 +105,13 @@ if [ -n "$ZIP" ]; then
   [ -f "$ZIP" ] || die "no such file: $ZIP"
   ZIP="$(cd "$(dirname "$ZIP")" && pwd)/$(basename "$ZIP")"
   TAG=local
-  SUMS="$(ls "$(dirname "$ZIP")"/SHA256SUMS-*.txt 2>/dev/null | head -n 1 || true)"
-  [ -n "$SUMS" ] || printf '\033[33mwarning:\033[0m no SHA256SUMS file beside the ZIP, so it cannot be verified. Only continue with a ZIP you trust.\n' >&2
+  # A folder can hold checksums for several releases (dist/ does): use the one that
+  # lists this ZIP, not merely the first.
+  for f in "$(dirname "$ZIP")"/SHA256SUMS-*.txt; do
+    [ -f "$f" ] || continue
+    if awk -v n="$(basename "$ZIP")" '{g=$2; sub(/^\*/, "", g)} g == n {found=1} END {exit !found}' "$f"; then SUMS="$f"; break; fi
+  done
+  [ -n "$SUMS" ] || printf '\033[33mwarning:\033[0m no SHA256SUMS file beside the ZIP lists it, so it cannot be verified. Only continue with a ZIP you trust.\n' >&2
 else
   if [ "$VERSION" = latest ]; then API="https://api.github.com/repos/$REPO/releases/latest"
   else API="https://api.github.com/repos/$REPO/releases/tags/$VERSION"; fi

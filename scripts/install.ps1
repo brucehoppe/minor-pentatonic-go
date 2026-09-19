@@ -207,9 +207,13 @@ try {
     if ($ZipPath) {
         $zip = (Resolve-Path -LiteralPath $ZipPath).Path
         $tag = 'local'
-        $sumsFile = Get-ChildItem -LiteralPath (Split-Path $zip) -Filter 'SHA256SUMS-*.txt' -ErrorAction SilentlyContinue | Select-Object -First 1
+        # A folder can hold checksums for several releases: use the file that lists this ZIP.
+        $zipName = Split-Path -Leaf $zip
+        $listsZip = '\s\*?' + [regex]::Escape($zipName) + '\s*$'
+        $sumsFile = Get-ChildItem -LiteralPath (Split-Path $zip) -Filter 'SHA256SUMS-*.txt' -ErrorAction SilentlyContinue |
+            Where-Object { @(Get-Content -LiteralPath $_.FullName) -match $listsZip } | Select-Object -First 1
         if ($sumsFile) { $sums = Get-Content -LiteralPath $sumsFile.FullName }
-        else { Write-Warning 'No SHA256SUMS file beside the ZIP, so it cannot be verified. Only continue with a ZIP you trust.' }
+        else { Write-Warning 'No SHA256SUMS file beside the ZIP lists it, so it cannot be verified. Only continue with a ZIP you trust.' }
     } else {
         if ($Version -eq 'latest') { $api = "https://api.github.com/repos/$Repo/releases/latest" }
         else { $api = "https://api.github.com/repos/$Repo/releases/tags/$Version" }

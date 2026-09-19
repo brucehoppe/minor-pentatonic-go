@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"net"
@@ -121,6 +123,41 @@ func TestOnlyReadMethodsReachFiles(t *testing.T) {
 		if w.Code == http.StatusMethodNotAllowed {
 			t.Errorf("HEAD %s was refused", path)
 		}
+	}
+}
+
+// A folder such as dist/ holds checksums for several releases. install.sh --zip must
+// check a ZIP against the file that lists it, not against whichever sorts first: with
+// the wrong file it used to refuse a good download. The ZIP here is not a real
+// archive, so the install itself fails at unpacking, which is after the checksum
+// step; what matters is that the checksum step passed, or refused for the right reason.
+func TestInstallerPicksTheChecksumFileThatListsTheZip(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("install.sh is the macOS installer")
+	}
+	dir := t.TempDir()
+	zip := filepath.Join(dir, "minor-pentatonic-2026.09.19-macos.zip")
+	body := []byte("not really a zip")
+	if err := os.WriteFile(zip, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	other := strings.Repeat("0", 64) + "  minor-pentatonic-2026.09.18-macos.zip\n"
+	mine := hex.EncodeToString(sum[:]) + "  minor-pentatonic-2026.09.19-macos.zip\n"
+	// the older release's file sorts first, and does not list this ZIP
+	os.WriteFile(filepath.Join(dir, "SHA256SUMS-2026.09.18.txt"), []byte(other), 0o644)
+	os.WriteFile(filepath.Join(dir, "SHA256SUMS-2026.09.19.txt"), []byte(mine), 0o644)
+	run := func() string {
+		out, _ := exec.Command("bash", "scripts/install.sh", "--zip", zip, "--dir", filepath.Join(dir, "apps"), "--no-launch").CombinedOutput()
+		return string(out)
+	}
+	if out := run(); strings.Contains(out, "is not listed") || strings.Contains(out, "checksum mismatch") {
+		t.Errorf("a good ZIP was refused at the checksum step:\n%s", out)
+	}
+	// and a damaged ZIP is still refused
+	os.WriteFile(zip, append(body, 'x'), 0o644)
+	if out := run(); !strings.Contains(out, "checksum mismatch") {
+		t.Errorf("a damaged ZIP was not refused:\n%s", out)
 	}
 }
 
