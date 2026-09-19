@@ -5,6 +5,19 @@ a second release on the same day.
 
 ## Unreleased
 
+- Fixes from a UI and function sweep of every view, at 1280, 375 and 320 px wide,
+  clicking every safe button with the console watched. Blues boxes: the Box 1–5
+  isolate buttons threw (`R is not defined`) and left the map label stale; they
+  now name the box's frets. On phones, All 12 keys scrolled sideways (a fixed
+  420 px column) and any card holding a wide diagram could widen its column;
+  columns now fit the screen and the card scrolls inside itself. Long options in
+  the Record settings no longer run off the edge. The heading over Phrygian
+  dominant's five diagrams ran into its subtitle ("neighbourhoodsPhrygian"); the
+  subtitle now sits on its own line. The tuner shares the recorder's stereo input,
+  so Input 2 of an interface can be tuned and no second permission prompt comes;
+  it tells a screen reader only when the string or direction changes, not 40
+  times a second; and a stray pitch (another string ringing) can no longer keep a
+  bend check from ending.
 - Adopt the quieter risograph layout: a compact kaiju masthead, collapsible lesson
   index, contextual key/root menu and diagram settings, and one current learning
   stage with an expandable course outline. Playback controls sit above the lesson

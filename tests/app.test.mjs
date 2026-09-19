@@ -5800,3 +5800,57 @@ test("Blues boxes: every isolate button redraws the map and names what it isolat
   buttons.find(b => b.textContent === "Box 1").click();
   assert.match(document.getElementById("bluesmaplabel").textContent, /all five boxes/, "a second press shows everything again");
 });
+
+test("the tuner shares the recorder's stereo input, so Input 2 of an interface can be tuned", async () => {
+  const { app, context, document, rec, audio } = makeRuntime({ media: true });
+  app.audio();
+  document.getElementById("recbar1").click();   // guitar in Input 2
+  assert.equal(app.getChannel(), 1);
+  context.detectPitch = () => null;
+  navButton(document, "tune").click();
+  document.getElementById("tunelisten").click();
+  await settle();
+  assert.equal(rec.asked.length, 1);
+  assert.equal(rec.asked[0].audio.channelCount.ideal, 2, "stereo, as the recorder and the meter ask for it");
+  const sp = audio.splitters.at(-1);
+  assert.ok(sp.links.some(l => l.out === 1), "the tuner listens to Input 2 alone");
+  document.getElementById("tunelisten").click();
+  document.getElementById("reccheck").click();   // the meter reuses the same open input
+  await settle();
+  assert.equal(rec.asked.length, 1, "no second request for the input");
+});
+
+test("the tuner announces a string or direction change, not every reading", async () => {
+  const { context, document, advance } = makeRuntime({ media: true });
+  navButton(document, "tune").click();
+  let hz = 110 * Math.pow(2, -12 / 1200);
+  context.detectPitch = () => ({ hz, clarity: 0.97 });
+  document.getElementById("tunelisten").click();
+  await settle();
+  for (let i = 0; i < 5; i++) advance(0.03);
+  const say = document.getElementById("tunersay");
+  assert.equal(say.textContent, "String 5, A: tune up");
+  let writes = 0; const orig = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(say), "textContent");
+  Object.defineProperty(say, "textContent", { get: () => orig.get.call(say), set: v => { writes++; orig.set.call(say, v); } });
+  for (const c of [-11, -10, -9, -8]) { hz = 110 * Math.pow(2, c / 1200); for (let i = 0; i < 5; i++) advance(0.03); }
+  assert.equal(writes, 0, "still tune up: nothing new to say");
+  hz = 110; for (let i = 0; i < 5; i++) advance(0.03);
+  assert.equal(say.textContent, "String 5, A: in tune");
+  assert.equal(writes, 1);
+});
+
+test("the bend check ends a note even when another string keeps ringing", async () => {
+  const { app, context, document, advance } = makeRuntime({ media: true });
+  navButton(document, "tune").click();
+  document.getElementById("bendstring").value = "2";
+  document.getElementById("bendfret").value = "7";
+  document.getElementById("bendamt").value = "2";
+  let st = 0;
+  context.detectPitch = () => ({ hz: 293.66 * Math.pow(2, st / 12), clarity: 0.95 });
+  document.getElementById("bendlisten").click();
+  await settle();
+  for (let t = 0; t < 1; t += 0.025) { st = t < 0.3 ? 0 : 2; advance(0.025); }
+  st = 7;   // the bent string stops; a string a fifth above rings on
+  for (let i = 0; i < 16; i++) advance(0.025);
+  assert.equal(app.readBends()[0] && app.readBends()[0].verdict, "in tune", "checked, not stuck waiting for silence");
+});

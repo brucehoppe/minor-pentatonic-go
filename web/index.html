@@ -98,7 +98,8 @@
         <h2>Tuner<em>play one open string at a time</em></h2>
         <div class="row" id="tunings"><span class="lbl">Tuning</span></div>
         <div class="row" style="margin-top:8px"><button id="tunelisten" aria-pressed="false">Start listening</button></div>
-        <div id="tunerread" class="tunerread" aria-live="polite"></div>
+        <div id="tunerread" class="tunerread"></div>
+        <div class="sr-only" id="tunersay" aria-live="polite"></div>
         <div class="row" id="tunerefs" style="margin-top:10px"><span class="lbl">Hear a string</span></div>
         <p class="tip">Tune up to a note, not down: if a string is sharp, go below it and come back up, so the
           string settles against the peg and stays in tune. Within 5 cents is in tune.</p>
@@ -525,7 +526,7 @@
       The faint grey dots are the rest of the scale. <b>There's no empty ground between the two
       landmarks</b> — Boxes 2 and 3 fill it, and the slide run walks straight through them. Tap any key
       to load it into the rest of the app.</p>
-    <div class="grid" id="chart" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))"></div>
+    <div class="grid" id="chart" style="grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))"></div>
   </section>
 
   <section id="v-blues" hidden>

@@ -104,14 +104,20 @@
   @media (prefers-reduced-motion:reduce){.modemove.anim,.modewas.anim{animation:none}}
   .map{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:16px 0;margin-bottom:26px;overflow-x:auto}
   .maplabel{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin-bottom:10px}
-  .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-  .grid.wide{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr))}
+  .grid.wide{grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr))}
+  /* A grid item won't shrink below its widest content, so one wide diagram would push
+     the column past a phone's edge. Cards scroll sideways inside instead. */
+  .grid>*{min-width:0}
   .card{border:1px solid var(--rule);padding:14px 14px 12px;background:var(--card);overflow-x:auto}
   .card:hover,.card:focus-within{border-color:var(--blue)}
   .card h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-size:15px;
     margin:0;letter-spacing:.02em;text-transform:uppercase;display:flex;justify-content:space-between;
     align-items:baseline;gap:8px}
   .card h2 em{font-style:normal;font-family:"DM Mono",monospace;font-weight:400;font-size:11px;opacity:.55;letter-spacing:.06em}
+  /* a heading between cards takes its subtitle on a line of its own, set like a card's */
+  section>h2 em{display:block;font-style:normal;font-family:"DM Mono",monospace;font-weight:400;font-size:12px;
+    opacity:.6;letter-spacing:.06em;margin-top:4px}
   .tip{font-size:11.5px;line-height:1.55;opacity:.72;margin:8px 0 0}
   .tip b{color:var(--blue);font-weight:500}
   .tip a{color:var(--blue);text-decoration:underline;text-underline-offset:2px}
@@ -175,6 +181,7 @@
   .pathnow{border-left:3px solid var(--blue)}
   .loglist li button{font-size:11px;padding:2px 8px;margin-left:6px}
   /* Tuner & bends */
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .tunerread{margin:12px 0 4px;color:var(--ink)}
   .tunerread svg{display:block;max-width:100%}
   .tunernote{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:40px;font-weight:800;line-height:1.1;margin:2px 0 4px}
@@ -348,7 +355,7 @@
   .beat:nth-child(4n+1){border-left:3px solid var(--ink)}
   .beat.hit{background:#0F6FC512;color:var(--blue);font-weight:700}
   .beat.now{background:var(--pink);color:var(--paper);border-color:var(--pink)}
-  select{font:inherit;background:var(--card);border:1px solid var(--rule);padding:6px 8px;color:var(--ink)}
+  select{font:inherit;background:var(--card);border:1px solid var(--rule);padding:6px 8px;color:var(--ink);max-width:100%}
   @media(max-width:620px){.bars{grid-template-columns:repeat(4,1fr)}.beatgrid{gap:2px}.beat{min-height:40px;font-size:12px}}
   /* the band row in the 12-bar trainer */
   .bandctl{display:inline-flex;align-items:center;gap:6px;font-size:12px}

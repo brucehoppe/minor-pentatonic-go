@@ -93,7 +93,9 @@ function pitchToggle(mode) {
   const p = state.pitch = { mode, readings: [], trace: [], quiet: 0, t0: null, timer: null, an: null, node: null };
   pitchButtons();
   say("Opening the input…");
-  acquireInput(true).then(stream => {
+  // Stereo, as the recorder and the meter ask for it: the same open input is then shared
+  // (no second permission prompt), and Input 1 or 2 of an interface can be picked out.
+  acquireInput(false).then(stream => {
     if (state.pitch !== p) return;
     const n = inputNode(ac, stream, state.recChannel);
     // 2048 samples (46 ms at 44.1 kHz) holds two periods of the low E, and is short
@@ -146,6 +148,14 @@ function tunerReading(p, hz) {
 }
 function paintTuner(tg, heard) {
   const host = document.getElementById("tunerread");
+  // 40 readings a second, but only a change worth seeing is drawn, and only a change of
+  // string or direction is announced to a screen reader
+  const key = tg ? `${tg.string}|${Math.round(tg.cents)}|${heard.name}${heard.octave}` : "-";
+  if (host.dataset.shown === key) return;
+  host.dataset.shown = key;
+  const said = tg ? `String ${tg.string}, ${tg.name}: ${tg.say}` : "";
+  const sr = document.getElementById("tunersay");
+  if (sr && sr.textContent !== said) sr.textContent = said;
   const c = tg ? Math.max(-50, Math.min(50, tg.cents)) : 0, x = 150 + c * 2.6;
   const col = !tg ? "var(--rule)" : Math.abs(tg.cents) <= 5 ? "var(--blue)" : Math.abs(tg.cents) <= 15 ? "var(--gold)" : "var(--pink)";
   host.innerHTML = `<svg viewBox="0 0 300 70" width="300" height="70" role="img" aria-label="${tg ? `String ${tg.string}, ${tg.name}: ${Math.round(tg.cents)} cents, ${tg.say}` : "No note heard"}">
@@ -164,10 +174,11 @@ function paintTuner(tg, heard) {
 // the pitch has been gone for a moment; then the whole note is checked.
 function bendReading(p, hz, now) {
   const b = bendSpec();
-  if (hz) {
-    const st = 12 * Math.log2(hz / midiFreq(b.midi));
-    // an octave slip or the next string ringing: not part of this bend
-    if (st < -1.5 || st > b.by + 2.5) return;
+  let st = hz ? 12 * Math.log2(hz / midiFreq(b.midi)) : null;
+  // an octave slip or the next string ringing: not part of this bend, and treated as
+  // quiet, so a stray sound can't keep a note from ever ending
+  if (st !== null && (st < -1.5 || st > b.by + 2.5)) st = null;
+  if (st !== null) {
     if (p.t0 === null) p.t0 = now;
     p.trace.push({ t: now - p.t0, st }); p.quiet = 0;
     if (now - p.t0 > BEND_MAX_S) { bendFinish(p); return; }
