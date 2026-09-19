@@ -4138,7 +4138,7 @@ test("practice settings are remembered, and odd stored values are ignored", () =
 
 test("the 12-bar trainer opens with the band's poster, small enough to load fast", () => {
   const trainer = html.slice(html.indexOf('<section id="v-trainer"'), html.indexOf('<section id="v-rhythm"'));
-  assert.match(trainer, /<img src="assets\/rats-of-chaos\.jpg" width="720" height="580" loading="lazy"\s+alt="[^"]*kaiju[^"]*Rats of Chaos of Grid Lock">/);
+  assert.match(trainer, /<img src="assets\/rats-of-chaos\.jpg" width="720" height="368" loading="lazy"\s+alt="[^"]*rat[^"]*Rats of Chaos of Grid Lock">/);
   assert.match(trainer, /<figcaption>Your backing band: <b>Rats of Chaos of Grid Lock<\/b><\/figcaption>/);
   const jpg = readFileSync(new URL("../web/assets/rats-of-chaos.jpg", import.meta.url));
   assert.deepEqual([...jpg.subarray(0, 3)], [0xFF, 0xD8, 0xFF], "a JPEG");
