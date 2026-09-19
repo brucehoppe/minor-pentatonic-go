@@ -21,6 +21,7 @@ const lesson = readFileSync(new URL("../web/seven-licks.html", import.meta.url),
 const lessonScript = readFileSync(new URL("../web/seven-licks.js", import.meta.url), "utf8");
 const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-explorer.js"]
   .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
+const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
 
 class Element {
   constructor(id = "", tagName = "div") {
@@ -81,7 +82,7 @@ const buttonNamed = (root, text) => findAll(root, e => e.tagName === "BUTTON" &&
 // { failAfter: n } to make storage fail after n writes, or { store } to start from
 // what an earlier page left in storage.
 function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false, media = false,
-  userAgent = "", secure = true, capture = false, worker = false, stored: seed = {}, explorers = true } = {}) {
+  userAgent = "", secure = true, capture = false, worker = false, stored: seed = {}, explorers = true, band = true } = {}) {
   const MathForApp = deterministic
     ? new Proxy(Math, { get: (t, k) => (k === "random" ? () => 0.42 : t[k]) })
     : Math;
@@ -91,7 +92,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // clock; clock.t is that clock, which a test moves forward with advance().
   const audio = { oscillators: 0, starts: 0, stops: 0, gains: 0, startTimes: [], taps: [], untaps: [], toSpeakers: [] };
   const clock = { t: 0, wall: 0 };
-  class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} cancelScheduledValues() {} }
+  class AudioParam { setValueAtTime() {} exponentialRampToValueAtTime() {} linearRampToValueAtTime() {} cancelScheduledValues() {} }
   // Each capture node records what the page tells it; feed() hands it audio as the
   // real worklet would, and a stop is answered with the frames it was fed.
   const worklets = [], modules = [];
@@ -135,7 +136,11 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       start(t) { audio.starts++; audio.startTimes.push(t); }, stop() { audio.stops++; } }; }
     createDynamicsCompressor() { const p = () => ({ value: 0 }), l = { threshold: p(), knee: p(), ratio: p(), attack: p(), release: p(),
       outs: [], connect(n) { l.outs.push(n); } }; (audio.limiters ??= []).push(l); return l; }
-    createBiquadFilter() { return { type: "lowpass", frequency: new AudioParam(), connect() {} }; }
+    createBiquadFilter() { return { type: "lowpass", frequency: new AudioParam(), Q: new AudioParam(), connect() {} }; }
+    // noise for the drums: a buffer, and sources that play it (logged with when they start)
+    createBuffer(ch, len) { return { getChannelData: () => new Float32Array(len) }; }
+    createBufferSource() { return { buffer: null, connect() {},
+      start(t) { audio.starts++; audio.startTimes.push(t); (audio.noise ??= []).push(t); }, stop() {} }; }
   }
   const document = {
     addEventListener() {},
@@ -307,6 +312,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // index.html loads the chord explorers before app.js; explorers:false is the page
   // with those scripts missing.
   if (explorers) for (const f of explorerScripts) vm.runInContext(f, context);
+  if (band) vm.runInContext(bandScript, context);   // band:false is the page without web/band.js
   vm.runInContext(script + `\n;globalThis.appTest={render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
     modeOrigins,renderNotes,neckNames,OCTAVES,NATURALS,
     renderTriads,TRIAD_KINDS,TRIAD_SETS,triadShapes,triadVoicing,midiAt,allTriadVoicings,
@@ -332,7 +338,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,webmWithDuration,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,webmWithDuration,tapTempo,getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -3655,7 +3661,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {
@@ -3697,4 +3703,154 @@ test("a browser without a compressor still records backing, straight from the mi
   const r = app.getRec();
   assert.ok(r.bus && r.bed, "still mixed, with the backing 3 dB down");
   assert.equal(app.getRec().recorder.state, "recording");
+});
+
+// ---------- the backing band: the score ----------
+const B = (() => { const ctx = vm.createContext({}); vm.runInContext(bandScript, ctx); return ctx.Band; })();
+const I7 = pc => ({ pc, intervals: [0, 4, 7, 10] });
+const bandBeat = (feel, beat, extra = {}) => B.beatEvents({ feel, beat, step: beat, swing: 2 / 3, beatSec: 0.5, chord: I7(9), ...extra });
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+
+test("band: every event sits on its feel's grid, inside the beat", () => {
+  const grids = {
+    shuffle: s => [0, s], straight: s => [0, s],
+    funk: s => [0, s / 2, 0.5, 0.5 + s / 2], slow: () => [0, 1 / 3, 2 / 3],
+  };
+  for (const feel of Object.keys(B.FEELS)) for (const swing of [0.5, 0.6, 2 / 3, 0.75]) for (let beat = 0; beat < 4; beat++) {
+    const grid = grids[feel](swing);
+    for (const e of bandBeat(feel, beat, { swing })) {
+      assert.ok(e.at >= 0 && e.at < 1, `${feel} beat ${beat}: ${e.at} inside the beat`);
+      assert.ok(grid.some(g => near(g, e.at)), `${feel} ${swing} beat ${beat}: ${e.part} ${e.voice || e.midi} at ${e.at} is on the grid`);
+    }
+  }
+});
+
+test("band: the swing slider moves the offbeat from straight to a hard shuffle", () => {
+  const hatAt = (feel, swing) => bandBeat(feel, 0, { swing }).filter(e => e.voice === "hat").map(e => e.at);
+  sameShape(hatAt("shuffle", 0.5), [0, 0.5]);
+  assert.ok(near(hatAt("shuffle", 2 / 3)[1], 2 / 3), "67%: the triplet");
+  sameShape(hatAt("shuffle", 0.75), [0, 0.75]);
+  sameShape(hatAt("shuffle", 0.9), [0, 0.75], "clamped to 75%");
+  sameShape(hatAt("shuffle", 0.1), [0, 0.5], "and to 50%");
+  sameShape(hatAt("funk", 0.6), [0, 0.3, 0.5, 0.8], "funk swings its 16ths within each 8th");
+  const slow = hatAt("slow", 0.5);
+  assert.ok(near(slow[1], 1 / 3) && near(slow[2], 2 / 3), "12/8 ignores the slider: its triplets are the feel");
+  assert.equal(B.FEELS.slow.swing, false);
+});
+
+test("band: backbeat on 2 and 4 in every feel; kick on 1 and 3, syncopated in funk", () => {
+  for (const feel of Object.keys(B.FEELS)) for (let beat = 0; beat < 4; beat++) {
+    const ev = bandBeat(feel, beat), onBeat = v => ev.some(e => e.voice === v && e.at === 0);
+    assert.equal(onBeat("snare"), beat === 1 || beat === 3, `${feel} beat ${beat + 1} snare`);
+    if (feel !== "funk") assert.equal(onBeat("kick"), beat === 0 || beat === 2, `${feel} beat ${beat + 1} kick`);
+  }
+  const funkKicks = [0, 1, 2, 3].flatMap(beat => bandBeat("funk", beat, { swing: 0.5 }).filter(e => e.voice === "kick").map(e => beat + e.at));
+  sameShape(funkKicks, [0, 0.75, 2.5], "funk: 1, the last 16th of 1, and the and of 3");
+  const count = B.beatEvents({ feel: "shuffle", beat: 2, countIn: true });
+  sameShape(count.map(e => e.voice), ["stick"]);
+  sameShape(bandBeat("shuffle", 0, { ride: true }).filter(e => /hat|ride/.test(e.voice)).map(e => e.voice), ["ride", "ride"]);
+});
+
+test("band: the bass walks root–5–6–♭7 on a dominant, and follows a split bar's second chord", () => {
+  const firstNotes = (chord, steps, bass = "walk") => steps.map(step =>
+    B.beatEvents({ feel: "shuffle", beat: step, step, swing: 2 / 3, beatSec: 0.5, chord, bass }).find(e => e.part === "bass" && e.at === 0)?.midi);
+  sameShape(firstNotes(I7(9), [0, 1, 2, 3]), [33, 40, 42, 43], "A7: A, E, F#, G from A1");
+  sameShape(firstNotes(I7(2), [0, 1, 2, 3]), [38, 45, 47, 48], "D7 sits between A1 and G#2 too");
+  // bebop-style split bar: IIm7 then V7 in A — beats 3 and 4 restart from the V's root
+  const bar = [{ chord: { pc: 11, intervals: [0, 3, 7, 10] }, step: 0 }, { chord: { pc: 11, intervals: [0, 3, 7, 10] }, step: 1 },
+    { chord: I7(4), step: 0 }, { chord: I7(4), step: 1 }];
+  const notes = bar.map(({ chord, step }, beat) =>
+    B.beatEvents({ feel: "shuffle", beat, step, swing: 2 / 3, beatSec: 0.5, chord }).find(e => e.part === "bass" && e.at === 0).midi);
+  sameShape(notes, [35, 42, 40, 47], "B, F# (Bm7: root, 5th), then E, B (E7: root, 5th)");
+  sameShape(firstNotes({ pc: 9, intervals: [0, 3, 6, 9] }, [0, 1, 2, 3]), [33, 36, 39, 42], "a diminished chord walks its own tones");
+  // root–fifth: a root on beat 1, the fifth on beat 3, nothing between
+  sameShape(firstNotes(I7(9), [0, 1, 2, 3], "root5"), [33, undefined, 40, undefined]);
+  const swung = B.beatEvents({ feel: "shuffle", beat: 0, step: 0, swing: 2 / 3, beatSec: 0.5, chord: I7(9) }).filter(e => e.part === "bass");
+  assert.equal(swung.length, 2, "the shuffle walk plays the swung 8th too");
+  assert.ok(near(swung[1].at, 2 / 3));
+});
+
+// ---------- the backing band in the trainer ----------
+test("the band books drums and bass on the audio clock, on the grid, from bar 1", () => {
+  const { app, document, audio, advance } = makeRuntime();
+  app.setBpm(120);                                   // a beat is 0.5 s
+  document.getElementById("groove").value = "shuffle";
+  const noiseBefore = (audio.noise ?? []).length;
+  app.toggleTrainer();
+  assert.ok(app.getBandRig(), "the band is on while the trainer runs");
+  for (let i = 0; i < 12; i++) advance(0.5);         // count-in and two bars
+  const hits = audio.startTimes.filter(t => t !== undefined);
+  // every drum and bass start is on the shuffle grid: a beat, or 2/3 of one
+  for (const t of hits) {
+    const inBeat = (t % 0.5) / 0.5;
+    assert.ok([0, 2 / 3, 1].some(g => Math.abs(inBeat - g) < 1e-6), `a start at ${t.toFixed(4)} s is on the grid`);
+  }
+  assert.ok((audio.noise ?? []).length - noiseBefore > 8, "drums played");
+  app.toggleTrainer();
+  assert.equal(app.getBandRig(), null, "stopping lets the band go");
+});
+
+test("the band plays through the engine's bus, so a take with backing records it", () => {
+  const { app } = makeRuntime();
+  const e = app.audio(), buses = [], bus = e.bus;
+  e.bus = () => { const g = bus(); buses.push(g); return g; };
+  app.toggleTrainer();
+  assert.equal(buses.length, 1);
+  assert.equal(app.getBandRig().out, buses[0]);
+  app.toggleTrainer();
+});
+
+test("Drums + bass can be switched off, and the compatibility engine keeps the chord stabs", () => {
+  const off = makeRuntime();
+  off.document.getElementById("bandon").click();
+  assert.equal(off.app.getBand().on, false);
+  assert.equal(off.document.getElementById("bandon").getAttribute("aria-pressed"), "false");
+  off.app.toggleTrainer();
+  assert.equal(off.app.getBandRig(), null, "off: the trainer's own stabs");
+  off.document.getElementById("bandon").click();
+  assert.ok(off.app.getBandRig(), "on again, while running: the band joins");
+  off.app.toggleTrainer();
+
+  const compat = makeRuntime({ audio: "wav" });
+  compat.app.toggleTrainer();
+  assert.equal(compat.app.getBandRig(), null, "no Web Audio bus to play into");
+  compat.app.toggleTrainer();
+  const missing = makeRuntime({ band: false });
+  missing.app.toggleTrainer();
+  assert.equal(missing.app.getBandRig(), null, "without band.js the trainer still runs");
+  missing.app.toggleTrainer();
+});
+
+test("tap tempo sets the tempo from steady taps and ignores stray ones", () => {
+  const { app, document } = makeRuntime();
+  let t = 1_000_000;
+  assert.equal(app.tapTempo(t), null, "one tap is not a tempo");
+  for (const gap of [500, 500, 500]) assert.equal(app.tapTempo(t += gap), 120);
+  assert.equal(app.getState().bpm, 120);
+  assert.equal(document.getElementById("bpmv").textContent, "120 bpm");
+  assert.equal(app.tapTempo(t += 5000), null, "a long pause starts a new count");
+  assert.equal(app.tapTempo(t += 3000), null, "20 bpm is off the scale");
+});
+
+test("band settings: the swing label, 12/8, and remembering them safely", () => {
+  const { app, document } = makeRuntime();
+  const sw = document.getElementById("swing");
+  sw.value = "50"; sw.oninput({ target: sw });
+  assert.equal(document.getElementById("swingv").textContent, "50% · straight");
+  sw.value = "67"; sw.oninput({ target: sw });
+  assert.equal(app.getBand().swing, 2 / 3, "67 snaps to an exact triplet");
+  assert.equal(document.getElementById("swingv").textContent, "67% · triplet feel");
+  sw.value = "75"; sw.oninput({ target: sw });
+  assert.equal(document.getElementById("swingv").textContent, "75% · hard shuffle");
+  const feel = document.getElementById("groove");
+  feel.value = "slow"; feel.onchange();
+  assert.equal(sw.disabled, true);
+  assert.equal(document.getElementById("swingv").textContent, "built into 12/8");
+  document.getElementById("bandbass").onchange({ target: { value: "root5" } });
+  const saved = JSON.parse(app.getState().storage.getItem("practice-desk-band"));
+  assert.equal(saved.bass, "root5"); assert.equal(saved.swing, 0.75);
+  for (const bad of ['{"swing":2,"bass":"<b>","on":"yes"}', "{", "[]"]) {
+    const r = makeRuntime({ stored: { "practice-desk-band": bad } });
+    sameShape({ ...r.app.getBand() }, { on: true, swing: 2 / 3, bass: "walk", ride: false }, `${bad}: defaults`);
+  }
 });

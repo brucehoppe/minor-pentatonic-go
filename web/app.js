@@ -36,6 +36,9 @@ const state={
   timerSeconds:300, timerInitial:300, timerHandle:null, ladderStart:90, ladderRound:1,
   // 12-bar trainer and rhythm lab
   trainerTimer:null, trainerBar:-1, trainerBeat:0, trainerCount:4,
+  // the backing band (web/band.js): its settings, remembered, and the live rig of
+  // gains its parts play into while the trainer runs
+  band:{on:true, swing:2/3, bass:"walk", ride:false}, bandRig:null, taps:[],
   rhythm:[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0], rhythmTimer:null, rhythmStep:0,
   // audio - the chosen engine, why there is none, and what is sounding
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
@@ -1416,6 +1419,72 @@ function completeSession(){const log=readLog(),date=new Date().toLocaleDateStrin
   document.getElementById("logsummary").innerHTML=`Logged today’s <b>${NOTES[state.key]} minor</b> session at ${state.bpm} bpm.`;}
 function clearLog(){writeLog([]);renderLog();}
 
+// ---------- the backing band ----------
+// The trainer's beats drive web/band.js: each beat the trainer books, the band
+// books its drums and bass for, at fractions of that beat on the same audio clock.
+// Its parts play into their own gains on the engine's master bus, so a take with
+// backing records the band. The compatibility engine has no bus to give it, so
+// there the trainer keeps its chord stabs.
+const BAND_KEY="practice-desk-band";
+// The band on its own peaked near full scale in Chrome; this sits it about 4 dB
+// down, under your guitar, with room for the rest of the desk's sounds.
+const BAND_LEVEL=.6;
+function readBand(){
+  try{const v=JSON.parse(window.localStorage.getItem(BAND_KEY)||"null");
+    if(!v||typeof v!=="object")return;
+    if(typeof v.on==="boolean")state.band.on=v.on;
+    if(typeof v.swing==="number"&&v.swing>=.5&&v.swing<=.75)state.band.swing=v.swing;
+    if(v.bass==="walk"||v.bass==="root5")state.band.bass=v.bass;
+    if(typeof v.ride==="boolean")state.band.ride=v.ride;}
+  catch(e){/* nothing stored, or unreadable: keep the defaults */}}
+function writeBand(){try{window.localStorage.setItem(BAND_KEY,JSON.stringify(state.band));}catch(e){/* this visit only */}}
+const bandReady=()=>typeof Band!=="undefined"&&Band&&typeof Band.beatEvents==="function";
+function bandStart(){
+  bandStop();
+  const a=audio();
+  if(!state.band.on||!a||!a.bus||!a.context||!bandReady())return;
+  const out=a.bus(),parts={drums:a.context.createGain(),bass:a.context.createGain()};
+  out.gain.value=BAND_LEVEL;
+  Object.values(parts).forEach(g=>g.connect(out));
+  state.bandRig={out,parts,ac:a.context,voices:Band.createVoices(a.context,parts)};}
+// Silence what is already booked with a quick fade on the band's own bus, then let
+// it go; the next start builds a fresh one.
+function bandStop(){
+  const r=state.bandRig;
+  if(!r)return;
+  state.bandRig=null;
+  try{const t=r.ac.currentTime;r.out.gain.setValueAtTime(r.out.gain.value||1,t);r.out.gain.linearRampToValueAtTime(0,t+.06);}
+  catch(e){/* already gone */}
+  setTimeout(()=>{try{r.out.disconnect();}catch(e){/* already gone */}},200);}
+// One beat of the band, when seconds from now.
+function bandBeat(when,o){
+  const r=state.bandRig;if(!r)return;
+  const beatSec=60/state.bpm,t0=r.ac.currentTime+when;
+  Band.beatEvents({feel:document.getElementById("groove").value,swing:state.band.swing,bass:state.band.bass,
+    ride:state.band.ride,beatSec,...o}).forEach(e=>r.voices.play(e,t0+e.at*beatSec));}
+// Tap tempo: the average of the last few taps, if they come steadily enough.
+function tapTempo(now=Date.now()){
+  const taps=state.taps.filter(t=>now-t<2500);taps.push(now);state.taps=taps.slice(-6);
+  if(state.taps.length<2)return null;
+  const gaps=state.taps.slice(1).map((t,i)=>t-state.taps[i]);
+  const bpm=Math.round(60000/(gaps.reduce((a,b)=>a+b,0)/gaps.length));
+  if(bpm<40||bpm>220)return null;
+  setBpm(bpm);return bpm;}
+function setBpm(v){
+  state.bpm=v;
+  const s=document.getElementById("bpm");s.value=v;
+  document.getElementById("bpmv").textContent=v+" bpm";
+  restartClick();}
+function renderBandControls(){
+  const feel=document.getElementById("groove").value,swingable=!bandReady()||!Band.FEELS[feel]||Band.FEELS[feel].swing;
+  const sw=document.getElementById("swing"),pct=Math.round(state.band.swing*100);
+  sw.value=String(pct);sw.disabled=!swingable;
+  document.getElementById("swingv").textContent=!swingable?"built into 12/8"
+    :pct===50?"50% · straight":pct===67?"67% · triplet feel":pct===75?"75% · hard shuffle":pct+"%";
+  document.getElementById("bandon").setAttribute("aria-pressed",state.band.on);
+  document.getElementById("bandbass").value=state.band.bass;
+  document.getElementById("bandride").checked=state.band.ride;}
+
 // ---------- 12-bar blues trainer ----------
 // A form is twelve bars. A bar is one chord symbol, or a pair of them when the
 // change falls halfway through — bebop and Bird blues need that, and writing it as
@@ -1528,19 +1597,27 @@ function trainerSound(symbol,beat,when=0){
   if(groove==="shuffle")a.chord(hzs,{when:when+(60/state.bpm)*2/3,dur:hold,vol:.018});}
 function trainerTick(when=0){const form=currentForm();
   if(state.trainerCount>0){const text=`count in · ${5-state.trainerCount}`;
-    trainerSound(symbolAt(form.chords[0],0),4-state.trainerCount,when);state.trainerCount--;
+    if(state.bandRig)bandBeat(when,{countIn:true,beat:4-state.trainerCount});
+    else trainerSound(symbolAt(form.chords[0],0),4-state.trainerCount,when);
+    state.trainerCount--;
     atBeat(when,()=>{if(state.trainerTimer)document.getElementById("trainerreadout").textContent=text;});return;}
   if(state.trainerBar<0)state.trainerBar=0;
   const bar=state.trainerBar,beat=state.trainerBeat;
   if(bar===0&&beat===0)recOnBarOne(when);
-  trainerSound(symbolAt(form.chords[bar],beat),beat,when);
+  if(state.bandRig){
+    // a split bar's second chord arrives on beat 3, and its line starts from the root there
+    const entry=form.chords[bar],split=barSymbols(entry).length>1,c=chordInfo(symbolAt(entry,beat));
+    bandBeat(when,{beat,step:split&&beat>=2?beat-2:beat,chord:{pc:(state.key+c.root)%12,intervals:c.intervals}});}
+  else trainerSound(symbolAt(form.chords[bar],beat),beat,when);
   atBeat(when,()=>{if(state.trainerTimer)renderTrainer(bar,beat);});
   state.trainerBeat++;if(state.trainerBeat===4){state.trainerBeat=0;state.trainerBar=(state.trainerBar+1)%12;}}
 function stopTrainer(){if(state.trainerTimer){clearInterval(state.trainerTimer);state.trainerTimer=null;}
+  bandStop();
   if(state.rec&&state.rec.fromTrainer)stopRecording();const b=document.getElementById("toggletrainer");
   if(b){b.textContent="Start with count-in";b.setAttribute("aria-pressed",false);}}
 function toggleTrainer(){if(state.trainerTimer){stopTrainer();return;}state.trainerCount=4;state.trainerBar=-1;state.trainerBeat=0;
   const b=document.getElementById("toggletrainer");b.textContent="Stop";b.setAttribute("aria-pressed",true);
+  bandStart();
   state.trainerTimer=beatLoop(60/state.bpm,trainerTick);}
 function resetTrainer(){stopTrainer();state.trainerBar=-1;state.trainerBeat=0;state.trainerCount=4;renderTrainer();}
 
@@ -1620,6 +1697,8 @@ function webAudioEngine(ac) {
     context: ac,
     now: () => ac.currentTime,
     tap: node => master.connect(node),
+    // A gain into the master bus, for a player with its own mixer (the band).
+    bus: () => { const g = ac.createGain(); g.connect(master); return g; },
     untap: node => { try { master.disconnect(node); } catch (e) { /* never connected */ } },
     state: () => ac.state,
     resume: () => (ac.state === "suspended" ? ac.resume() : Promise.resolve()),
@@ -3884,7 +3963,16 @@ document.getElementById("ladderreset").onclick=resetLadder;
 document.getElementById("clearlog").onclick=clearLog;
 document.getElementById("toggletrainer").onclick=toggleTrainer;
 document.getElementById("resettrainer").onclick=resetTrainer;
-document.getElementById("groove").onchange=renderTrainer;
+document.getElementById("groove").onchange=()=>{renderTrainer();renderBandControls();};
+readBand();
+document.getElementById("swing").oninput=e=>{state.band.swing=Math.min(.75,Math.max(.5,(+e.target.value)/100));
+  if(Math.abs(state.band.swing-2/3)<.006)state.band.swing=2/3;writeBand();renderBandControls();};
+document.getElementById("bandbass").onchange=e=>{state.band.bass=e.target.value==="root5"?"root5":"walk";writeBand();};
+document.getElementById("bandride").onchange=e=>{state.band.ride=!!e.target.checked;writeBand();};
+document.getElementById("bandon").onclick=()=>{state.band.on=!state.band.on;writeBand();renderBandControls();
+  if(state.trainerTimer){if(state.band.on)bandStart();else bandStop();}};
+document.getElementById("taptempo").onclick=()=>tapTempo();
+renderBandControls();
 // The form menu is built from BLUES_FORMS, grouped by family, so adding a form up
 // there is the only edit needed to offer it here.
 document.getElementById("bluesform").innerHTML=(()=>{

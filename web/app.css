@@ -331,3 +331,6 @@
   .beat.now{background:var(--pink);color:var(--paper);border-color:var(--pink)}
   select{font:inherit;background:var(--card);border:1px solid var(--rule);padding:6px 8px;color:var(--ink)}
   @media(max-width:620px){.bars{grid-template-columns:repeat(4,1fr)}.beatgrid{gap:2px}.beat{min-height:40px;font-size:12px}}
+  /* the band row in the 12-bar trainer */
+  .bandctl{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+  .bandnote{font-size:11.5px;opacity:.65;min-width:9em}

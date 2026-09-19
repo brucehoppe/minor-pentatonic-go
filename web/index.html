@@ -772,8 +772,18 @@
       <h2>12-bar blues<em id="trainerreadout">ready</em></h2>
       <div class="row" style="margin-top:12px">
         <span class="lbl">Form</span><select id="bluesform" aria-label="Blues form"></select>
-        <span class="lbl">Groove</span><select id="groove" aria-label="Blues groove"><option value="shuffle">Shuffle</option><option value="straight">Straight</option><option value="slow">Slow sustain</option></select>
+        <span class="lbl">Feel</span><select id="groove" aria-label="Feel"><option value="shuffle">Shuffle</option><option value="straight">Straight rock</option><option value="slow">Slow blues 12/8</option><option value="funk">Funk 16ths</option></select>
         <button id="toggletrainer">Start with count-in</button><button id="resettrainer">Reset</button>
+      </div>
+      <div class="row" id="bandrow">
+        <span class="lbl">Band</span>
+        <button id="bandon" aria-pressed="true">Drums + bass</button>
+        <label class="bandctl">Swing <input type="range" id="swing" min="50" max="75" step="1" value="67" list="swingmarks" aria-label="Swing"></label>
+        <datalist id="swingmarks"><option value="50" label="straight"></option><option value="67" label="triplet"></option><option value="75" label="hard"></option></datalist>
+        <span id="swingv" class="bandnote">67% · triplet feel</span>
+        <select id="bandbass" aria-label="Bass line"><option value="walk">Bass: shuffle walk</option><option value="root5">Bass: root–fifth</option></select>
+        <label class="bandctl"><input type="checkbox" id="bandride"> Ride cymbal</label>
+        <button id="taptempo" title="Tap four times on the beat">Tap tempo</button>
       </div>
       <div class="bars" id="bluesbars"></div>
       <div class="status" id="trainertarget"></div>
@@ -822,6 +832,7 @@
 <script src="chord-explorer.js" defer></script>
 <script src="triads-explorer.js" defer></script>
 <script src="inversions-explorer.js" defer></script>
+<script src="band.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>
