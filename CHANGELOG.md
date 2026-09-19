@@ -5,6 +5,11 @@ a second release on the same day.
 
 ## Unreleased
 
+- Layers: a solo recorded over a rhythm take can be heard as two layers with a
+  volume and mute each, plus a click on the recording's beat; the solo is kept
+  compressed on its own for this, from a second recorder beside the main one.
+  Download solo only, rhythm only or both mixed. It is a listening aid, not a
+  studio.
 - Use as backing: a take of your own rhythm playing becomes a backing under
   Your songs, with sections, loop, slow-down, count-in and chords like an
   imported song. It is stored once (it points at the take), starts that many

@@ -31,7 +31,8 @@ const cleanTake = t => ({...t,
   rerate:t.rerate&&Number.isFinite(t.rerate.at)?{at:t.rerate.at,ratings:cleanRatings(t.rerate.ratings)}:null,
   next:typeof t.next==="string"?t.next.slice(0,200):"",
   songId:typeof t.songId==="string"?t.songId:null,
-  backingTakeId:typeof t.backingTakeId==="string"?t.backingTakeId:null});
+  backingTakeId:typeof t.backingTakeId==="string"?t.backingTakeId:null,
+  stemBlob:t.stemBlob instanceof Blob?t.stemBlob:null});
 
 // ---- storage ----
 async function libList(){
@@ -47,12 +48,13 @@ const libPut = rec => dbDo("library","readwrite",tx=>{tx.objectStore("library").
 // WAV master stays with the recorder's own store until you download or discard it.
 async function libKeep(kept, t, meta, stemMeta){
   const info = t.info||{};
+  if(t.stemDone) await t.stemDone;        // the compressed solo finishes a moment after the mix
   const seconds = meta&&meta.frames ? meta.frames/meta.sampleRate : (kept.wav&&kept.wav.seconds)||(Date.now()-t.t0)/1000;
   const rec = {id:"take-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7), created:Date.now(),
     name:kept.name, mime:kept.blob.type||"audio/webm", blob:kept.blob, seconds,
     key:t.key, bpm:t.bpm, mode:info.mode||"full", focus:info.focus||"timing", attempt:info.attempt||"cold",
     mono:!!t.mono, backing:!!t.backing, markers:(t.markers||[]).map(m=>({t:m.t,kind:"mistake"})), calMs:kept.calMs,
-    songId:info.songId||null, backingTakeId:info.backingTakeId||t.backingTakeId||null, songPlay:t.songPlay||null, section:info.section||null, masterId:meta?meta.id:null, stemId:stemMeta?stemMeta.id:null,
+    songId:info.songId||null, backingTakeId:info.backingTakeId||t.backingTakeId||null, songPlay:t.songPlay||null, section:info.section||null, masterId:meta?meta.id:null, stemId:stemMeta?stemMeta.id:null, stemBlob:t.stemBlob instanceof Blob?t.stemBlob:null,
     ratings:cleanRatings(null), rerate:null, next:"", onsets:t.onsets||[]};
   kept.libId = rec.id;
   await libPut(rec);
@@ -130,6 +132,7 @@ function libStorage(){
 
 // ---- opening a take ----
 function libClose(){
+  libLayersStop();
   lib.playGeneration++;
   if(lib.url){ try{ URL.revokeObjectURL(lib.url); }catch(e){} lib.url=null; }
   lib.selected=null; lib.peaks=null;
@@ -148,7 +151,7 @@ async function libOpen(id){
   document.getElementById("takenext").value = t.next;
   document.getElementById("takespeed").value = "1";
   document.getElementById("takeloop").checked = false;
-  libRate(); libMarks();
+  libRate(); libMarks(); libLayersShow();
   lib.peaks = null; libWave();
   const generation = lib.playGeneration;
   libPeaks(t.blob).then(peaks=>{ if(generation===lib.playGeneration){ lib.peaks=peaks; libWave(); } }, ()=>{});
@@ -265,6 +268,94 @@ async function libSaveNext(){
   await libPut(t); await libList(); libSay("Saved.");
 }
 
+// ---- layers: the rhythm take, your solo, and a click, each with its own level ----
+// A solo recorded over a rhythm take is heard here as it was played: the rhythm take at the
+// speed it was recorded over, from where the solo began, and the solo alone (its stem).
+// Each can be turned down or off, to hear your own playing bare or the backing without
+// it. It is not a studio: GarageBand or similar does that job better; this is the
+// listening you want while you are still learning the part.
+const layers = {solo:null, rhythm:null, urls:[], clickTimer:null, timer:null};
+function libRhythmOf(t){ return t && t.backingTakeId ? libFind(t.backingTakeId) : null; }
+function libLayersShow(){
+  const t=lib.selected, box=document.getElementById("takelayers"); if(!box) return;
+  libLayersStop();
+  box.hidden = !(t && t.stemBlob);
+  if(box.hidden) return;
+  const rt = libRhythmOf(t);
+  ["layrhythm","layrhythmv","laydlrhythm"].forEach(id=>{ document.getElementById(id).disabled = !rt; });
+  document.getElementById("laynote").textContent = rt ? `Over ${rt.name}.` : "Its rhythm take is no longer in the library, so only your solo can be heard on its own.";
+}
+function libLayerLevels(){
+  const lv = id => Math.max(0, Math.min(1, Number(document.getElementById(id).value)/100));
+  const on = id => !!document.getElementById(id).checked;
+  return {rhythm:on("layrhythm")?lv("layrhythmv"):0, solo:on("laysolo")?lv("laysolov"):0, click:on("layclick")?lv("layclickv"):0};
+}
+function libLayersApply(){
+  const l = libLayerLevels();
+  if(layers.solo) layers.solo.volume = l.solo;
+  if(layers.rhythm) layers.rhythm.volume = l.rhythm;
+  layers.clickLevel = l.click;
+}
+function libLayersPlay(){
+  const t=lib.selected; if(!t||!t.stemBlob) return;
+  libLayersStop();
+  const rt = libRhythmOf(t), sp = t.songPlay||{offset:0,rate:1}, rate = sp.rate||1;
+  const mk = blob => { const url=URL.createObjectURL(blob); layers.urls.push(url); const el=new Audio(url); el.preservesPitch=true; el.webkitPreservesPitch=true; return el; };
+  layers.solo = mk(t.stemBlob);
+  layers.solo.currentTime = 0;
+  libLayersApply();
+  const lag = (Number.isFinite(t.calMs)?t.calMs:0)/1000;     // the solo reached the recording this late
+  const start = new Date();
+  if(rt){
+    layers.rhythm = mk(rt.blob); layers.rhythm.playbackRate = rate;
+    // the rhythm take from the song position the solo began at, held back by the same lag
+    const from = sp.offset - lag*rate;
+    if(from >= 0) layers.rhythm.currentTime = from;
+    else { layers.rhythm.currentTime = 0; layers.rhythmDelay = -from/rate; }
+    libLayersApply();
+  }
+  const go = el => { const p=el.play(); if(p&&p.catch) p.catch(()=>{}); };
+  go(layers.solo);
+  if(layers.rhythm){ if(layers.rhythmDelay>0){ const r=layers.rhythm; setTimeout(()=>{ if(layers.rhythm===r) go(r); }, layers.rhythmDelay*1000); } else go(layers.rhythm); }
+  libLayerClick(t);
+  layers.timer = setInterval(libLayersApply, 100);
+}
+// A click on the recording's bar grid, on the audio clock, at its own level.
+function libLayerClick(t){
+  const a = typeof audio==="function" ? audio() : null;
+  if(!a || !a.now || !a.blip) return;
+  const g = libGrid(t), beat = 60/t.bpm, sp = t.songPlay||{}, rate = sp.rate||1;
+  const t0 = a.now(); let k = 0;
+  const first = ((g.t0 % beat) + beat) % beat;
+  layers.clickTimer = setInterval(()=>{
+    const now = a.now();
+    while(t0 + first + k*beat < now + .12){
+      const when = t0 + first + k*beat - now;
+      if(layers.clickLevel > 0 && when > -.02) a.blip(k%4===0?1300:900,{when:Math.max(0,when),dur:.04,vol:.5*layers.clickLevel});
+      k++;
+    }
+  }, 25);
+}
+function libLayersStop(){
+  if(layers.clickTimer){ clearInterval(layers.clickTimer); layers.clickTimer=null; }
+  if(layers.timer){ clearInterval(layers.timer); layers.timer=null; }
+  [layers.solo,layers.rhythm].forEach(el=>{ if(el){ el.pause(); el.removeAttribute("src"); } });
+  layers.solo=layers.rhythm=null; layers.rhythmDelay=0;
+  layers.urls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(e){} }); layers.urls=[];
+}
+// The three parts, as files: your solo alone, the rhythm take alone, and the two mixed —
+// which is the recording itself, made with both together.
+function libLayerDownload(which){
+  const t=lib.selected; if(!t) return;
+  const rt=libRhythmOf(t), ext=n=>{ const m=/\.\w+$/.exec(n); return m?m[0]:".webm"; };
+  const file = which==="solo" ? {blob:t.stemBlob, name:t.name.replace(/\.\w+$/, "-solo"+ext(t.name))}
+    : which==="rhythm" ? {blob:rt&&rt.blob, name:rt&&rt.name.replace(/\.\w+$/, "-rhythm"+ext(rt.name))}
+    : {blob:t.blob, name:t.name.replace(/\.\w+$/, "-mixed"+ext(t.name))};
+  if(!(file.blob instanceof Blob)){ libSay("That part isn't available."); return; }
+  saveFile({url:URL.createObjectURL(file.blob), name:file.name});
+  libSay(`${file.name}: ${fileSize(file.blob.size)}.`);
+}
+
 // ---- zip (store only) and Export all ----
 const CRC_TABLE = (()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
 function crc32(bytes){ let c=0xFFFFFFFF; for(let i=0;i<bytes.length;i++) c = CRC_TABLE[(c^bytes[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
@@ -332,6 +423,9 @@ function libInit(){
   el("takenext").onchange = ()=>libSaveNext().catch(()=>libSay("That note couldn't be saved."));
   el("takespeed").onchange = ()=>{ const r=Number(el("takespeed").value); if([.5,.75,.9,1].includes(r)) el("takeplay").playbackRate=r; };
   el("takeclose").onclick = libClose;
+  el("layplay").onclick = libLayersPlay; el("laystop").onclick = libLayersStop;
+  ["layrhythm","laysolo","layclick","layrhythmv","laysolov","layclickv"].forEach(id=>{ el(id).onchange = el(id).oninput = libLayersApply; });
+  el("laydlsolo").onclick = ()=>libLayerDownload("solo"); el("laydlrhythm").onclick = ()=>libLayerDownload("rhythm"); el("laydlboth").onclick = ()=>libLayerDownload("both");
   el("takeasbacking").onclick = ()=>libUseAsBacking().catch(()=>libSay("That take couldn't be made a backing."));
   lib.timer = setInterval(libLoopTick, 50);
 }

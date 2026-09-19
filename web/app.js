@@ -2422,7 +2422,7 @@ function openTake(){
   // mixer that turns the backing down.
   .then(capture=>(capture&&backing?openCapture(ac,1).then(stem=>[capture,stem]):[capture,null]))
   .then(([capture,stem])=>{
-    let stream=input,src=null,dest=null,chanNote="",bus=null,bed=null;
+    let stream=input,src=null,dest=null,chanNote="",bus=null,bed=null,sdest=null;
     // Through Web Audio when there is one: that is where backing is mixed in, and a
     // one-channel destination downmixes a stereo interface to a true mono take.
     if(ac&&ac.createMediaStreamDestination){
@@ -2432,7 +2432,11 @@ function openTake(){
       src=n.src;chanNote=n.note;
       // the raw capture hears exactly what the compressed recording does
       const outs=capture?[dest,capture.node]:[dest];
-      if(stem)n.link(stem.node);
+      if(stem){n.link(stem.node);
+        // the solo is also kept compressed, so it can be heard on its own later
+        sdest=ac.createMediaStreamDestination();
+        sdest.channelCount=1;sdest.channelCountMode="explicit";sdest.channelInterpretation="speakers";
+        n.link(sdest);}
       if(backing){
         bus=ac.createGain();bus.channelCount=2;bus.channelCountMode="explicit";bus.channelInterpretation="speakers";
         bed=ac.createGain();bed.gain.value=REC_BACKING_LEVEL;
@@ -2446,16 +2450,23 @@ function openTake(){
     const mime=recMime(),opts={audioBitsPerSecond:96000};
     if(mime)opts.mimeType=mime;
     const recorder=new MediaRecorder(stream,opts);
+    let stemRecorder=null,stemChunks=[];
+    if(sdest){try{stemRecorder=new MediaRecorder(sdest.stream,{...opts,audioBitsPerSecond:64000});}catch(e){stemRecorder=null;}}
     const late=recLatencyMs(ac,input);
     const warn=late>REC_LATE_MS?`Your audio adds about ${late} ms of delay, so the take will sound late against the backing. `
       +"Bluetooth headphones are the usual cause: use wired ones, or your interface's outputs.":"";
-    const take={phase:"ready",input,src,dest,bus,bed,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,capture,stem,
+    const take={phase:"ready",input,src,dest,bus,bed,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,capture,stem,stemRecorder,
+      stemDone:null,stemBlob:null,
       note:[note,chanNote,warn].filter(Boolean).join(" ")};
     // Storage full: stop cleanly, keeping everything written so far.
     if(capture)capture.onFail=()=>{if(state.rec===take)stopRecording();};
     if(stem)stem.onFail=capture?capture.onFail:null;
     recorder.ondataavailable=e=>{if(e.data&&e.data.size)take.chunks.push(e.data);};
     recorder.onstop=()=>finishTake(take);
+    if(stemRecorder){
+      take.stemDone=new Promise(done=>{
+        stemRecorder.ondataavailable=e=>{if(e.data&&e.data.size)stemChunks.push(e.data);};
+        stemRecorder.onstop=()=>{if(stemChunks.length)take.stemBlob=new Blob(stemChunks,{type:stemRecorder.mimeType||mime||"audio/webm"});done();};});}
     listInputs();
     return take;});}
 // Unhooks a take from the input; the input itself is shared, so inputIdle decides
@@ -2504,6 +2515,7 @@ function startTake(t,fromTrainer){
   beginCapture(t.capture,0,takeMeta(t));   // unless bar 1 already booked it to the sample
   beginStem(t,0);
   t.recorder.start(1000);
+  if(t.stemRecorder)try{t.stemRecorder.start(1000);}catch(e){/* the solo copy is optional */}
   const say=()=>{const s=Math.floor((Date.now()-t.t0)/1000);
     // A drill on its own, off the trainer, stops after its bars at the current tempo.
     if(bars&&!fromTrainer&&(Date.now()-t.t0)/1000>=bars*4*60/t.bpm){stopRecording();return;}
@@ -2557,12 +2569,14 @@ function stopRecording(){
   recButtons();recSay("Saving the take…");
   // a drill's capture was told its last frame; otherwise it stops now
   [r.capture,r.stem].forEach(c=>{if(c&&!c.ending)c.node.port.postMessage({stop:true});});
+  if(r.stemRecorder&&r.stemRecorder.state==="recording")r.stemRecorder.stop();
   r.recorder.stop();}
 function cancelRecording(){
   const r=state.rec;
   if(!r)return;
   state.rec=null;
   if(r.clock)clearInterval(r.clock);
+  if(r.stemRecorder){r.stemRecorder.onstop=null;if(r.stemRecorder.state==="recording")r.stemRecorder.stop();}
   if(r.recorder){r.recorder.onstop=null;if(r.recorder.state==="recording")r.recorder.stop();closeTake(r);}
   [r.capture,r.stem].forEach(c=>{if(c)endCapture(c).then(meta=>meta&&dropTake(meta.id)).catch(()=>{});});
   document.getElementById("recmark").hidden=true;

@@ -4954,3 +4954,97 @@ test("a backing whose take has gone missing says so instead of failing silently"
   assert.match(rt.document.getElementById("songstatus").textContent, /The rhythm take is missing\. Record it again\./);
   assert.equal(rt.app.songs.selected, null);
 });
+
+// ---------- layers: rhythm take, your solo, and a click ----------
+async function soloOverRhythm(rt, cal = true) {
+  const rhythm = await rhythmTake(rt);
+  await rt.document.getElementById("takeasbacking").onclick(); await settle();
+  rt.document.getElementById("songcount").checked = false; rt.document.getElementById("songspeed").value = "1";
+  await rt.app.songPlay(); await settle();
+  rt.document.getElementById("recmix").value = "backing";
+  rt.document.getElementById("recbtn").click();
+  await settle();
+  rt.worklets.at(-2).feed(4800); rt.worklets.at(-1).feed(4800);
+  rt.document.getElementById("recbtn").click();
+  await settle(); await settle();
+  rt.app.songStop();
+  await rt.app.libList();
+  return { rhythm, solo: rt.app.lib.takes[0] };
+}
+
+test("the layers panel plays your solo over the rhythm take, with a level and a mute for each", async () => {
+  const rt = makeRuntime({ media: true, capture: true, stored: { "practice-desk-calibration": '{"ms":40,"how":"tap"}' } });
+  const { rhythm, solo } = await soloOverRhythm(rt);
+  assert.ok(solo.stemBlob instanceof Blob, "the solo is kept compressed, on its own");
+  await rt.app.libOpen(solo.id);
+  const box = rt.document.getElementById("takelayers");
+  assert.equal(box.hidden, false);
+  assert.match(rt.document.getElementById("laynote").textContent, new RegExp(`^Over ${rhythm.name.replace(/[.]/g, "\\.")}`));
+  const on = (id, v) => { rt.document.getElementById(id).checked = v; rt.document.getElementById(id).onchange(); };
+  const level = (id, v) => { rt.document.getElementById(id).value = String(v); rt.document.getElementById(id).oninput(); };
+  on("layrhythm", true); on("laysolo", true); level("layrhythmv", 80); level("laysolov", 100);
+  const before = rt.audioElements.length;
+  rt.document.getElementById("layplay").onclick();
+  const [soloEl, rhythmEl] = rt.audioElements.slice(before);
+  assert.equal(rt.audioElements.length - before, 2, "one player for each layer");
+  assert.equal(soloEl.playing, true); assert.equal(rhythmEl.playing, true);
+  assert.equal(soloEl.volume, 1); assert.equal(rhythmEl.volume, 0.8);
+  assert.equal(rhythmEl.playbackRate, 1); assert.equal(rhythmEl.preservesPitch, true);
+  assert.equal(rhythmEl.currentTime, 0, "from where the solo began, held back by the 40 ms lag: 0.04 - 0.04");
+  on("layrhythm", false);                      // hear yourself bare
+  assert.equal(rhythmEl.volume, 0); assert.equal(soloEl.volume, 1);
+  on("layrhythm", true); on("laysolo", false); level("layrhythmv", 30);   // the backing without you
+  assert.equal(soloEl.volume, 0); assert.equal(rhythmEl.volume, 0.3);
+  rt.document.getElementById("laystop").onclick();
+  assert.equal(soloEl.playing, false); assert.equal(rhythmEl.playing, false);
+});
+
+test("the layers click keeps the recording's beat on the audio clock, at its own level", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const { solo } = await soloOverRhythm(rt);
+  await rt.app.libOpen(solo.id);
+  rt.document.getElementById("layclick").checked = true; rt.document.getElementById("layclickv").value = "60";
+  rt.document.getElementById("layplay").onclick();
+  const osc = rt.audio.oscillators;
+  for (let i = 0; i < 100; i++) rt.advance(0.025);     // two seconds at the real timer's 25 ms: three beats at 90 bpm
+  assert.equal(rt.audio.oscillators - osc, 3, "the beats at 0.67, 1.33 and 2.0 s were booked, one click each");
+  rt.document.getElementById("layclick").checked = false; rt.document.getElementById("layclick").onchange();
+  const after = rt.audio.oscillators;
+  for (let i = 0; i < 100; i++) rt.advance(0.025);
+  assert.equal(rt.audio.oscillators, after, "muted: nothing more is booked");
+  rt.document.getElementById("laystop").onclick();
+});
+
+test("solo only, rhythm only and both mixed download as three files", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const { rhythm, solo } = await soloOverRhythm(rt);
+  await rt.app.libOpen(solo.id);
+  const stem = solo.name.replace(/\.webm$/, "-solo.webm"), rhythmName = rhythm.name.replace(/\.webm$/, "-rhythm.webm"), mixed = solo.name.replace(/\.webm$/, "-mixed.webm");
+  for (const [id, name, blob] of [["laydlsolo", stem, solo.stemBlob], ["laydlrhythm", rhythmName, rhythm.blob], ["laydlboth", mixed, solo.blob]]) {
+    rt.document.getElementById(id).onclick();
+    const link = rt.document.body.children.at(-1);
+    assert.equal(link.download, name, id);
+    assert.equal(rt.rec.urls.find(u => u.u === link.href).b.size, blob.size, `${id}: the right audio`);
+  }
+  assert.match(rt.document.getElementById("takemsg").textContent, /-mixed\.webm: /);
+});
+
+test("layers are for takes with a kept solo; a missing rhythm take leaves the solo playable", async () => {
+  const guitarOnly = makeRuntime({ media: true, capture: true });
+  const g = await rhythmTake(guitarOnly);
+  assert.equal(guitarOnly.document.getElementById("takelayers").hidden, true, "a guitar-only take has no separate solo");
+  const rt = makeRuntime({ media: true, capture: true });
+  const { rhythm, solo } = await soloOverRhythm(rt);
+  await rt.app.libDelete(rhythm.id);
+  await rt.app.libOpen(solo.id);
+  assert.equal(rt.document.getElementById("takelayers").hidden, false);
+  assert.equal(rt.document.getElementById("layrhythm").disabled, true);
+  assert.match(rt.document.getElementById("laynote").textContent, /rhythm take is no longer in the library/);
+  const before = rt.audioElements.length;
+  rt.document.getElementById("laysolo").checked = true; rt.document.getElementById("laysolov").value = "100";
+  rt.document.getElementById("layplay").onclick();
+  assert.equal(rt.audioElements.length - before, 1, "just the solo");
+  rt.document.getElementById("laystop").onclick();
+  rt.document.getElementById("laydlrhythm").onclick();
+  assert.match(rt.document.getElementById("takemsg").textContent, /isn't available/);
+});

@@ -833,6 +833,17 @@
           <button id="takeasbacking" title="Keep this take as a backing to play along to and record over">Use as backing</button>
           <button id="takeclose">Close</button>
         </div>
+        <div id="takelayers" hidden>
+          <h3 class="cx-more">Layers</h3>
+          <p id="laynote" class="tip"></p>
+          <div class="row">
+            <span class="mixpart"><label><input type="checkbox" id="layrhythm" checked> Rhythm take</label><input type="range" id="layrhythmv" min="0" max="100" value="80" aria-label="Rhythm take volume"></span>
+            <span class="mixpart"><label><input type="checkbox" id="laysolo" checked> Your solo</label><input type="range" id="laysolov" min="0" max="100" value="100" aria-label="Solo volume"></span>
+            <span class="mixpart"><label><input type="checkbox" id="layclick"> Click</label><input type="range" id="layclickv" min="0" max="100" value="50" aria-label="Click volume"></span>
+            <button id="layplay">Play layers</button><button id="laystop">Stop</button>
+          </div>
+          <div class="row"><button id="laydlsolo">Download solo only</button><button id="laydlrhythm">Download rhythm only</button><button id="laydlboth">Download both mixed</button></div>
+        </div>
         <div id="takewave" class="wave"></div>
         <div id="takemarks" class="tip"></div>
         <div id="takerate"></div>
