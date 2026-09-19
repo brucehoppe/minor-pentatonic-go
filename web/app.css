@@ -357,3 +357,6 @@
   .won0{fill:var(--blue)}.won1{fill:var(--gold)}.won2{fill:var(--pink)}
   .pgrid{stroke:var(--rule);stroke-width:.6}.pline{stroke:var(--blue);stroke-width:1.6;fill:none}.pdot{fill:var(--blue)}
   .pbar{fill:var(--gold);opacity:.55}.pmis{font-size:10px;fill:var(--pink);font-weight:600}
+  #v-songs label{font-size:12px}#v-songs #songstatus,#v-songs #loopmsg{font-size:12.5px}
+  #recdetails>summary{cursor:pointer;font-size:12px;opacity:.75}
+  #views button.due::after{content:" \u25cf";color:var(--pink)}

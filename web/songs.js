@@ -22,10 +22,11 @@ function validSection(x){
 // "Am | Dm | E7" is three bars; "Am Dm | E7" splits the first bar in two. The chord
 // overlay follows whatever the song is on, so a solo can be aimed at the right notes.
 const CHORD_TYPES={"":[0,4,7],m:[0,3,7],"7":[0,4,7,10],m7:[0,3,7,10],maj7:[0,4,7,11],"6":[0,4,7,9],m6:[0,3,7,9],
-  "9":[0,4,7,10,2],dim:[0,3,6],dim7:[0,3,6,9],m7b5:[0,3,6,10],"5":[0,7],sus4:[0,5,7],sus2:[0,2,7],aug:[0,4,8]};
+  "9":[0,4,7,10,2],dim:[0,3,6],dim7:[0,3,6,9],m7b5:[0,3,6,10],add9:[0,4,7,2],m9:[0,3,7,10,2],maj9:[0,4,7,11,2],"11":[0,4,7,10,5],"13":[0,4,7,10,9],"7sus4":[0,5,7,10],"5":[0,7],sus4:[0,5,7],sus2:[0,2,7],aug:[0,4,8]};
 const CHORD_ROOTS={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 function parseChord(text){
-  const m=/^([A-Ga-g])([#b\u266f\u266d]?)(.*)$/.exec(String(text).trim());
+  // a slash chord (Am/G) is its chord: the bass note is not a chord tone to aim at
+  const m=/^([A-Ga-g])([#b\u266f\u266d]?)(.*)$/.exec(String(text).trim().split("/")[0]);
   if(!m)return null;
   let pc=CHORD_ROOTS[m[1].toUpperCase()];
   if(m[2]==="#"||m[2]==="\u266f")pc++;else if(m[2]==="b"||m[2]==="\u266d")pc--;

@@ -2236,6 +2236,7 @@ function recLimiter(ac){
 const REC_TYPES=["audio/webm;codecs=opus","audio/webm","audio/mp4;codecs=mp4a.40.2","audio/mp4"];
 const REC_ROW=`<div class="row" id="recrow">
   <span class="lbl">Record</span>
+  <details id="recdetails" style="flex:1 1 100%"><summary>Settings: input, what to record, this take, latency, file options</summary><div class="row" style="margin-top:8px">
   <select id="recinput" aria-label="Input device"><option value="">Default input</option></select>
   <select id="recchan" aria-label="Input channel"><option value="-1">Both inputs</option><option value="0">Input 1</option><option value="1">Input 2</option></select>
   <button id="reccheck" aria-pressed="false">Check input</button>
@@ -2247,20 +2248,21 @@ const REC_ROW=`<div class="row" id="recrow">
   <select id="recmode" aria-label="Take length"><option value="full" selected>Full run-through (no limit)</option><option value="chorus">One 12-bar chorus</option><option value="drill8">Drill: 8 bars</option><option value="drill4">Drill: 4 bars</option><option value="section" disabled>One song section (add sections to a song first)</option></select>
   <select id="recfocus" aria-label="Focus: pick one"><option value="timing" selected>Focus: timing</option><option value="clean">Focus: clean notes</option><option value="bends">Focus: bends in tune</option><option value="phrasing">Focus: phrasing and space</option><option value="vibrato">Focus: vibrato</option><option value="through">Focus: getting through without stopping</option></select>
   <select id="recattempt" aria-label="Attempt"><option value="cold" selected>Cold attempt</option><option value="retest">Retest</option></select>
-  <button id="recmark" class="bigmark" hidden>Mark a mistake (M)</button>
   <span class="lbl" style="flex-basis:100%;margin-top:4px">Latency</span>
   <button id="calloop">Calibrate: loopback beep</button>
   <button id="caltap">Calibrate: tap along</button>
   <button id="caltapbtn" class="bigmark" hidden>TAP on each click</button>
   <label style="font-size:12px;display:flex;gap:5px;align-items:center">Trim <input type="number" id="calms" step="1" min="-500" max="1000" style="width:5.5em"> ms</label>
   <span id="calmsg" style="font-size:11.5px;opacity:.75;flex-basis:100%;line-height:1.5"></span>
+  <select id="recbits" aria-label="WAV bit depth"><option value="16">WAV 16-bit</option><option value="24">WAV 24-bit</option></select>
+  <select id="recq" aria-label="MP3 quality"><option value="standard">MP3 standard</option><option value="high">MP3 high</option><option value="best">MP3 best (320)</option></select>
+  </div></details>
+  <button id="recmark" class="bigmark" hidden>Mark a mistake (M)</button>
   <audio id="recplay" controls hidden style="height:32px;max-width:100%"></audio>
   <button id="recdlc" hidden>Download compressed</button>
   <button id="recdlw" hidden>Download WAV</button>
   <button id="recdlm" hidden>Download MP3</button>
   <button id="recdls" hidden>Download solo only (WAV)</button>
-  <select id="recbits" aria-label="WAV bit depth"><option value="16">WAV 16-bit</option><option value="24">WAV 24-bit</option></select>
-  <select id="recq" aria-label="MP3 quality"><option value="standard">MP3 standard</option><option value="high">MP3 high</option><option value="best">MP3 best (320)</option></select>
   <span id="recmeter" hidden style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;flex-basis:100%">
     <button id="recbar0" class="lvl" aria-label="Input 1 level; select Input 1" style="display:flex;align-items:center;gap:8px;padding:4px 8px"><span style="font-size:11.5px">Input 1</span><span style="position:relative;width:120px;height:8px;border:1px solid var(--rule)"><span id="recfill0" style="position:absolute;left:0;top:0;bottom:0;width:0"></span></span></button>
     <button id="recbar1" class="lvl" aria-label="Input 2 level; select Input 2" style="display:flex;align-items:center;gap:8px;padding:4px 8px"><span style="font-size:11.5px">Input 2</span><span style="position:relative;width:120px;height:8px;border:1px solid var(--rule)"><span id="recfill1" style="position:absolute;left:0;top:0;bottom:0;width:0"></span></span></button>
@@ -2833,8 +2835,8 @@ function finishTake(t){
       return fixTakeLength(kept,meta.frames/meta.sampleRate).then(storageNote).then(note=>{
         if(state.recTake!==kept)return;
         showTake();recSay(what+(note?" "+note:""));listSaved();
-        return typeof libKeep==="function"?libKeep(kept,t,meta,stemMeta).catch(()=>{}):null;});}
-    return decodedWav(kept,t,blob,what).then(()=>typeof libKeep==="function"?libKeep(kept,t,null,stemMeta&&stemMeta.frames?stemMeta:null).catch(()=>{}):null);});}
+        return typeof libKeep==="function"?libKeep(kept,t,meta,stemMeta).catch(keepFailed):null;});}
+    return decodedWav(kept,t,blob,what).then(()=>typeof libKeep==="function"?libKeep(kept,t,null,stemMeta&&stemMeta.frames?stemMeta:null).catch(keepFailed):null);});}
 // Without a raw master, the WAV is decoded from the compressed file. The decoded
 // length is exact; without a decoder, the recorder's own clock will do.
 function decodedWav(kept,t,blob,what){
@@ -2845,6 +2847,12 @@ function decodedWav(kept,t,blob,what){
   }),()=>fixTakeLength(kept,(Date.now()-t.t0)/1000).then(()=>{
     if(state.recTake!==kept)return;
     showTake();recSay(what+" This browser can't decode it, so there is no WAV copy.");}));}
+// The library could not keep a take: say so (once more storage may be full), unless the
+// browser simply has no storage, which needs no warning.
+function keepFailed(e){
+  if(e&&e.message==="no IndexedDB")return;
+  const el=document.getElementById("recmsg");
+  recSay((el?el.textContent+" ":"")+"It could not be kept in the library (browser storage may be full): download it now.");}
 function showTake(){
   const t=state.recTake,play=document.getElementById("recplay");
   const c=document.getElementById("recdlc"),w=document.getElementById("recdlw"),m=document.getElementById("recdlm");
@@ -4448,3 +4456,5 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
   listInputs();})();
 loadSolo();
 render();
+// the two-day re-listen prompt shows on the Songs button from the start, on any view
+if(typeof libList==="function"&&typeof libBadge==="function")libList().then(libBadge,()=>{});

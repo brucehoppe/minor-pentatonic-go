@@ -182,6 +182,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     // HTML string instead, or teach this function the selector first.
     querySelectorAll(selector) {
       const match = selector.match(/^#([\w-]+) button$/);
+      // the nav holds its buttons in one row per band, as the real page does
+      if (match && match[1] === "views") return document.getElementById("views").children.flatMap(r => r.children);
       return match ? document.getElementById(match[1]).children : [];
     },
   };
@@ -352,7 +354,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   vm.runInContext(libraryScript, context);
   vm.runInContext(looperScript, context);
   vm.runInContext(songsScript, context);
-  vm.runInContext(script + `\n;globalThis.appTest={detectOnsets,timingOffsets,timingStats,timingReport,timingWord,alignPoint,progressSeries,looper,looperRecord,looperStop,looperPlay,looperClear,looperTick,parseChord,parseChords,chordAt,songFollow,songAddSection,songBuildSections,songSaveSections,songRecordSection,songLoopSection,validSection,FORMS,lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libLoopTick,libPeaks,libSeek,
+  vm.runInContext(script + `\n;globalThis.appTest={detectOnsets,timingOffsets,timingStats,timingReport,timingWord,alignPoint,progressSeries,looper,looperRecord,looperStop,looperPlay,looperClear,looperTick,parseChord,parseChords,chordAt,songFollow,songAddSection,songBuildSections,songSaveSections,songRecordSection,songLoopSection,validSection,FORMS,lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libPut,libBadge,libLoopTick,libPeaks,libSeek,
     zipStore,crc32,validTake,cleanTake,cleanRatings,RERATE_AFTER_MS,songs,validSong,songList,songImport,songSelect,songSave,songPlay,songStop,songBounds,songNow,songTap,render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
     modeOrigins,renderNotes,neckNames,OCTAVES,NATURALS,
     renderTriads,TRIAD_KINDS,TRIAD_SETS,triadShapes,triadVoicing,midiAt,allTriadVoicings,
@@ -5504,4 +5506,34 @@ test("a full song run-through has no length limit: ten minutes streams to storag
   assert.equal(wav.byteLength, 44 + 600 * 48000 * 2);
   assert.equal(new DataView(wav).getUint32(40, true), 600 * 48000 * 2, "the header says what the data is");
   assert.equal(rt.idb.stores.get("chunks").rows.size, 0, "downloaded: the chunks are dropped");
+});
+
+// ---------- critique fixes ----------
+test("slash chords are their chord, and more chord types are understood", () => {
+  const { app } = makeRuntime();
+  assert.equal(app.parseChord("Am/G").name, "Am"); assert.equal(app.parseChord("D/F#").name, "D");
+  sameShape([...app.parseChord("Cadd9").intervals], [0, 4, 7, 2]); sameShape([...app.parseChord("G7sus4").intervals], [0, 5, 7, 10]);
+  assert.equal(app.parseChord("Am9").pc, 9);
+});
+
+test("the Record settings sit in a collapsed section, and a failed keep says so without hiding the earlier message", async () => {
+  const { app } = makeRuntime();
+  assert.match(app.REC_ROW, /<details id="recdetails"[^>]*><summary>Settings:/);
+  const rt = makeRuntime({ media: true, capture: { failAfter: 3 } });
+  rt.document.getElementById("recbtn").click(); await settle();
+  rt.worklets[0].feed(48000); await settle(); rt.worklets[0].feed(48000); await settle(); await settle();
+  assert.match(rt.document.getElementById("recmsg").textContent, /^Storage ran out, so the take stopped there\..*It could not be kept in the library/);
+});
+
+test("a take ready to hear again puts a dot on the Songs button from any view", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  await recordTake(rt);
+  await rt.app.libList();
+  const btn = navButton(rt.document, "songs");
+  rt.app.libBadge();
+  assert.equal(btn.classList.contains("due"), false, "a fresh take is not due");
+  rt.app.lib.takes[0].created -= rt.app.RERATE_AFTER_MS + 1000;
+  rt.app.libBadge();
+  assert.equal(btn.classList.contains("due"), true);
+  assert.match(btn.getAttribute("title"), /1 take is ready to hear again/);
 });

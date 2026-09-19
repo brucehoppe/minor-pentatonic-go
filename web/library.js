@@ -79,6 +79,8 @@ async function libKeep(kept, t, meta, stemMeta){
 async function libAnalyse(id, guitarMeta){
   const chunks = await masterPcm(guitarMeta);
   const bits = bitsOf(guitarMeta), ch = guitarMeta.channels||1;
+  // the first fifteen minutes: enough to judge timing, and it bounds the memory used
+  if(guitarMeta.frames > 15*60*guitarMeta.sampleRate) guitarMeta = {...guitarMeta, frames:15*60*guitarMeta.sampleRate};
   let n = 0; const per = bits===24 ? 3*ch : ch;
   for(const c of chunks) n += Math.floor(c.length/per);
   const x = new Float32Array(n); let o = 0;
@@ -159,7 +161,7 @@ function libDraw(){
   box.innerHTML = due.length ? `<b>Two days on.</b> ${due.length===1?"A take is":due.length+" takes are"} ready to hear again with fresh ears, then rate again: `
     + due.slice(0,3).map(t=>`<button data-open="${escapeHTML(t.id)}">${escapeHTML(t.name)}</button>`).join(" ") : "";
   libStorage();
-  libProgress(); abFill();
+  libProgress(); abFill(); libBadge();
 }
 function libStorage(){
   const el = document.getElementById("takestorage"), st = navigator.storage;
@@ -167,6 +169,15 @@ function libStorage(){
   st.estimate().then(e=>{ if(e&&e.quota) el.textContent = `Stored: ${fileSize(e.usage||0)} of ${fileSize(e.quota)}`; }).catch(()=>{});
 }
 
+// A dot on the Songs button when a take is ready to hear again: the two-day prompt is
+// visible from any view, not only once you open the library.
+function libBadge(){
+  const b=[...document.querySelectorAll("#views button")].find(x=>x.dataset&&x.dataset.v==="songs");
+  if(!b)return;
+  const due=lib.takes.filter(t=>libDue(t)).length;
+  b.setAttribute("title",due?`${due} take${due===1?" is":"s are"} ready to hear again`:"");
+  b.classList.toggle("due",due>0);
+}
 // ---- opening a take ----
 function libClose(){
   libLayersStop();

@@ -5,6 +5,14 @@ a second release on the same day.
 
 ## Unreleased
 
+- Critique of the finished app, and fixes: the Record settings (input, what to
+  record, this take, latency, file options) fold into one collapsed section
+  instead of filling the toolbar on every view; the Songs view's labels and status
+  lines match the rest of the desk; a take that could not be kept in the library
+  says so, without hiding the earlier message; a dot on the Songs button shows
+  when a take is ready for its two-day re-listen, from any view; slash chords
+  (Am/G) and add9, m9, maj9, 11, 13 and 7sus4 are understood; timing analysis
+  reads at most the first fifteen minutes of a take, bounding memory.
 - Hear the model: every lick has a button that plays it first, as written, at
   the current tempo. Practice theory gains a card and a reference for Hewitt
   (2001, DOI 10.2307/3345614), stating what the study did and did not show (82
