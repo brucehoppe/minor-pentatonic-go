@@ -42,7 +42,9 @@ while [ $# -gt 0 ]; do
     --user)      MODE=user ;;
     --system)    MODE=system ;;
     --dir)       [ $# -ge 2 ] || die "--dir needs a folder"; DIR="$2"; MODE=dir; shift ;;
-    --version)   [ $# -ge 2 ] || die "--version needs a tag"; VERSION="$2"; shift ;;
+    --version)   [ $# -ge 2 ] || die "--version needs a tag"; VERSION="$2"; shift
+                 # the tag goes into a URL, so allow only what a release tag contains
+                 case "$VERSION" in (*[!A-Za-z0-9._-]*|'') die "--version must be a release tag such as v2026.09.18";; esac ;;
     --zip)       [ $# -ge 2 ] || die "--zip needs a file"; ZIP="$2"; shift ;;
     --no-launch) LAUNCH=0 ;;
     --uninstall) UNINSTALL=1 ;;

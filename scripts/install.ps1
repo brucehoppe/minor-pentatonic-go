@@ -42,7 +42,9 @@ param(
     [ValidateSet('CurrentUser', 'AllUsers')]
     [string]$Scope = 'CurrentUser',
 
-    # A release tag such as v2026.09.18. Defaults to the latest release.
+    # A release tag such as v2026.09.18. Defaults to the latest release. It goes into a
+    # URL, so only what a release tag contains is accepted.
+    [ValidatePattern('^[A-Za-z0-9._-]+$')]
     [string]$Version = 'latest',
 
     # Install from a release ZIP already on disk instead of downloading one. Put the

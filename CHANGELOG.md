@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- Security review recorded in SECURITY.md: the client, the server, the
+  installers and the workflows. The installers now accept only a well-formed
+  release tag, and an imported song is limited to 300 MB. `govulncheck` finds
+  nothing in the Go program, which has no third-party dependencies.
 - Security hardening of the local server: a Permissions-Policy that allows the
   microphone to the desk alone and switches off camera, location, payment, USB,
   serial, Bluetooth and screen capture; a Cross-Origin-Resource-Policy so no
