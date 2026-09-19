@@ -2560,21 +2560,46 @@ function takeToWav(blob,mono){
 // download it, and the chunks are dropped once you have it (or discard it). Stored
 // data may come from an older version or be damaged, so every read checks its shape.
 const TAKE_DB="practice-desk-takes";
-function takeDB(){
-  if(state.takeDB)return state.takeDB;
-  state.takeDB=new Promise((ok,fail)=>{
-    if(typeof indexedDB==="undefined"||!indexedDB){fail(new Error("no IndexedDB"));return;}
-    // version 2 adds the song library: what is known about each song, and its audio
+// The tables the desk keeps: what a take is, its raw audio in chunks, the song
+// library, and each song's audio file.
+const TAKE_STORES=["takes","chunks","songs","songfiles"];
+function openTakeDB(version){
+  return new Promise((ok,fail)=>{
+    // version 2 added the song library: what is known about each song, and its audio
     // file, kept apart so listing songs never loads a file
-    const r=indexedDB.open(TAKE_DB,2);
+    const r=version===undefined?indexedDB.open(TAKE_DB):indexedDB.open(TAKE_DB,version);
     r.onupgradeneeded=()=>{const db=r.result;
       if(!db.objectStoreNames.contains("takes"))db.createObjectStore("takes",{keyPath:"id"});
       if(!db.objectStoreNames.contains("chunks"))db.createObjectStore("chunks",{keyPath:["take","seq"]});
       if(!db.objectStoreNames.contains("songs"))db.createObjectStore("songs",{keyPath:"id"});
       if(!db.objectStoreNames.contains("songfiles"))db.createObjectStore("songfiles",{keyPath:"id"});};
-    r.onsuccess=()=>ok(r.result);
-    r.onerror=()=>fail(r.error||new Error("storage unavailable"));});
-  state.takeDB.catch(()=>{/* callers see the rejection */});
+    // Another tab holds this database open at an older version and has not let go.
+    r.onblocked=()=>{state.dbBlocked=true;
+      if(typeof songSay==="function"&&document.getElementById("songstatus"))
+        songSay("Another tab of the desk is still open with older storage. Close the other desk tabs, then reload this one.");};
+    r.onsuccess=()=>{const db=r.result;
+      // A newer tab wants to upgrade: let go so it can, and reopen on next use.
+      db.onversionchange=()=>{db.close();state.takeDB=null;};
+      ok(db);};
+    r.onerror=()=>fail(r.error||new Error("storage unavailable"));});}
+// Opens the database and makes sure every table is there. A database can be at the
+// right version yet lack a table — an earlier build made it at version 2 without the
+// song library — and then no upgrade runs, so every read of that table fails. When a
+// table is missing, reopen one version higher, which is what creates it.
+function takeDB(){
+  if(state.takeDB)return state.takeDB;
+  const missing=db=>TAKE_STORES.filter(n=>!db.objectStoreNames.contains(n));
+  state.takeDB=(typeof indexedDB==="undefined"||!indexedDB?Promise.reject(new Error("no IndexedDB")):openTakeDB(2))
+    // a newer build already took it past version 2: use it as it is
+    .catch(e=>e&&e.name==="VersionError"?openTakeDB():Promise.reject(e))
+    .then(db=>{
+      if(!missing(db).length)return db;
+      const next=db.version+1;
+      db.close();
+      return openTakeDB(next).then(fixed=>{
+        if(missing(fixed).length){fixed.close();throw new Error("the browser's storage is missing tables that could not be created");}
+        return fixed;});});
+  state.takeDB.catch(()=>{state.takeDB=null;/* callers see the rejection; the next use tries again */});
   return state.takeDB;}
 // One transaction over one or more stores. fn gets the transaction and may return a
 // request, whose result the promise resolves with once everything is committed.

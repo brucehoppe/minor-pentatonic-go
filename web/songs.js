@@ -170,5 +170,5 @@ function renderSongs(){
   el("songtap").onclick=songTap;
   el("songsetdownbeat").onclick=()=>{if(songs.player)el("songdownbeat").value=songs.player.currentTime.toFixed(3);};
   el("songplay").onclick=songPlay;el("songstop").onclick=()=>{songStop();songSay("Stopped.");};
-  if(!songs.loaded)songList().catch(()=>songSay("Song storage is unavailable. Allow local storage for this page, then reload."));
+  if(!songs.loaded)songList().catch(e=>songSay(`Song storage is unavailable${e&&e.name?` (${e.name})`:""}. Allow local storage for this page, then reload.`));
 }

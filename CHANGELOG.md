@@ -5,6 +5,14 @@ a second release on the same day.
 
 ## Unreleased
 
+- Fixed: in Safari the Songs view could say "Song storage is unavailable". An
+  earlier build had left the browser's database at version 2 without the song
+  tables, so no upgrade ran and every read of them failed. The desk now checks
+  that all its tables exist after opening and, if any are missing, reopens one
+  version higher to create them; it uses a database a newer build has already
+  taken further; it lets go of the database when another tab wants to upgrade
+  it; and it says so when an older tab is blocking the upgrade. The error now
+  names what went wrong.
 - Build scripts: `scripts/build.sh` (macOS and Linux) and `scripts/build.ps1`
   (Windows) build the program from source, run the tests first, and
   cross-compile (`--target windows-x64`, `-Arch arm64`, and so on). CI builds

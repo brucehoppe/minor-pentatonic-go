@@ -247,13 +247,17 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // A small IndexedDB: the calls the take store makes, with keys compared the way
   // IndexedDB compares them for [take, seq] pairs and plain strings.
   const captureOpts = capture === true ? {} : capture || {};
-  const idb = { stores: captureOpts.store ?? new Map(), writes: 0 };
+  // version: what an earlier visit left the database at (a seeded store is a legacy
+  // version 1 unless said otherwise); opens are logged so tests can see how it was opened.
+  const idb = { stores: captureOpts.store ?? new Map(), writes: 0, opens: [],
+    version: captureOpts.version ?? (captureOpts.store ? 1 : 0), blockedOnce: !!captureOpts.blocked };
   const keyOf = (keyPath, v) => Array.isArray(keyPath) ? keyPath.map(k => v[k]) : v[keyPath];
   const inRange = (k, r) => Array.isArray(k) && k[0] === r.lo[0] && k[1] >= r.lo[1] && k[1] <= r.hi[1];
   const IDBKeyRange = { bound: (lo, hi) => ({ lo, hi, range: true }) };
   const indexedDB = {
-    open() {
+    open(name, want) {
       const req = {};
+      idb.opens.push(want);
       setImmediate(() => {
         const db = {
           objectStoreNames: { contains: n => idb.stores.has(n) },
@@ -277,8 +281,17 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
             return tx;
           },
         };
+        db.version = idb.version; db.close = () => { db.closed = true; };
         req.result = db;
-        if ((!idb.stores.has("takes")||!idb.stores.has("songs")) && req.onupgradeneeded) req.onupgradeneeded();
+        if (want !== undefined && want < idb.version) {
+          req.error = Object.assign(new Error("requested version is lower"), { name: "VersionError" });
+          req.onerror && req.onerror(); return;
+        }
+        // another tab holds an older version open: the request waits until it lets go
+        if (idb.blockedOnce && want !== undefined && want > idb.version) { idb.blockedOnce = false; req.onblocked && req.onblocked(); return; }
+        const v = want ?? Math.max(idb.version, 1);
+        if (v > idb.version) { idb.version = v; db.version = v; req.onupgradeneeded && req.onupgradeneeded(); }
+        idb.lastDb = db;
         req.onsuccess && req.onsuccess();
       });
       return req;
@@ -4370,4 +4383,65 @@ test("a take carries its calibration, and an armed take's marks count from bar 1
   sameShape(app.getTake().markers.map(m => m.t), [3.25]);
   assert.equal(app.getTake().calMs, 38);
   assert.equal([...idb.stores.get("takes").rows.values()][0].v.calMs, 38);
+});
+
+// ---------- storage that an earlier build left behind ----------
+const legacyStores = names => new Map(names.map(n => [n, { keyPath: n === "chunks" ? ["take", "seq"] : "id", rows: new Map() }]));
+
+test("a database already at version 2 but missing the song tables is repaired, not abandoned", async () => {
+  // What broke Safari: an earlier build left version 2 with only takes and chunks, so
+  // opening at version 2 ran no upgrade and every read of songs failed.
+  const rt = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks"]), version: 2 } });
+  const list = await rt.app.songList();
+  sameShape(list, []);
+  assert.ok(rt.idb.stores.has("songs") && rt.idb.stores.has("songfiles"), "the missing tables were created");
+  sameShape(rt.idb.opens, [2, 3], "opened at 2, found tables missing, reopened one version higher");
+  assert.equal(rt.idb.version, 3);
+  assert.equal(rt.idb.lastDb.closed !== true, true, "the working connection is the repaired one");
+  // and songs really work afterwards
+  const s = await rt.app.songImport(songFile());
+  assert.equal(rt.idb.stores.get("songfiles").rows.size, 1);
+  assert.equal(rt.app.songs.selected.id, s.id);
+  assert.notEqual(rt.document.getElementById("songstatus").textContent.slice(0, 12), "Song storage");
+});
+
+test("a database left at a newer version than this build asks for is used as it is", async () => {
+  const rt = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks", "songs", "songfiles"]), version: 5 } });
+  sameShape(await rt.app.songList(), []);
+  sameShape(rt.idb.opens, [2, undefined], "a VersionError falls back to opening without a version");
+  assert.equal(rt.idb.version, 5, "and never lowers it");
+});
+
+test("a legacy version 1 database is upgraded once, and a fresh one is created whole", async () => {
+  const legacy = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks"]) } });
+  await legacy.app.songList();
+  sameShape(legacy.idb.opens, [2]);
+  assert.ok(legacy.idb.stores.has("songs"));
+  const fresh = makeRuntime({ media: true, capture: true });
+  await fresh.app.songList();
+  for (const n of ["takes", "chunks", "songs", "songfiles"]) assert.ok(fresh.idb.stores.has(n), n);
+});
+
+test("an older tab holding the database blocks the upgrade, and the Songs view says what to do", async () => {
+  const rt = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks"]), blocked: true } });
+  navButton(rt.document, "songs").click();
+  await settle();
+  assert.match(rt.document.getElementById("songstatus").textContent, /Another tab of the desk is still open with older storage\. Close the other desk tabs, then reload/);
+});
+
+test("this tab lets go of the database when a newer tab wants to upgrade it", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  await rt.app.songList();
+  const first = rt.idb.lastDb;
+  first.onversionchange();
+  assert.equal(first.closed, true, "closed, so the other tab is not left waiting");
+  await rt.app.songList();
+  assert.notEqual(rt.idb.lastDb, first, "and reopened on next use");
+});
+
+test("when storage cannot open at all, the Songs view names the error and the next try starts afresh", async () => {
+  const rt = makeRuntime({ media: true });        // no IndexedDB in this browser
+  navButton(rt.document, "songs").click();
+  await settle();
+  assert.match(rt.document.getElementById("songstatus").textContent, /^Song storage is unavailable \(Error\)\. Allow local storage for this page, then reload\.$/);
 });
