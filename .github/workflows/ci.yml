@@ -39,7 +39,7 @@ jobs:
       - name: Go tests, with the race detector (also runs the frontend suite)
         run: go test -race -count=1 ./...
       - name: Frontend suite
-        run: node --test tests/app.test.mjs
+        run: node --test tests/app.test.mjs tests/pitch.test.mjs
       - name: Build script (host build, and a Windows cross-compile)
         run: |
           ./scripts/build.sh --skip-tests --out "$RUNNER_TEMP/host"

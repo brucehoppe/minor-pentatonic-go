@@ -109,10 +109,12 @@ go install github.com/brucehoppe/minor-pentatonic-go@latest
 
 | | |
 |---|---|
-| ![Five boxes: the whole neck plus each box on its own](docs/screenshots/five-boxes.png) | ![All 12 keys: Box 1 and Box 4 zones with the slide run, in every key](docs/screenshots/all-12-keys.png) |
+| ![Five boxes: the whole-neck map and each box on its own](docs/screenshots/five-boxes.png) | ![All 12 keys: Box 1 and Box 4 zones with the slide run, in every key](docs/screenshots/all-12-keys.png) |
 | **5 boxes** — whole-neck map, individual shapes and focused box selection | **All 12 keys** — Box 1 and Box 4 in every key, with the slide run between them |
 | ![Open tunings: root map and retuning guide for Open D](docs/screenshots/open-tunings.png) | ![12-bar trainer: the form, the current chord and its target tones](docs/screenshots/12-bar-trainer.png) |
 | **Open tunings** — where the roots sit after retuning, and how far to turn each peg | **12-bar trainer** — the form moves with the groove and names each chord's target tones |
+| ![Tuner and bend check: a whole-step bend on the G string drawn against its target, with the verdict and vibrato reading](docs/screenshots/tuner-and-bends.png) | ![Practice: the Today plan and the one-minute chord changes drill](docs/screenshots/practice.png) |
+| **Tuner & bends** — tune to any of six tunings, then bend to a target and see where it landed and how steady the vibrato was | **Practice** — a plan for today, one-minute chord changes with a best to beat, and the rest of the practice tools |
 
 <p align="center"><img src="docs/screenshots/seven-licks.jpg" width="360" alt="Seven Licks lesson: the pull-off pair, with fretboard, tab and a practice note"><br><b>Seven Licks</b> — a supplementary written lesson</p>
 
@@ -177,12 +179,21 @@ THIRD_PARTY_NOTICES.md  the bundled fonts and their licences
 main.go              server, single-instance handling, packaging behaviour
 web/index.html       the page: markup only
 web/app.css          styles
-web/app.js           the whole interactive desk
+web/app.js           the desk: views, audio engines, recording, the trainer
+web/pitch.js         pitch detection (YIN), the tuner's targets, bend and vibrato reports
+web/tune.js          the Tuner & bends view: listens to the input and draws the result
+web/changes.js       one-minute chord changes
+web/band.js          the synthesised backing band
+web/analysis.js      note onsets and timing against the beat
+web/library.js       the take library; web/songs.js your songs; web/looper.js the looper
+web/chord-explorer.js, triads-explorer.js, inversions-explorer.js   the chord explorers
+web/rec-worklet.js, mp3-worker.js   raw capture on the audio thread; MP3 encoding
 web/seven-licks.html supplementary written lesson
 web/seven-licks.js   its script (pages carry no inline scripts; see Security)
 web/assets/          the hero image and the tab icon (SVG, plus a PNG for home screens)
 web/assets/fonts/    the bundled typefaces, plus their licences
 tests/app.test.mjs   headless frontend suite
+tests/pitch.test.mjs pitch detection against synthetic strings with known answers
 docs/screenshots/    images for this README; not embedded
 .github/workflows/   CI, the live demo (Pages) and tag-triggered releases
 scripts/release.sh   consumer packages for macOS and Windows
@@ -368,12 +379,12 @@ links, so the app never fetches from the network and has no links to go stale.
 go test ./...
 ```
 
-This runs both the Go HTTP/embedding tests and the headless JavaScript feature suite. The frontend suite loads `web/app.js` into a `vm` context against a small DOM stand-in — read the "SUPPORTED SELECTORS" note at the top of `tests/app.test.mjs` before relying on `querySelectorAll` in new code, because unsupported selectors return an empty list rather than failing. It exercises every navigation view, all 12 keys, all three registers, both audio engines (including decoding the compatibility engine's WAV output to verify pitch and a seamless drone loop), solo-zone construction and run patterns, power-chord shapes and progressions, song-form data, the guide's exercises and routines, landmark charts, slide paths, whole-neck blues map coverage and isolation, the ♭5 overlay, note-to-pitch mapping, display controls, generated drills, quizzes, session building, and audio controls through a deterministic audio mock. The mock has a controllable audio clock (`advance()` in the harness), which is how the beat-timing tests check that clicks stay on the grid under an irregular timer. Node.js is required for the frontend portion; the Go tests report it as skipped when Node is unavailable.
+This runs both the Go HTTP/embedding tests and the headless JavaScript feature suite. The frontend suite loads `web/app.js` into a `vm` context against a small DOM stand-in — read the "SUPPORTED SELECTORS" note at the top of `tests/app.test.mjs` before relying on `querySelectorAll` in new code, because unsupported selectors return an empty list rather than failing. It exercises every navigation view, all 12 keys, all three registers, both audio engines (including decoding the compatibility engine's WAV output to verify pitch and a seamless drone loop), solo-zone construction and run patterns, power-chord shapes and progressions, song-form data, the guide's exercises and routines, landmark charts, slide paths, whole-neck blues map coverage and isolation, the ♭5 overlay, note-to-pitch mapping, the tuner and bend check fed by a controllable pitch, stage progress, lick tempos and the one-minute changes drill, display controls, generated drills, quizzes, session building, and audio controls through a deterministic audio mock. The mock has a controllable audio clock (`advance()` in the harness), which is how the beat-timing tests check that clicks stay on the grid under an irregular timer. `tests/pitch.test.mjs` tests `web/pitch.js` on synthetic plucked strings from low E to 1318 Hz (within 3 cents), on silence and noise, and on bends and vibrato with known answers. Node.js is required for the frontend portion; the Go tests report it as skipped when Node is unavailable.
 
 To run only the frontend suite:
 
 ```sh
-node --test tests/app.test.mjs
+node --test tests/app.test.mjs tests/pitch.test.mjs
 ```
 
 CI (`.github/workflows/ci.yml`) runs `gofmt`, `go vet`, `go test -race` and the

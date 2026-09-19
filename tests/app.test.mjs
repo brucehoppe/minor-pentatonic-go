@@ -5716,6 +5716,7 @@ test("the bend check reads a whole note, says where it landed, and keeps the res
   assert.ok(b.rate && Math.abs(b.rate - 5.5) < 0.6, `vibrato ${b.rate}`);
   assert.match(document.getElementById("bendstatus").innerHTML, /<b>Flat<\/b> by (2[7-9]|3[0-3]) cents/);
   assert.match(document.getElementById("bendlog").innerHTML, /0<\/b> in tune/);
+  assert.match(document.getElementById("bendlog").innerHTML, /Last bend</, "one bend isn't \"Last 1 bends\"");
   assert.equal(app.readDays().length, 1, "a checked bend counts as practice");
   // an in-tune one
   for (let t = 0; t < 1; t += 0.025) { st = t < 0.3 ? 0 : 2.05; advance(0.025); }

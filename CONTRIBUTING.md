@@ -16,16 +16,19 @@ You need Go 1.26.8 or newer, and Node.js 24 or newer for the frontend tests.
 ```sh
 go run . -dev        # serves ./web from disk: edit, then reload the browser
 go test ./...        # Go tests plus the headless frontend suite
-node --test tests/app.test.mjs   # frontend suite on its own
+node --test tests/app.test.mjs tests/pitch.test.mjs   # frontend suites on their own
 ```
 
 Where things live:
 
 - `main.go`: the local server, security headers and launch behaviour.
-- `web/`: everything the browser gets. `app.js` holds the whole practice desk;
-  its mutable state is in the single `state` object near the top.
+- `web/`: everything the browser gets. `app.js` holds the practice desk; its mutable
+  state is in the single `state` object near the top. `pitch.js` is pure functions on
+  samples (no page access), so it is tested on its own; `tune.js` and `changes.js`
+  are the page around it and share `app.js`'s `state`.
 - `tests/app.test.mjs`: the frontend suite. Read the "SUPPORTED SELECTORS" note at
   the top before relying on `querySelectorAll` in new code.
+- `tests/pitch.test.mjs`: pitch detection, bends and vibrato, on signals with known answers.
 
 ## Rules the tests enforce
 

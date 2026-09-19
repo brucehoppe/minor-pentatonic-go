@@ -226,7 +226,7 @@ function bendSentence(o, bend) {
 function renderBendLog() {
   const log = readBends(), host = document.getElementById("bendlog");
   const bends = log.filter(x => x.by).slice(0, 10), good = bends.filter(x => x.verdict === "in tune").length;
-  host.innerHTML = (bends.length ? `<li><span>Last ${bends.length} bends</span><span><b>${good}</b> in tune</span></li>` : "")
+  host.innerHTML = (bends.length ? `<li><span>${bends.length === 1 ? "Last bend" : `Last ${bends.length} bends`}</span><span><b>${good}</b> in tune</span></li>` : "")
     + log.slice(0, 5).map(x => `<li><span>${x.by ? `${["", "½", "whole", "1½"][x.by]} step, string ${x.s + 1} fret ${x.f}` : `vibrato, string ${x.s + 1} fret ${x.f}`}</span><span>${
       escapeHTML(x.by ? (x.verdict === "not reached" ? "not reached" : `${x.verdict}${x.cents !== null ? ` (${x.cents > 0 ? "+" : ""}${x.cents})` : ""}`) : "")}${x.rate ? ` · ${x.rate}/s` : ""}</span></li>`).join("");
 }

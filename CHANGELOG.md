@@ -5,6 +5,11 @@ a second release on the same day.
 
 ## Unreleased
 
+- Screenshots refreshed for the redesigned desk (home, 5 boxes, All 12 keys, Open
+  tunings, 12-bar trainer), with two new ones: Tuner & bends, showing a bend
+  checked against its target, and Practice. The README's file layout and test
+  instructions list the pitch, tuner and changes modules and `tests/pitch.test.mjs`.
+  The bend log says "Last bend" for one bend, not "Last 1 bends".
 - Fixes from a UI and function sweep of every view, at 1280, 375 and 320 px wide,
   clicking every safe button with the console watched. Blues boxes: the Box 1–5
   isolate buttons threw (`R is not defined`) and left the map label stale; they
