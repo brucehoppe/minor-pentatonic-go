@@ -14,6 +14,8 @@ a second release on the same day.
   through the app's audio (so they
   work in Lockdown Mode), and colour notes by job with the root as a square.
   In these two views chords are spelt as on a chart: E♭, A♭, B♭, C♯, F♯.
+- The 12-bar trainer opens with a poster for its backing band, Rats of Chaos of
+  Grid Lock.
 - The 12-bar trainer has a backing band, first part: drums and bass,
   synthesised in `web/band.js`. Four feels (shuffle, straight rock, slow blues
   12/8, funk 16ths), a swing slider from 50% to 75% with the triplet feel

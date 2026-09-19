@@ -337,3 +337,5 @@
   .mixpart{display:inline-flex;align-items:center;gap:6px;margin-right:8px}
   .mixpart input[type=range]{width:90px}
   #ladderto{width:5em;font:inherit;padding:5px 6px;border:1px solid var(--rule);background:var(--card)}
+  /* the band's poster at the top of the 12-bar trainer */
+  .poster figcaption{font-size:11.5px;letter-spacing:.06em;padding:6px 10px;border-top:1px solid var(--rule)}
