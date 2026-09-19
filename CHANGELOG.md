@@ -5,6 +5,7 @@ a second release on the same day.
 
 ## Unreleased
 
+- README: the Rats of Chaos of Grid Lock banner sits on the front page, captioned "Your backing band: Rats of Chaos of Grid Lock" and saying they are your fictional band (a 1600 px JPEG of about 400 kB under `docs/`).
 - README: says that Rats of Chaos of Grid Lock, the 12-bar trainer's backing band, is your fictional band.
 - The two kaiju graphics are bigger so they no longer get lost: the masthead
   guitarist is 320 px wide (was 182) and the Rats of Chaos poster on the 12-bar

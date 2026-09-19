@@ -12,7 +12,9 @@ An interactive practice desk for learning the minor pentatonic scale across the 
 
 It is one small program with the whole app built in. It runs on your own computer, opens in your browser, works offline and sends nothing anywhere. It grew out of the standalone page in `reference/`.
 
-The band on the 12-bar trainer, **Rats of Chaos of Grid Lock**, is your fictional band: no real group, recording or song is involved.
+![Your backing band: Rats of Chaos of Grid Lock](docs/rats-of-chaos-of-grid-lock.jpg)
+
+**Your backing band: Rats of Chaos of Grid Lock.** They are your fictional band, the one that plays along on the 12-bar trainer: no real group, recording or song is involved.
 
 ![The practice desk: compact risograph masthead, lesson index and current practice stage](docs/screenshots/home.png)
 
