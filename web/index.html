@@ -797,6 +797,33 @@
       </div>
       <p id="songstatus" role="status" aria-live="polite">Import an MP3, M4A or WAV to begin.</p>
     </div>
+    <div class="card" id="takecard">
+      <h2>Your takes<em>kept on this device</em></h2>
+      <p class="tip">Every take you record is kept here with its rating. Rate it against your one focus, come back two days later, listen with fresh ears and rate it again: the two ratings sit side by side.</p>
+      <div class="row">
+        <label>Song <select id="takefilter"><option value="">All takes</option></select></label>
+        <button id="takeexport">Export all (zip)</button>
+        <span id="takestorage" class="bandnote"></span>
+      </div>
+      <p id="rerate" class="tip" hidden></p>
+      <div id="takelist"></div>
+      <div id="takedetail" hidden>
+        <h3 id="taketitle"></h3>
+        <audio id="takeplay" controls></audio>
+        <div class="row">
+          <label>Speed <select id="takespeed"><option value="1">100%</option><option value="0.9">90%</option><option value="0.75">75%</option><option value="0.5">50%</option></select></label>
+          <label><input id="takeloop" type="checkbox"> A–B loop</label>
+          <label>A (s) <input id="takeloopa" type="number" min="0" step="0.1"></label>
+          <label>B (s) <input id="takeloopb" type="number" min="0" step="0.1"></label>
+          <button id="takeclose">Close</button>
+        </div>
+        <div id="takewave" class="wave"></div>
+        <div id="takemarks" class="tip"></div>
+        <div id="takerate"></div>
+        <label class="tip">What to fix next <input id="takenext" maxlength="200" placeholder="One line"></label>
+      </div>
+      <p id="takemsg" role="status" aria-live="polite" class="tip"></p>
+    </div>
   </section>
 
   <section id="v-trainer" hidden>
@@ -889,6 +916,7 @@
 <script src="triads-explorer.js" defer></script>
 <script src="inversions-explorer.js" defer></script>
 <script src="band.js" defer></script>
+<script src="library.js" defer></script>
 <script src="songs.js" defer></script>
 <script src="app.js" defer></script>
 </body>

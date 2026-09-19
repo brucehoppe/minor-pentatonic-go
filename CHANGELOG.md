@@ -5,6 +5,14 @@ a second release on the same day.
 
 ## Unreleased
 
+- Your takes: finished takes are kept in a library (the compressed file plus
+  focus, cold/retest, mistake marks and calibration), listed in the Songs view.
+  Open one for a waveform with bar lines, sections and marks (click to jump),
+  playback with slow-down and an A–B loop, 1–5 ratings for the whole take and
+  each section, a suggested weakest section, and a note for what to fix next.
+  Two days later the desk prompts a re-listen and shows both ratings side by
+  side. Export all writes a zip of takes and a JSON of ratings, markers and
+  stats, never a song file. The database moves to version 3 for this.
 - Fixed: in Safari the Songs view could say "Song storage is unavailable". An
   earlier build had left the browser's database at version 2 without the song
   tables, so no upgrade ran and every read of them failed. The desk now checks

@@ -341,3 +341,16 @@
   .poster figcaption{font-size:11.5px;letter-spacing:.06em;padding:6px 10px;border-top:1px solid var(--rule)}
   /* the mistake marker and the tap-along button: big enough to hit without looking */
   .bigmark{font-size:16px;padding:14px 22px;font-weight:600;border-color:var(--pink);color:var(--ink)}
+  /* the take library in the Songs view */
+  .takerow{font-size:12.5px;line-height:1.9;border-bottom:1px solid var(--rule);padding:4px 0}
+  .wave svg{display:block;width:100%;height:auto;border:1px solid var(--rule);background:var(--card);cursor:pointer}
+  .wpeaks{stroke:var(--blue);stroke-width:1;fill:none}
+  .wbar{stroke:var(--rule);stroke-width:.6}
+  .wmark{stroke:var(--pink);stroke-width:2}
+  .wplay{stroke:var(--ink);stroke-width:1.5}
+  .wsec0{fill:#0F6FC51a}.wsec1{fill:#E0A10022}
+  .wlbl{font-size:9px;fill:var(--ink);opacity:.7}
+  .raterow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0;font-size:12.5px}
+  .raterow>span:first-child{min-width:9em}
+  .ratenote{opacity:.7;font-size:11.5px}
+  #takenext{width:min(30em,90%)}

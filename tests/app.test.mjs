@@ -23,6 +23,7 @@ const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-
   .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
 const songsScript = readFileSync(new URL("../web/songs.js", import.meta.url), "utf8");
+const libraryScript = readFileSync(new URL("../web/library.js", import.meta.url), "utf8");
 
 class Element {
   constructor(id = "", tagName = "div") {
@@ -57,6 +58,9 @@ class Element {
   querySelector() { return new Element(); }
   querySelectorAll() { return []; }
   scrollIntoView() {}
+  // enough of an <audio> element for the page's own players (takes, songs)
+  pause() { this.paused = true; } play() { this.paused = false; return Promise.resolve(); }
+  removeAttribute(name) { delete this.attributes[name]; if (name === "src") this.src = ""; }
   // A disabled button does nothing when clicked, here as in a browser — which is
   // what makes the toolbar-gating tests below mean anything.
   click() {
@@ -319,7 +323,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   const URLForApp = { createObjectURL: b => { const u = `blob:${rec.urls.length}`; rec.urls.push({ u, b }); return u; },
     revokeObjectURL: u => rec.revoked.push(u) };
   const context = vm.createContext({
-    console, document, window, Math: MathForApp, location, fetch, navigator,
+    console, document, window, Math: MathForApp, location, fetch, navigator, TextEncoder, TextDecoder,
     btoa: (str) => Buffer.from(str, "binary").toString("base64"),
     ...(audioMode === false ? {} : { Audio: AudioEl }),
     ...(media ? { MediaRecorder } : {}), Blob, URL: URLForApp,
@@ -339,8 +343,10 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // with those scripts missing.
   if (explorers) for (const f of explorerScripts) vm.runInContext(f, context);
   if (band) vm.runInContext(bandScript, context);   // band:false is the page without web/band.js
+  vm.runInContext(libraryScript, context);
   vm.runInContext(songsScript, context);
-  vm.runInContext(script + `\n;globalThis.appTest={songs,validSong,songList,songImport,songSelect,songSave,songPlay,songStop,songBounds,songNow,songTap,render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
+  vm.runInContext(script + `\n;globalThis.appTest={lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libLoopTick,libPeaks,libSeek,
+    zipStore,crc32,validTake,cleanTake,cleanRatings,RERATE_AFTER_MS,songs,validSong,songList,songImport,songSelect,songSave,songPlay,songStop,songBounds,songNow,songTap,render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
     modeOrigins,renderNotes,neckNames,OCTAVES,NATURALS,
     renderTriads,TRIAD_KINDS,TRIAD_SETS,triadShapes,triadVoicing,midiAt,allTriadVoicings,
     renderInversions,PROGRESSIONS,voiceLead,travel,chordLabel,INVERSION,fretboard,
@@ -3752,7 +3758,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {
@@ -4387,16 +4393,18 @@ test("a take carries its calibration, and an armed take's marks count from bar 1
 
 // ---------- storage that an earlier build left behind ----------
 const legacyStores = names => new Map(names.map(n => [n, { keyPath: n === "chunks" ? ["take", "seq"] : "id", rows: new Map() }]));
+const ALL_STORES = ["takes", "chunks", "songs", "songfiles", "library"];
 
-test("a database already at version 2 but missing the song tables is repaired, not abandoned", async () => {
-  // What broke Safari: an earlier build left version 2 with only takes and chunks, so
-  // opening at version 2 ran no upgrade and every read of songs failed.
-  const rt = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks"]), version: 2 } });
+test("a database already at the current version but missing tables is repaired, not abandoned", async () => {
+  // What broke Safari: an earlier build left the database at the version this build
+  // asks for, without the song tables, so opening ran no upgrade and every read failed.
+  const rt = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks"]), version: 3 } });
   const list = await rt.app.songList();
   sameShape(list, []);
   assert.ok(rt.idb.stores.has("songs") && rt.idb.stores.has("songfiles"), "the missing tables were created");
-  sameShape(rt.idb.opens, [2, 3], "opened at 2, found tables missing, reopened one version higher");
-  assert.equal(rt.idb.version, 3);
+  sameShape(rt.idb.opens, [3, 4], "opened at 3, found tables missing, reopened one version higher");
+  assert.equal(rt.idb.version, 4);
+  assert.ok(rt.idb.stores.has("library"), "including the take library");
   assert.equal(rt.idb.lastDb.closed !== true, true, "the working connection is the repaired one");
   // and songs really work afterwards
   const s = await rt.app.songImport(songFile());
@@ -4406,20 +4414,23 @@ test("a database already at version 2 but missing the song tables is repaired, n
 });
 
 test("a database left at a newer version than this build asks for is used as it is", async () => {
-  const rt = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks", "songs", "songfiles"]), version: 5 } });
+  const rt = makeRuntime({ media: true, capture: { store: legacyStores(ALL_STORES), version: 5 } });
   sameShape(await rt.app.songList(), []);
-  sameShape(rt.idb.opens, [2, undefined], "a VersionError falls back to opening without a version");
+  sameShape(rt.idb.opens, [3, undefined], "a VersionError falls back to opening without a version");
   assert.equal(rt.idb.version, 5, "and never lowers it");
 });
 
 test("a legacy version 1 database is upgraded once, and a fresh one is created whole", async () => {
   const legacy = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks"]) } });
   await legacy.app.songList();
-  sameShape(legacy.idb.opens, [2]);
-  assert.ok(legacy.idb.stores.has("songs"));
+  sameShape(legacy.idb.opens, [3]);
+  for (const n of ALL_STORES) assert.ok(legacy.idb.stores.has(n), n);
+  const v2 = makeRuntime({ media: true, capture: { store: legacyStores(["takes", "chunks", "songs", "songfiles"]), version: 2 } });
+  await v2.app.libList();
+  assert.ok(v2.idb.stores.has("library"), "a version 2 database gains the library on upgrade");
   const fresh = makeRuntime({ media: true, capture: true });
   await fresh.app.songList();
-  for (const n of ["takes", "chunks", "songs", "songfiles"]) assert.ok(fresh.idb.stores.has(n), n);
+  for (const n of ALL_STORES) assert.ok(fresh.idb.stores.has(n), n);
 });
 
 test("an older tab holding the database blocks the upgrade, and the Songs view says what to do", async () => {
@@ -4444,4 +4455,189 @@ test("when storage cannot open at all, the Songs view names the error and the ne
   navButton(rt.document, "songs").click();
   await settle();
   assert.match(rt.document.getElementById("songstatus").textContent, /^Song storage is unavailable \(Error\)\. Allow local storage for this page, then reload\.$/);
+});
+
+// ---------- the take library ----------
+async function recordTake(rt, { ms = 4800, before = () => {}, after = () => {} } = {}) {
+  before();
+  rt.document.getElementById("recbtn").click();
+  await settle();
+  rt.worklets.at(-1).feed(ms);
+  await settle();
+  after();
+  rt.document.getElementById("recbtn").click();
+  await settle(); await settle();
+}
+
+test("a finished take is kept in the library with its settings, marks and calibration", async () => {
+  const rt = makeRuntime({ media: true, capture: true, stored: { "practice-desk-calibration": '{"ms":41,"how":"tap"}' } });
+  rt.app.setKey(9); rt.app.setBpm(100);
+  rt.document.getElementById("recfocus").value = "phrasing";
+  rt.document.getElementById("recattempt").value = "retest";
+  await recordTake(rt, { after: () => { rt.clock.t += 1.5; rt.document.dispatch("keydown", { key: "m" }); } });
+  const [t] = await rt.app.libList();
+  assert.match(t.name, /^practice-A-full-100bpm-\d{8}-\d{6}-retest\.webm$/);
+  assert.equal(t.focus, "phrasing"); assert.equal(t.attempt, "retest"); assert.equal(t.calMs, 41);
+  sameShape(t.markers.map(m => m.t), [1.5]);
+  assert.ok(t.blob instanceof Blob, "the compressed take itself is kept");
+  assert.equal(t.ratings.whole, null);
+  assert.equal(t.masterId !== null, true, "linked to its WAV master");
+  navButton(rt.document, "songs").click();
+  await settle();
+  const list = rt.document.getElementById("takelist").innerHTML;
+  assert.match(list, /retest/); assert.match(list, /phrasing and space/); assert.match(list, /1 mistake/); assert.match(list, /not rated yet/);
+});
+
+test("a take is rated against its one focus, and again two days later, side by side", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  await recordTake(rt);
+  await rt.app.libList();
+  const id = rt.app.lib.takes[0].id;
+  navButton(rt.document, "songs").click(); await settle();
+  await rt.app.libOpen(id);
+  const rate = rt.document.getElementById("takerate");
+  assert.match(rate.innerHTML, /Your one focus was <b>timing<\/b>/);
+  await rt.app.libSetRating("whole", 3);
+  assert.equal(rt.app.lib.selected.ratings.whole, 3);
+  assert.equal(rt.app.libDue(rt.app.lib.selected), false, "not yet: it was just made");
+  assert.doesNotMatch(rt.document.getElementById("rerate").innerHTML, /Two days on/);
+  // two days later
+  const t = rt.app.lib.selected;
+  t.created -= rt.app.RERATE_AFTER_MS + 1000;
+  await rt.app.libSetRating("whole", 3);   // still the first rating: not yet re-rated, and due now
+  assert.ok(rt.app.libDue(t) || t.rerate, "due, or already answered");
+  const t2 = (await rt.app.libList())[0];
+  assert.equal(t2.ratings.whole, 3, "the first rating is kept");
+  await rt.app.libOpen(t2.id);
+  await rt.app.libSetRating("whole", 5);
+  const after = rt.app.lib.selected;
+  assert.equal(after.ratings.whole, 3, "immediately: 3");
+  assert.equal(after.rerate.ratings.whole, 5, "two days later: 5");
+  assert.match(rate.innerHTML, /immediately 3 · two days later 5/);
+  assert.equal(rt.app.libDue(after), false, "answered");
+  await rt.app.libSetRating("whole", 9);   // not a rating
+  assert.equal(rt.app.lib.selected.rerate.ratings.whole, 5);
+});
+
+test("ratings, notes and marks are stored defensively: damaged records are ignored or cleaned", async () => {
+  const good = { id: "t1", created: Date.now(), name: "a.webm", mime: "audio/webm", blob: new Blob(["x"]), seconds: 3, key: 9, bpm: 90 };
+  const store = legacyStores(ALL_STORES);
+  const put = (rec) => store.get("library").rows.set(JSON.stringify(rec && rec.id), { key: rec && rec.id, v: rec });
+  put({ ...good, focus: "<b>", attempt: "x", markers: [{ t: -1 }, { t: "a" }, { t: 2 }], next: "y".repeat(500),
+    ratings: { whole: 9, sections: { "<img>": 4, ok: 3, bad: 7 } }, songId: 5 });
+  put({ ...good, id: "t2", blob: "not a blob" });
+  put({ ...good, id: "t3", key: 99 });
+  put({ ...good, id: "t4", seconds: NaN });
+  put(null);
+  const rt = makeRuntime({ media: true, capture: { store, version: 3 } });
+  const takes = await rt.app.libList();
+  assert.equal(takes.length, 1, "only the well-formed record survives");
+  const t = takes[0];
+  assert.equal(t.focus, "timing", "an unknown focus falls back"); assert.equal(t.attempt, "cold");
+  sameShape(t.markers, [{ t: 2, kind: "mistake" }]);
+  assert.equal(t.next.length, 200); assert.equal(t.ratings.whole, null);
+  sameShape(t.ratings.sections, { "<img>": 4, ok: 3 });
+  assert.equal(t.songId, null);
+  navButton(rt.document, "songs").click(); await settle();
+  await rt.app.libOpen("t1");
+  assert.doesNotMatch(rt.document.getElementById("takerate").innerHTML, /<img>/, "a stored name is text, never markup");
+});
+
+test("the waveform draws peaks, bar lines and marks, and clicking it jumps the player", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  rt.app.setBpm(120);
+  await recordTake(rt, { after: () => { rt.clock.t += 0.02; rt.document.dispatch("keydown", { key: "m" }); } });
+  const t = (await rt.app.libList())[0];
+  t.seconds = 10;                                       // ten seconds: five 2 s bars at 120 bpm
+  navButton(rt.document, "songs").click(); await settle();
+  await rt.app.libOpen(t.id); await settle();
+  const svg = rt.document.getElementById("takewave").innerHTML;
+  assert.match(svg, /^<svg viewBox="0 0 600 100" role="img" aria-label="Waveform of /);
+  assert.equal((svg.match(/class="wbar"/g) || []).length, 5, "a line at each bar: 0, 2, 4, 6, 8 s");
+  assert.match(svg, /class="wmark"/, "the mistake");
+  assert.match(svg, /<path class="wpeaks" d="M0\.5,/, "decoded peaks: the mock's constant 0.25");
+  const play = rt.document.getElementById("takeplay");
+  rt.app.libSeek(4);
+  assert.equal(play.currentTime, 4);
+  rt.app.libSeek(99);
+  assert.equal(play.currentTime, 10, "clamped to the take");
+  rt.document.getElementById("takewave").onclick({ clientX: 150, currentTarget: { getBoundingClientRect: () => ({ left: 0, width: 300 }) } });
+  assert.equal(play.currentTime, 5, "halfway across, halfway through");
+  rt.document.getElementById("takemarks").onclick({ target: { dataset: { jump: "1.25" } } });
+  assert.equal(play.currentTime, 1.25);
+  rt.document.getElementById("takeloop").checked = true;
+  rt.document.getElementById("takeloopa").value = "2"; rt.document.getElementById("takeloopb").value = "3";
+  play.currentTime = 3.05; rt.app.libLoopTick();
+  assert.equal(play.currentTime, 2, "the A–B loop returns to A");
+  rt.document.getElementById("takespeed").onchange();
+  rt.document.getElementById("takespeed").value = "0.75"; rt.document.getElementById("takespeed").onchange();
+  assert.equal(play.playbackRate, 0.75); assert.equal(play.preservesPitch, true);
+});
+
+test("crc32 and the zip writer make a valid archive", () => {
+  const { app } = makeRuntime();
+  assert.equal(app.crc32(new TextEncoder().encode("123456789")), 0xCBF43926, "the standard check value");
+  const files = [{ name: "a.txt", bytes: new TextEncoder().encode("hello") }, { name: "dir/é.bin", bytes: new Uint8Array([1, 2, 3, 250]) }];
+  return app.zipStore(files, new Date(2026, 8, 19, 10, 30, 40)).arrayBuffer().then(buf => {
+    const v = new DataView(buf), u = new Uint8Array(buf);
+    const end = buf.byteLength - 22;
+    assert.equal(v.getUint32(end, true), 0x06054b50); assert.equal(v.getUint16(end + 10, true), 2, "two entries");
+    let p = v.getUint32(end + 16, true);            // start of the central directory
+    const seen = [];
+    for (let i = 0; i < 2; i++) {
+      assert.equal(v.getUint32(p, true), 0x02014b50);
+      const crc = v.getUint32(p + 16, true), size = v.getUint32(p + 20, true), nlen = v.getUint16(p + 28, true), off = v.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(u.subarray(p + 46, p + 46 + nlen));
+      assert.equal(v.getUint32(off, true), 0x04034b50, "the local header is where the directory says");
+      const dataAt = off + 30 + v.getUint16(off + 26, true) + v.getUint16(off + 28, true);
+      assert.equal(app.crc32(u.subarray(dataAt, dataAt + size)), crc, `${name}: the CRC matches its data`);
+      assert.equal(v.getUint16(p + 8, true) & 0x0800, 0x0800, "UTF-8 names");
+      seen.push([name, size]); p += 46 + nlen;
+    }
+    sameShape(seen, [["a.txt", 5], ["dir/é.bin", 4]]);
+    assert.equal(v.getUint16(v.getUint32(end + 16, true) + 12, true) >> 11, 10, "DOS time: hour 10");
+  });
+});
+
+test("Export all writes a zip of takes and a JSON of ratings, markers and stats, never a song file", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  await rt.app.songImport(songFile("Secret Song.wav"));
+  await recordTake(rt, { after: () => { rt.clock.t += 2; rt.document.dispatch("keydown", { key: "m" }); } });
+  await rt.app.libList();
+  navButton(rt.document, "songs").click(); await settle();
+  await rt.app.libOpen(rt.app.lib.takes[0].id);
+  await rt.app.libSetRating("whole", 4);
+  rt.document.getElementById("takenext").value = "keep the pick close";
+  await rt.document.getElementById("takenext").onchange();
+  const blob = await rt.app.libExport();
+  const buf = new Uint8Array(await blob.arrayBuffer()), text = new TextDecoder("latin1").decode(buf);
+  const names = [...text.matchAll(/(?:practice-export\.json|takes\/[A-Za-z0-9._-]+)/g)].map(m => m[0]);
+  assert.ok(names.includes("practice-export.json"));
+  assert.ok(names.some(n => n.startsWith("takes/") && n.endsWith(".webm")), "the take file");
+  assert.doesNotMatch(text, /Secret Song\.wav|\.wav"/, "the imported song's file is never included");
+  const json = JSON.parse(text.slice(text.indexOf("{"), text.indexOf("\n}") + 2));
+  assert.equal(json.songs.length, 1); assert.equal(json.songs[0].title, "Secret Song");
+  assert.ok(!("file" in json.songs[0]) && !("blob" in json.songs[0]));
+  assert.equal(json.takes[0].ratings.whole, 4); assert.equal(json.takes[0].next, "keep the pick close");
+  sameShape(json.takes[0].markers.map(m => m.t), [2]);
+  assert.match(rt.document.body.children.at(-1).download, /^practice-export-\d{4}-\d{2}-\d{2}\.zip$/);
+  assert.match(rt.document.getElementById("takemsg").textContent, /Exported 1 take .*Song files are never included\./);
+  const empty = makeRuntime({ media: true, capture: true });
+  navButton(empty.document, "songs").click(); await settle();
+  assert.equal(await empty.app.libExport(), null);
+});
+
+test("a take can be deleted from the library, and the list can be filtered by song", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  await recordTake(rt); await recordTake(rt);
+  await rt.app.libList();
+  assert.equal(rt.app.lib.takes.length, 2);
+  navButton(rt.document, "songs").click(); await settle();
+  const id = rt.app.lib.takes[0].id;
+  await rt.document.getElementById("takelist").onclick({ target: { dataset: { del: id } } });
+  await settle();
+  assert.equal(rt.app.lib.takes.length, 1);
+  assert.ok(!rt.app.lib.takes.some(t => t.id === id));
+  rt.document.getElementById("takefilter").value = "no-such-song"; rt.document.getElementById("takefilter").onchange();
+  assert.match(rt.document.getElementById("takelist").innerHTML, /^<option|No takes kept yet|takerow/, "the list redraws for the filter");
 });

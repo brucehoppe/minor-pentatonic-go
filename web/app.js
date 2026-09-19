@@ -2562,7 +2562,7 @@ function takeToWav(blob,mono){
 const TAKE_DB="practice-desk-takes";
 // The tables the desk keeps: what a take is, its raw audio in chunks, the song
 // library, and each song's audio file.
-const TAKE_STORES=["takes","chunks","songs","songfiles"];
+const TAKE_STORES=["takes","chunks","songs","songfiles","library"];
 function openTakeDB(version){
   return new Promise((ok,fail)=>{
     // version 2 added the song library: what is known about each song, and its audio
@@ -2572,7 +2572,9 @@ function openTakeDB(version){
       if(!db.objectStoreNames.contains("takes"))db.createObjectStore("takes",{keyPath:"id"});
       if(!db.objectStoreNames.contains("chunks"))db.createObjectStore("chunks",{keyPath:["take","seq"]});
       if(!db.objectStoreNames.contains("songs"))db.createObjectStore("songs",{keyPath:"id"});
-      if(!db.objectStoreNames.contains("songfiles"))db.createObjectStore("songfiles",{keyPath:"id"});};
+      if(!db.objectStoreNames.contains("songfiles"))db.createObjectStore("songfiles",{keyPath:"id"});
+      // version 3: the takes you keep, with their ratings, apart from the WAV masters
+      if(!db.objectStoreNames.contains("library"))db.createObjectStore("library",{keyPath:"id"});};
     // Another tab holds this database open at an older version and has not let go.
     r.onblocked=()=>{state.dbBlocked=true;
       if(typeof songSay==="function"&&document.getElementById("songstatus"))
@@ -2589,7 +2591,7 @@ function openTakeDB(version){
 function takeDB(){
   if(state.takeDB)return state.takeDB;
   const missing=db=>TAKE_STORES.filter(n=>!db.objectStoreNames.contains(n));
-  state.takeDB=(typeof indexedDB==="undefined"||!indexedDB?Promise.reject(new Error("no IndexedDB")):openTakeDB(2))
+  state.takeDB=(typeof indexedDB==="undefined"||!indexedDB?Promise.reject(new Error("no IndexedDB")):openTakeDB(3))
     // a newer build already took it past version 2: use it as it is
     .catch(e=>e&&e.name==="VersionError"?openTakeDB():Promise.reject(e))
     .then(db=>{
@@ -2771,8 +2773,9 @@ function finishTake(t){
         channels:meta.channels,seconds:meta.frames/meta.sampleRate};
       return fixTakeLength(kept,meta.frames/meta.sampleRate).then(storageNote).then(note=>{
         if(state.recTake!==kept)return;
-        showTake();recSay(what+(note?" "+note:""));listSaved();});}
-    return decodedWav(kept,t,blob,what);});}
+        showTake();recSay(what+(note?" "+note:""));listSaved();
+        return typeof libKeep==="function"?libKeep(kept,t,meta).catch(()=>{}):null;});}
+    return decodedWav(kept,t,blob,what).then(()=>typeof libKeep==="function"?libKeep(kept,t,null).catch(()=>{}):null);});}
 // Without a raw master, the WAV is decoded from the compressed file. The decoded
 // length is exact; without a decoder, the recorder's own clock will do.
 function decodedWav(kept,t,blob,what){
