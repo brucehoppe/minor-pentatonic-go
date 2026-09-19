@@ -3851,6 +3851,61 @@ test("band settings: the swing label, 12/8, and remembering them safely", () => 
   assert.equal(saved.bass, "root5"); assert.equal(saved.swing, 0.75);
   for (const bad of ['{"swing":2,"bass":"<b>","on":"yes"}', "{", "[]"]) {
     const r = makeRuntime({ stored: { "practice-desk-band": bad } });
-    sameShape({ ...r.app.getBand() }, { on: true, swing: 2 / 3, bass: "walk", ride: false }, `${bad}: defaults`);
+    sameShape({ ...r.app.getBand() }, { on: true, swing: 2 / 3, bass: "walk", ride: false,
+      mix: { drums: { vol: 0.8, on: true }, bass: { vol: 0.8, on: true }, keys: { vol: 0.55, on: true }, guitar: { vol: 0.55, on: true } } }, `${bad}: defaults`);
   }
+});
+
+test("band: keys stab the chord's own tones on the offbeats of 2 and 4", () => {
+  for (let beat = 0; beat < 4; beat++) {
+    const stabs = bandBeat("shuffle", beat).filter(e => e.part === "keys");
+    if (beat === 1 || beat === 3) {
+      assert.equal(stabs.length, 1);
+      assert.ok(near(stabs[0].at, 2 / 3), "the swung offbeat");
+      sameShape(stabs[0].midis.map(m => m % 12), [9, 1, 4, 7], "A7: A C# E G");
+      assert.ok(stabs[0].midis.every(m => m >= 52 && m < 76), "a mid-register voicing");
+    } else assert.equal(stabs.length, 0);
+  }
+  const slow = B.beatEvents({ feel: "slow", beat: 0, step: 0, swing: 0.5, beatSec: 1, chord: I7(9) }).filter(e => e.part === "keys");
+  assert.ok(slow[0].dur > 3, "12/8: a held chord where it changes");
+});
+
+test("band: the rhythm guitar boogies 5–6 a beat each, and follows minor and split bars", () => {
+  const shapes = (chord, steps = [0, 1, 2, 3]) => steps.map(step => {
+    const g = B.beatEvents({ feel: "shuffle", beat: step, step, swing: 2 / 3, beatSec: 0.5, chord }).filter(e => e.part === "guitar");
+    return g[0].midis[1] - g[0].midis[0];
+  });
+  sameShape(shapes(I7(9)), [7, 9, 7, 9], "root–5th, root–6th, and again");
+  sameShape(shapes({ pc: 9, intervals: [0, 3, 7, 10] }), [7, 8, 7, 8], "minor: the ♭6");
+  const low = B.beatEvents({ feel: "shuffle", beat: 0, step: 0, swing: 2 / 3, beatSec: 0.5, chord: I7(4) }).filter(e => e.part === "guitar")[0];
+  assert.equal(low.midis[0], 40, "E: the open low E string");
+  assert.equal(B.beatEvents({ feel: "shuffle", beat: 2, step: 0, swing: 2 / 3, beatSec: 0.5, chord: I7(2) })
+    .filter(e => e.part === "guitar")[0].midis[1] - 50, 7, "a chord arriving on beat 3 starts from root–5th");
+});
+
+test("the mixer sets each part's level live, and muting leaves the band's timing alone", () => {
+  const { app, document, audio, advance } = makeRuntime();
+  app.toggleTrainer();
+  const rig = app.getBandRig();
+  sameShape(Object.keys(rig.parts), ["drums", "bass", "keys", "guitar"]);
+  assert.equal(rig.parts.bass.gain.value, 0.8);
+  document.getElementById("mixbass").click();          // play the bass part yourself
+  assert.equal(rig.parts.bass.gain.value, 0, "muted");
+  assert.equal(document.getElementById("mixbass").getAttribute("aria-pressed"), "false");
+  const vol = document.getElementById("mixkeysv");
+  vol.value = "30"; vol.oninput({ target: vol });
+  assert.equal(rig.parts.keys.gain.value, 0.3);
+  const booked = audio.startTimes.length;
+  advance(0.7);                                        // past the next beat at 90 bpm
+  assert.ok(audio.startTimes.length > booked, "the muted part is still booked, only silent");
+  app.toggleTrainer();
+  app.toggleTrainer();
+  assert.equal(app.getBandRig().parts.bass.gain.value, 0, "the mix carries over to the next start");
+  const saved = JSON.parse(app.getState().storage.getItem("practice-desk-band"));
+  assert.equal(saved.mix.bass.on, false); assert.equal(saved.mix.keys.vol, 0.3);
+  app.toggleTrainer();
+  const odd = makeRuntime({ stored: { "practice-desk-band": '{"mix":{"bass":{"vol":7,"on":"no"},"keys":{"vol":0.2}}}' } });
+  assert.equal(odd.app.getBand().mix.bass.vol, 0.8, "an impossible volume is ignored");
+  assert.equal(odd.app.getBand().mix.bass.on, true);
+  assert.equal(odd.app.getBand().mix.keys.vol, 0.2, "a good one is kept");
 });

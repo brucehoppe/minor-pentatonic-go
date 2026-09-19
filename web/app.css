@@ -334,3 +334,5 @@
   /* the band row in the 12-bar trainer */
   .bandctl{display:inline-flex;align-items:center;gap:6px;font-size:12px}
   .bandnote{font-size:11.5px;opacity:.65;min-width:9em}
+  .mixpart{display:inline-flex;align-items:center;gap:6px;margin-right:8px}
+  .mixpart input[type=range]{width:90px}

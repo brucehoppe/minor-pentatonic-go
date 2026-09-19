@@ -19,7 +19,10 @@ a second release on the same day.
   12/8, funk 16ths), a swing slider from 50% to 75% with the triplet feel
   marked, shuffle-walk or root–fifth bass that follows split bars, an optional
   ride, tap tempo, and settings remembered. Checked in Chrome: every hit within
-  7 ms of the grid. Keys, rhythm guitar, a mixer and practice modes come next.
+  7 ms of the grid. Keys (dominant-7th stabs on the offbeats of 2 and 4, a held
+  chord in 12/8) and a boogie 5–6 rhythm guitar join them, with a mixer: volume
+  and on/off per part, so you can play the bass or rhythm part yourself.
+  Practice modes come next.
 - A take with backing can no longer clip: the backing is mixed in 3 dB under
   the guitar, with a limiter after both and a trim for the compressor's
   built-in make-up gain. A take that peaked at 0 dB now peaks near -3 dB.

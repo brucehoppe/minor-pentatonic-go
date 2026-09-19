@@ -1,6 +1,6 @@
 /*
- * Backing band for the 12-bar trainer: drums and bass, synthesised live. No
- * samples, no network.
+ * Backing band for the 12-bar trainer: drums, bass, keys and rhythm guitar,
+ * synthesised live. No samples, no network.
  *
  * Two halves. The score is pure: beatEvents() says what the band plays in one beat
  * — which drum, which bass note, how far into the beat, how loud — from the feel,
@@ -110,6 +110,46 @@
     return out;
   }
 
+  // Keys: the chord's own tones, all four of a 7th, voiced from E3 to D#4 upwards,
+  // as short stabs on the offbeats — the comping behind every shuffle.
+  const keysBase = (pc) => 52 + (((pc - 4) % 12) + 12) % 12;
+  function keysBeat(feel, beat, step, swing, chord, beatSec) {
+    const out = [];
+    const midis = chord.intervals.map((i) => keysBase(chord.pc) + i);
+    const stab = (at, len, vol) => out.push({ part: 'keys', midis, at, dur: len * beatSec, vol });
+    if (feel === 'slow') {
+      if (step === 0) stab(0, beat === 0 ? 3.6 : 1.8, 0.45);   // a held chord where it changes
+      if (beat === 1 || beat === 3) stab(2 / 3, 0.3, 0.3);
+    } else if (feel === 'funk') {
+      if (beat === 1) stab(sixteenths(swing)[1], 0.15, 0.5);
+      if (beat === 3) stab(sixteenths(swing)[3], 0.15, 0.45);
+    } else if (beat === 1 || beat === 3) {
+      stab(offbeat(swing), 0.22, 0.5);
+    }
+    return out;
+  }
+
+  // Rhythm guitar: the boogie. A root-and-5th shape, then the 6th above the root,
+  // a beat each, low on the E or A string. A minor chord takes the ♭6; a
+  // diminished one holds its ♭5.
+  const guitarRoot = (pc) => 40 + (((pc - 4) % 12) + 12) % 12;
+  function boogieFor(intervals) {
+    const has = (i) => intervals.includes(i);
+    if (has(3) && has(6)) return [6, 6];
+    if (has(3)) return [7, 8];
+    return [7, 9];
+  }
+  function guitarBeat(feel, step, swing, chord, beatSec) {
+    const out = [];
+    const r = guitarRoot(chord.pc);
+    const midis = [r, r + boogieFor(chord.intervals)[step % 2]];
+    const chug = (at, len, vol) => out.push({ part: 'guitar', midis, at, dur: len * beatSec, vol });
+    if (feel === 'slow') { chug(0, 0.6, 0.6); chug(2 / 3, 0.3, 0.45); }
+    else if (feel === 'funk') { chug(0, 0.2, 0.6); chug(0.5, 0.2, 0.45); }
+    else { chug(0, offbeat(swing) * 0.85, 0.6); chug(offbeat(swing), (1 - offbeat(swing)) * 0.85, 0.45); }
+    return out;
+  }
+
   /**
    * Everything the band plays in one beat.
    *   feel, swing (0.5–0.75), beatSec (seconds a beat), beat (0–3 in the bar)
@@ -125,7 +165,9 @@
     if (o.countIn) return [{ part: 'drums', voice: 'stick', at: 0, vol: o.beat === 0 ? 0.8 : 0.6 }];
     return [
       ...drumBeat(feel, o.beat, swing, !!o.ride),
-      ...bassBeat(feel, o.step, swing, o.chord, o.bass === 'root5' ? 'root5' : 'walk', o.beatSec)
+      ...bassBeat(feel, o.step, swing, o.chord, o.bass === 'root5' ? 'root5' : 'walk', o.beatSec),
+      ...keysBeat(feel, o.beat, o.step, swing, o.chord, o.beatSec),
+      ...guitarBeat(feel, o.step, swing, o.chord, o.beatSec)
     ];
   }
 
@@ -134,7 +176,7 @@
   const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
   /**
-   * Voices on a Web Audio context. parts: { drums, bass } — AudioNodes each part's
+   * Voices on a Web Audio context. parts: { drums, bass, keys, guitar } — AudioNodes each part's
    * notes go into (the app puts a gain there for its mixer). Times are absolute,
    * on the context's clock.
    */
@@ -202,14 +244,43 @@
       });
       g.connect(parts.bass);
     }
+    // Keys: a soft electric-piano stab, a sine with a touch of its octave, per note.
+    function keys(midis, t, dur, vol) {
+      const g = env(t, 0.16 * vol, 0.004, Math.max(0.12, dur));
+      midis.forEach((m) => [['sine', 1, 1], ['sine', 2, 0.25]].forEach(([type, mult, lvl]) => {
+        const o = ac.createOscillator();
+        o.type = type; o.frequency.value = midiHz(m) * mult;
+        const og = ac.createGain(); og.gain.value = lvl;
+        o.connect(og); og.connect(g);
+        o.start(t); o.stop(t + dur + 0.15);
+      }));
+      g.connect(parts.keys);
+    }
+    // Rhythm guitar: two sawtooth strings through a closing low-pass — a palm-muted chug.
+    function guitar(midis, t, dur, vol) {
+      const lp = ac.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(2200, t);
+      lp.frequency.exponentialRampToValueAtTime(500, t + Math.max(0.06, dur));
+      const g = env(t, 0.14 * vol, 0.003, Math.max(0.06, dur));
+      lp.connect(g); g.connect(parts.guitar);
+      midis.forEach((m) => {
+        const o = ac.createOscillator();
+        o.type = 'sawtooth'; o.frequency.value = midiHz(m);
+        o.connect(lp); o.start(t); o.stop(t + dur + 0.08);
+      });
+    }
     const drums = { kick, snare, hat, ride, stick };
     return {
       play(e, t) {
         if (e.part === 'drums' && drums[e.voice]) drums[e.voice](t, e.vol);
         else if (e.part === 'bass') bass(e.midi, t, e.dur, e.vol);
+        else if (e.part === 'keys') keys(e.midis, t, e.dur, e.vol);
+        else if (e.part === 'guitar') guitar(e.midis, t, e.dur, e.vol);
       }
     };
   }
 
-  root.Band = { FEELS, SWING_MIN, SWING_TRIPLET, SWING_MAX, clampSwing, offbeat, sixteenths, walkFor, bassRoot, beatEvents, createVoices };
+  const PARTS = ['drums', 'bass', 'keys', 'guitar'];
+  root.Band = { PARTS, keysBase, guitarRoot, boogieFor, FEELS, SWING_MIN, SWING_TRIPLET, SWING_MAX, clampSwing, offbeat, sixteenths, walkFor, bassRoot, beatEvents, createVoices };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

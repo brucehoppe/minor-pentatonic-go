@@ -38,7 +38,7 @@ const state={
   trainerTimer:null, trainerBar:-1, trainerBeat:0, trainerCount:4,
   // the backing band (web/band.js): its settings, remembered, and the live rig of
   // gains its parts play into while the trainer runs
-  band:{on:true, swing:2/3, bass:"walk", ride:false}, bandRig:null, taps:[],
+  band:{on:true, swing:2/3, bass:"walk", ride:false, mix:bandMixDefaults()}, bandRig:null, taps:[],
   rhythm:[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0], rhythmTimer:null, rhythmStep:0,
   // audio - the chosen engine, why there is none, and what is sounding
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
@@ -1426,6 +1426,9 @@ function clearLog(){writeLog([]);renderLog();}
 // backing records the band. The compatibility engine has no bus to give it, so
 // there the trainer keeps its chord stabs.
 const BAND_KEY="practice-desk-band";
+// The mixer: a volume and an on/off per part, so you can drop the bass or the rhythm
+// guitar and play that part yourself.
+function bandMixDefaults(){return {drums:{vol:.8,on:true},bass:{vol:.8,on:true},keys:{vol:.55,on:true},guitar:{vol:.55,on:true}};}
 // The band on its own peaked near full scale in Chrome; this sits it about 4 dB
 // down, under your guitar, with room for the rest of the desk's sounds.
 const BAND_LEVEL=.6;
@@ -1435,7 +1438,11 @@ function readBand(){
     if(typeof v.on==="boolean")state.band.on=v.on;
     if(typeof v.swing==="number"&&v.swing>=.5&&v.swing<=.75)state.band.swing=v.swing;
     if(v.bass==="walk"||v.bass==="root5")state.band.bass=v.bass;
-    if(typeof v.ride==="boolean")state.band.ride=v.ride;}
+    if(typeof v.ride==="boolean")state.band.ride=v.ride;
+    if(v.mix&&typeof v.mix==="object")Object.keys(state.band.mix).forEach(p=>{
+      const m=v.mix[p];if(!m||typeof m!=="object")return;
+      if(typeof m.vol==="number"&&m.vol>=0&&m.vol<=1)state.band.mix[p].vol=m.vol;
+      if(typeof m.on==="boolean")state.band.mix[p].on=m.on;});}
   catch(e){/* nothing stored, or unreadable: keep the defaults */}}
 function writeBand(){try{window.localStorage.setItem(BAND_KEY,JSON.stringify(state.band));}catch(e){/* this visit only */}}
 const bandReady=()=>typeof Band!=="undefined"&&Band&&typeof Band.beatEvents==="function";
@@ -1443,10 +1450,16 @@ function bandStart(){
   bandStop();
   const a=audio();
   if(!state.band.on||!a||!a.bus||!a.context||!bandReady())return;
-  const out=a.bus(),parts={drums:a.context.createGain(),bass:a.context.createGain()};
+  const out=a.bus(),parts={};
   out.gain.value=BAND_LEVEL;
-  Object.values(parts).forEach(g=>g.connect(out));
-  state.bandRig={out,parts,ac:a.context,voices:Band.createVoices(a.context,parts)};}
+  Object.keys(state.band.mix).forEach(p=>{parts[p]=a.context.createGain();parts[p].connect(out);});
+  state.bandRig={out,parts,ac:a.context,voices:Band.createVoices(a.context,parts)};
+  applyBandMix();}
+// Muting turns a part's gain down rather than leaving it out of the score, so the
+// band's timing is the same whichever parts you hear.
+function applyBandMix(){
+  const r=state.bandRig;if(!r)return;
+  Object.entries(state.band.mix).forEach(([p,m])=>{if(r.parts[p])r.parts[p].gain.value=m.on?m.vol:0;});}
 // Silence what is already booked with a quick fade on the band's own bus, then let
 // it go; the next start builds a fresh one.
 function bandStop(){
@@ -1483,7 +1496,10 @@ function renderBandControls(){
     :pct===50?"50% · straight":pct===67?"67% · triplet feel":pct===75?"75% · hard shuffle":pct+"%";
   document.getElementById("bandon").setAttribute("aria-pressed",state.band.on);
   document.getElementById("bandbass").value=state.band.bass;
-  document.getElementById("bandride").checked=state.band.ride;}
+  document.getElementById("bandride").checked=state.band.ride;
+  Object.entries(state.band.mix).forEach(([p,m])=>{
+    document.getElementById("mix"+p).setAttribute("aria-pressed",m.on);
+    document.getElementById("mix"+p+"v").value=String(Math.round(m.vol*100));});}
 
 // ---------- 12-bar blues trainer ----------
 // A form is twelve bars. A bar is one chord symbol, or a pair of them when the
@@ -3972,6 +3988,10 @@ document.getElementById("bandride").onchange=e=>{state.band.ride=!!e.target.chec
 document.getElementById("bandon").onclick=()=>{state.band.on=!state.band.on;writeBand();renderBandControls();
   if(state.trainerTimer){if(state.band.on)bandStart();else bandStop();}};
 document.getElementById("taptempo").onclick=()=>tapTempo();
+Object.keys(state.band.mix).forEach(p=>{
+  document.getElementById("mix"+p).onclick=()=>{state.band.mix[p].on=!state.band.mix[p].on;writeBand();applyBandMix();renderBandControls();};
+  document.getElementById("mix"+p+"v").oninput=e=>{state.band.mix[p].vol=Math.min(1,Math.max(0,(+e.target.value)/100));
+    writeBand();applyBandMix();};});
 renderBandControls();
 // The form menu is built from BLUES_FORMS, grouped by family, so adding a form up
 // there is the only edit needed to offer it here.

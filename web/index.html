@@ -777,13 +777,20 @@
       </div>
       <div class="row" id="bandrow">
         <span class="lbl">Band</span>
-        <button id="bandon" aria-pressed="true">Drums + bass</button>
+        <button id="bandon" aria-pressed="true">Band</button>
         <label class="bandctl">Swing <input type="range" id="swing" min="50" max="75" step="1" value="67" list="swingmarks" aria-label="Swing"></label>
         <datalist id="swingmarks"><option value="50" label="straight"></option><option value="67" label="triplet"></option><option value="75" label="hard"></option></datalist>
         <span id="swingv" class="bandnote">67% · triplet feel</span>
         <select id="bandbass" aria-label="Bass line"><option value="walk">Bass: shuffle walk</option><option value="root5">Bass: root–fifth</option></select>
         <label class="bandctl"><input type="checkbox" id="bandride"> Ride cymbal</label>
         <button id="taptempo" title="Tap four times on the beat">Tap tempo</button>
+      </div>
+      <div class="row" id="mixrow">
+        <span class="lbl">Mix</span>
+        <span class="mixpart"><button id="mixdrums" aria-pressed="true">Drums</button><input type="range" id="mixdrumsv" min="0" max="100" value="80" aria-label="Drums volume"></span>
+        <span class="mixpart"><button id="mixbass" aria-pressed="true">Bass</button><input type="range" id="mixbassv" min="0" max="100" value="80" aria-label="Bass volume"></span>
+        <span class="mixpart"><button id="mixkeys" aria-pressed="true">Keys</button><input type="range" id="mixkeysv" min="0" max="100" value="55" aria-label="Keys volume"></span>
+        <span class="mixpart"><button id="mixguitar" aria-pressed="true">Rhythm guitar</button><input type="range" id="mixguitarv" min="0" max="100" value="55" aria-label="Rhythm guitar volume"></span>
       </div>
       <div class="bars" id="bluesbars"></div>
       <div class="status" id="trainertarget"></div>
