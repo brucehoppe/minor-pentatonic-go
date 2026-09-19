@@ -86,6 +86,44 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+// The desk needs the microphone and nothing else that a browser gates, so the
+// policy turns the rest off, and no other site may embed its files.
+func TestPermissionsAndResourcePolicy(t *testing.T) {
+	w := httptest.NewRecorder()
+	appHandler(func() {}).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	pp := w.Header().Get("Permissions-Policy")
+	for _, want := range []string{"microphone=(self)", "camera=()", "geolocation=()", "payment=()", "usb=()"} {
+		if !strings.Contains(pp, want) {
+			t.Errorf("Permissions-Policy %q lacks %q", pp, want)
+		}
+	}
+	if got := w.Header().Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+		t.Errorf("Cross-Origin-Resource-Policy = %q, want same-origin", got)
+	}
+}
+
+// Files, /about and /version only ever answer GET and HEAD; a POST or PUT to one is
+// refused rather than treated as a GET. Only /quit takes a POST.
+func TestOnlyReadMethodsReachFiles(t *testing.T) {
+	for _, path := range []string{"/", "/app.js", "/about", "/version", "/assets/kaiju-guitar.jpg", "/favicon.ico"} {
+		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodOptions} {
+			w := httptest.NewRecorder()
+			appHandler(func() {}).ServeHTTP(w, httptest.NewRequest(method, path, nil))
+			if w.Code != http.StatusMethodNotAllowed {
+				t.Errorf("%s %s: status = %d, want 405", method, path, w.Code)
+			}
+			if got := w.Header().Get("Allow"); got != "GET, HEAD" {
+				t.Errorf("%s %s: Allow = %q", method, path, got)
+			}
+		}
+		w := httptest.NewRecorder()
+		appHandler(func() {}).ServeHTTP(w, httptest.NewRequest(http.MethodHead, path, nil))
+		if w.Code == http.StatusMethodNotAllowed {
+			t.Errorf("HEAD %s was refused", path)
+		}
+	}
+}
+
 // The live demo is static hosting, which cannot send headers, so every page also
 // carries the policy as a <meta> tag. It must match the header, less
 // frame-ancestors, which browsers ignore in <meta>.

@@ -76,6 +76,12 @@ const contentSecurityPolicy = "default-src 'self'; script-src 'self'; " +
 	"style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: data:; " +
 	"object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 
+// permissionsPolicy says which browser features the desk may use. It records with a
+// microphone and nothing else, so everything else is switched off outright, and even
+// the microphone is refused to any frame that is not the desk itself.
+const permissionsPolicy = "microphone=(self), camera=(), geolocation=(), payment=(), usb=(), " +
+	"serial=(), bluetooth=(), display-capture=(), clipboard-read=(), interest-cohort=()"
+
 func appHandlerFS(stop func(), content fs.FS) http.Handler {
 	files := http.FileServer(http.FS(content))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +90,15 @@ func appHandlerFS(stop func(), content fs.FS) http.Handler {
 		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		// No other site may embed the desk's files (its images, scripts or audio).
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", permissionsPolicy)
+		// Everything here is read-only apart from /quit, which checks its own method.
+		if r.URL.Path != "/quit" && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		if r.URL.Path == "/favicon.ico" {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -296,6 +311,10 @@ func run(addr string, launch bool, dev bool) error {
 	server := &http.Server{
 		Handler:           loopbackOnly(appHandlerFS(stop, content)),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      60 * time.Second, // a slow local browser still finishes a font or image
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    16 << 10,
 	}
 	log.Printf("%s %s — coded by %s", appName, version, author)
 	log.Printf("Running at %s", url)

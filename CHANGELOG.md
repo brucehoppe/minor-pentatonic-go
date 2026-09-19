@@ -5,6 +5,11 @@ a second release on the same day.
 
 ## Unreleased
 
+- Security hardening of the local server: a Permissions-Policy that allows the
+  microphone to the desk alone and switches off camera, location, payment, USB,
+  serial, Bluetooth and screen capture; a Cross-Origin-Resource-Policy so no
+  other site can embed its files; only GET and HEAD reach files (a POST or PUT
+  is refused with 405); and read, write, idle and header-size limits.
 - Songs view: import an MP3, M4A or WAV you own, kept in this browser and never
   uploaded. Title, key, tempo (typed or tapped), first downbeat and form; play
   at 100/90/75/50% with pitch kept, a four-beat count-in and an A–B loop. The
