@@ -11,50 +11,70 @@
 <link rel="stylesheet" href="explorers.css">
 </head>
 <body>
+<a class="skip-link" href="#lessontitle">Skip to lesson</a>
 <div class="wrap">
+  <header class="masthead">
+    <div class="brand">
   <h1>Minor pentatonic<br>practice desk</h1>
   <p class="sub">One scale, five shapes, whole neck</p>
 
+    </div>
   <figure class="hero">
     <img src="assets/kaiju-guitar.jpg" width="800" height="509"
       alt="A riso-printed kaiju in armour, drawn in blue and pink, playing an electric guitar">
   </figure>
+  </header>
 
-  <div class="row" id="keys"><span class="lbl" id="keylbl">Key</span></div>
-  <nav id="views" aria-label="Views"></nav>
-
-  <div class="bar">
-    <div class="row" id="labels"><span class="lbl">Dots</span></div>
-    <div class="row" id="chords"><span class="lbl">Chord tones</span></div>
-    <div class="row" id="regs"><span class="lbl">Register</span></div>
-    <div class="row" id="extras"><span class="lbl">Blue note</span></div>
-    <div class="row" id="play">
-      <span class="lbl">Play along</span>
-      <button id="drone">Root drone</button>
-      <button id="click">Metronome</button>
-      <input type="range" id="bpm" min="40" max="220" value="90" aria-label="Tempo">
-      <span id="bpmv" style="font-size:12px;opacity:.6">90 bpm</span>
-      <button id="recbtn" aria-pressed="false" title="Record a take: the settings are in the Record row below">Record</button>
-      <span id="audiomsg" style="font-size:11.5px;color:var(--pink);flex-basis:100%;line-height:1.5"></span>
-    </div>
+  <div class="desk-layout">
+    <aside class="lesson-index">
+      <details class="browse" id="browse" open>
+        <summary>Browse lessons</summary>
+        <nav id="views" aria-label="Lessons"></nav>
+      </details>
     <div class="row" id="approw" hidden>
       <span class="lbl">App</span>
       <button id="quitapp">Quit</button>
       <span id="appver" style="font-size:11.5px;opacity:.55"></span>
       <span id="quitmsg" style="font-size:11.5px;color:var(--pink)"></span>
     </div>
+    </aside>
+    <main class="lesson-main" id="lessonmain">
+      <div class="lesson-context">
+        <h2 class="lesson-title" id="lessontitle" tabindex="-1">Your practice today</h2>
+        <label class="key-select" id="keys"><span id="keylbl">Key</span>
+          <select id="keyselect" aria-label="Key"></select>
+        </label>
+      </div>
+  <div class="practice-audio" aria-label="Play along and recording">
+    <div class="row" id="play">
+      <span class="lbl">Play along</span>
+      <button id="drone">Root drone</button>
+      <button id="click">Metronome</button>
+      <input type="range" id="bpm" min="40" max="220" value="90" aria-label="Tempo">
+      <span id="bpmv" style="font-size:12px;opacity:.6">90 bpm</span>
+      <button id="recbtn" aria-pressed="false" title="Record a take; choose the input under Recording &amp; input">Record</button>
+      <span id="audiomsg" style="font-size:11.5px;color:var(--pink);flex-basis:100%;line-height:1.5"></span>
+    </div>
   </div>
-
-  <div class="legend">
+      <details class="diagram-settings" id="diagramsettings" hidden>
+        <summary>Diagram settings <span id="settingssummary"></span></summary>
+        <div class="row" id="labels"><span class="lbl">Dots</span></div>
+        <div class="row" id="chords"><span class="lbl">Chord tones</span></div>
+        <div class="row" id="regs"><span class="lbl">Register</span></div>
+        <div class="row" id="extras"><span class="lbl">Blue note</span></div>
+      </details>
+  <div class="legend" id="legend" hidden>
     <div><i class="swatch" style="background:var(--pink)"></i>Root</div>
     <div><i class="swatch" style="background:var(--blue)"></i>Scale tone</div>
     <div><i class="swatch" style="background:var(--gold)"></i>Shared / pivot</div>
-    <div><i class="swatch ringed"></i>Chord tone</div>
-    <div><i class="swatch hollow"></i>Optional colour tone</div>
-    <div><i class="swatch dashed"></i>♭5 blue note</div>
+    <div id="legendchord"><i class="swatch ringed"></i>Chord tone</div>
+    <div id="legendcolour"><i class="swatch hollow"></i>Optional colour tone</div>
+    <div id="legendblue"><i class="swatch dashed"></i>♭5 blue note</div>
   </div>
 
   <section id="v-path">
+    <div id="path"></div>
+    <details class="course-intro"><summary>How to use this course</summary>
     <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
       There's far more here than anyone should try to absorb at once. This is the order to take it in.
       Each stage has one job and a test you can actually fail — <b>don't move on until you pass it</b>.
@@ -63,7 +83,8 @@
       The single most common mistake is treating soloing as a scale problem. It isn't. It's a
       rhythm-and-phrasing problem played with scale notes, which is why stages 1 and 3 matter more
       than everything after them.</p>
-    <div class="grid wide" id="path"></div>
+    </details>
+
   </section>
 
   <section id="v-tune" hidden>
@@ -71,7 +92,7 @@
       Two things to do with your guitar plugged in (or near the microphone). Tune before every session:
       a guitar slightly out of tune makes every bend and chord sound wrong, and you learn to hear it as
       normal. Then check your bends: your ear can't judge a bend while your hands are busy making it.
-      Both use the input chosen under <b>Record → Settings</b>; nothing is recorded or kept.</p>
+      Both use the input chosen under <b>Recording &amp; input</b>; nothing is recorded or kept.</p>
     <div class="grid wide">
       <div class="card" id="tunercard">
         <h2>Tuner<em>play one open string at a time</em></h2>
@@ -976,6 +997,7 @@
         <span class="lbl">Feel</span><select id="groove" aria-label="Feel"><option value="shuffle">Shuffle</option><option value="straight">Straight rock</option><option value="slow">Slow blues 12/8</option><option value="funk">Funk 16ths</option></select>
         <button id="toggletrainer">Start with count-in</button><button id="resettrainer">Reset</button>
       </div>
+      <details class="trainer-options"><summary>Band, mix &amp; practice options</summary>
       <div class="row" id="bandrow">
         <span class="lbl">Band</span>
         <button id="bandon" aria-pressed="true">Band</button>
@@ -1002,6 +1024,7 @@
         <span class="mixpart"><button id="mixkeys" aria-pressed="true">Keys</button><input type="range" id="mixkeysv" min="0" max="100" value="55" aria-label="Keys volume"></span>
         <span class="mixpart"><button id="mixguitar" aria-pressed="true">Rhythm guitar</button><input type="range" id="mixguitarv" min="0" max="100" value="55" aria-label="Rhythm guitar volume"></span>
       </div>
+      </details>
       <div class="bars" id="bluesbars"></div>
       <div class="status" id="trainertarget"></div>
       <p class="tip" id="formtip">Bars 1–4 establish home, bars 5–6 move to IV, and bar 9 begins the turnaround.
@@ -1038,6 +1061,10 @@
       </div>
     </div>
   </section>
+
+    </main>
+  </div>
+
 
   <footer class="credit">
     <p><a href="seven-licks.html">Seven Licks lesson</a></p>

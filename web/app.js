@@ -970,15 +970,14 @@ function togglePassed(n){const v=readPath();
 const shortDate=k=>{const [y,m,d]=k.split("-").map(Number);
   return new Date(y,m-1,d).toLocaleDateString(undefined,{month:"short",day:"numeric"});};
 function renderPath(){
+  const outlineOpen=!!document.getElementById("courseoutline")?.open;
+  const focusedPass=document.activeElement?.dataset?.pass;
   const passed=readPath(),now=currentStage(passed),done=PATH.filter(p=>passed[p.n]).length;
   const here=`<div class="card wide pathnow"><h2>Today<em>${done} of ${PATH.length} stages passed</em></h2>
       <div class="status" id="pathstreak">${streakMessage(readDays())}</div>
-      ${now?`<p class="tip"><b>You are on stage ${now.n}: ${now.t}.</b> ${now.goal}</p>
-      <p class="tip"><b>Move on when.</b> ${now.test}</p>`
-        :`<p class="tip"><b>Every stage passed.</b> Keep going round: a new key, a new song, a faster tempo, the next solo to learn by ear.</p>`}
+      ${now?"":`<p class="tip"><b>Every stage passed.</b> Keep going round: a new key, a new song, a faster tempo, the next solo to learn by ear.</p>`}
       <ul class="loglist" id="pathtoday">${todayAdvice().map(x=>`<li><span>${x}</span></li>`).join("")}</ul></div>`;
-  document.getElementById("path").innerHTML=here+
-    PATH.map(p=>`<div class="card${now&&p.n===now.n?" now":""}${passed[p.n]?" passed":""}"><h2>${p.n} · ${p.t}<em>${p.d}</em></h2>
+  const stage=p=>`<div class="card${now&&p.n===now.n?" now":""}${passed[p.n]?" passed":""}"><h2>${p.n} · ${p.t}<em>${p.d}</em></h2>
       ${passed[p.n]?`<p class="badge">Passed ${escapeHTML(shortDate(passed[p.n]))}</p>`:now&&p.n===now.n?`<p class="badge here">You are here</p>`:""}
       <p class="tip"><b>Do this.</b> ${p.goal}</p>
       <p class="tip"><b>Why here.</b> ${p.why}</p>
@@ -986,16 +985,21 @@ function renderPath(){
       <div class="row" style="margin-top:10px">${
         p.go.map(([v,t])=>`<button data-goto="${v}">${t}</button>`).join("")}<button data-pass="${p.n}" aria-pressed="${!!passed[p.n]}">${
         passed[p.n]?"Passed ✓ (undo)":"I passed this test"}</button></div>
-      </div>`).join("")
-   +HOWTO.map(h=>`<div class="card"><h2>${h.t}</h2><ol>${h.items.map(i=>`<li>${i}</li>`).join("")}</ol></div>`).join("");
+      </div>`;
+  document.getElementById("path").innerHTML=here+(now?stage(now):"")
+    +`<details class="course-outline" id="courseoutline"${outlineOpen||focusedPass?" open":""}><summary>Full learning path &amp; practice advice</summary><div class="grid wide">`
+    +PATH.filter(p=>p!==now).map(stage).join("")
+    +HOWTO.map(h=>`<div class="card"><h2>${h.t}</h2><ol>${h.items.map(i=>`<li>${i}</li>`).join("")}</ol></div>`).join("")+"</div></details>";
   wireGoto("#path");
   document.querySelectorAll("#path button[data-pass]").forEach(b=>b.onclick=()=>togglePassed(+b.dataset.pass));
+  // Retain keyboard focus after a pass/undo moves a stage into the outline.
+  if(focusedPass)document.querySelector(`#path button[data-pass="${focusedPass}"]`)?.focus();
 }
 // Buttons that open a view, or set the tempo, inside a block of text: the path's cards
 // and the Today lists.
 function wireGoto(sel){
   document.querySelectorAll(sel+" button[data-goto]").forEach(b=>
-    b.onclick=()=>{state.view=b.dataset.goto;render();window.scrollTo({top:0,behavior:"smooth"});});
+    b.onclick=()=>goToView(b.dataset.goto));
   document.querySelectorAll(sel+" button[data-bpm]").forEach(b=>b.onclick=()=>setBpm(+b.dataset.bpm));
 }
 
@@ -2410,8 +2414,7 @@ function recLimiter(ac){
   return {input:l,output:trim};}
 const REC_TYPES=["audio/webm;codecs=opus","audio/webm","audio/mp4;codecs=mp4a.40.2","audio/mp4"];
 const REC_ROW=`<div class="row" id="recrow">
-  <span class="lbl">Record</span>
-  <details id="recdetails" style="flex:1 1 100%"><summary>Settings: input, what to record, this take, latency, file options</summary><div class="row" style="margin-top:8px">
+  <details id="recdetails" style="flex:1 1 100%"><summary>Recording &amp; input</summary><div class="row" style="margin-top:8px">
   <select id="recinput" aria-label="Input device"><option value="">Default input</option></select>
   <select id="recchan" aria-label="Input channel"><option value="-1">Both inputs</option><option value="0">Input 1</option><option value="1">Input 2</option></select>
   <button id="reccheck" aria-pressed="false">Check input</button>
@@ -3775,7 +3778,9 @@ const explorers={};
 function goToView(v){
   if(!VIEWS.some(([id])=>id===v))return;
   state.view=v;render();
-  if(typeof window!=="undefined"&&typeof window.scrollTo==="function")window.scrollTo({top:0,behavior:"smooth"});}
+  const title=document.getElementById("lessontitle");
+  if(typeof title.focus==="function")title.focus({preventScroll:true});
+  if(typeof title.scrollIntoView==="function")title.scrollIntoView({block:"start"});}
 // A grip or chord: each note low to high, then all of them strummed together.
 function playChordNotes(midis){
   const a=audio();if(!a||!Array.isArray(midis)||!midis.length)return;
@@ -4405,34 +4410,47 @@ const VIEWS=[
 ];
 const viewCfg=v=>(VIEWS.find(([id])=>id===v)||[])[3]||{};
 
-// The toolbar rows that only some views answer to. A control that does nothing
-// where you are standing is worse than no control at all — it invites you to change
-// a setting, watch nothing happen, and conclude the app is broken. So each row is
-// greyed and disabled where the current view ignores it, rather than removed: the
-// bar keeps its shape, and the greying itself teaches which view uses what.
+// One capability table drives both rendering and the contextual controls.
 const TOOLROWS=["keys","labels","chords","regs","extras"];
 function applyTools(){
   const live=new Set((viewCfg(state.view).tools||"").split(" ").filter(Boolean));
   TOOLROWS.forEach(id=>{
     const row=document.getElementById(id),on=live.has(id);
-    row.classList.toggle("off",!on);
+    row.hidden=!on;
     row.setAttribute("aria-disabled",!on);
-    row.title=on?"":"This view does not use these";
     document.querySelectorAll("#"+id+" button").forEach(b=>{b.disabled=!on;});});
+  document.getElementById("keyselect").disabled=!live.has("keys");
+  document.getElementById("diagramsettings").hidden=!TOOLROWS.slice(1).some(id=>live.has(id));
+  const summary=[];
+  if(live.has("labels")&&state.labelMode!=="name")summary.push(state.labelMode==="interval"?"Intervals":"Blank dots");
+  if(live.has("regs")&&state.reg!==0)summary.push(REGLBL[state.reg]);
+  if(live.has("chords")&&state.chord)summary.push(state.chord==="band"?"Follow backing":"Chord "+state.chord);
+  if(live.has("extras")&&state.showB5)summary.push("♭5 on");
+  document.getElementById("settingssummary").textContent=summary.join(" · ");
+  document.getElementById("legend").hidden=!live.has("labels");
+  document.getElementById("legendchord").hidden=!live.has("chords")||!state.chord;
+  document.getElementById("legendblue").hidden=!live.has("extras")||!state.showB5;
+  document.getElementById("legendcolour").hidden=!["modes","hijaz","blues"].includes(state.view);
 }
 
-// The key buttons say Am until a view means something else by the same selector.
-// Triads, Inversions and Modes all take the key as a bare root — a major triad
-// built on A is not A minor, and calling it Am on screen is simply a lie.
 function applyKeyNames(){
-  const asRoot=viewCfg(state.view).key==="root";
+  const asRoot=viewCfg(state.view).key==="root",select=document.getElementById("keyselect");
   document.getElementById("keylbl").textContent=asRoot?"Root":"Key";
-  document.querySelectorAll("#keys button").forEach(b=>{
-    const k=+b.dataset.k,n=NOTES[k];
-    b.textContent=asRoot?ROOT_NAMES[k]:n+"m";
-    b.setAttribute("aria-label",asRoot?ROOT_NAMES[k]:n+" minor");});
+  select.setAttribute("aria-label",asRoot?"Root":"Key");
+  Array.from(select.children).forEach((option,k)=>{option.textContent=asRoot?ROOT_NAMES[k]:NOTES[k]+" minor";});
+  select.value=String(state.key);
 }
-
+let shellView=null;
+const navGroups=new Map();
+const narrowScreen=()=>typeof window.matchMedia==="function"&&window.matchMedia("(max-width: 740px)").matches;
+function renderShell(){
+  document.getElementById("lessontitle").textContent=state.view==="path"?"Your practice today":VIEWS.find(v=>v[0]===state.view)[1];
+  if(shellView!==state.view){
+    navGroups.forEach((group,band)=>{group.open=band===viewCfg(state.view).band;});
+    if(narrowScreen())document.getElementById("browse").open=false;
+    shellView=state.view;
+  }
+}
 function render(){
   // Hide everything first, then draw: a view's own renderer may measure or reach
   // into the page, and should not see a half-switched shell.
@@ -4440,7 +4458,6 @@ function render(){
   // the tuner stops listening when you leave it: the microphone light should mean something
   if(state.view!=="tune"&&state.pitch&&typeof pitchStop==="function")pitchStop();
   VIEWS.forEach(([v,,draw])=>{if(v===state.view)draw();});
-  document.querySelectorAll("#keys button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.k===state.key));
   document.querySelectorAll("#views button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===state.view));
   document.querySelectorAll("#majorkeys button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.mk===state.majorKey));
   document.querySelectorAll("#labels button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.l===state.labelMode));
@@ -4460,24 +4477,25 @@ function render(){
   // Last, because both of these overrule what the loops above just set.
   applyKeyNames();
   applyTools();
+  renderShell();
 }
 // host is an id or an element, because the nav builds its rows on the fly.
 const mk=(host,data,txt,fn)=>{const b=document.createElement("button");
   Object.entries(data).forEach(([k,v])=>b.dataset[k]=v);b.textContent=txt;b.onclick=fn;
   (typeof host==="string"?document.getElementById(host):host).appendChild(b);};
-NOTES.forEach((n,i)=>mk("keys",{k:i},n+"m",()=>{state.key=i;stopDrone();state.blueLock=null;
-  render()}));
-// Twenty-one buttons in one strip is a wall. The same twenty-one under five
-// headings is a table of contents, and the headings say what each group is for.
+NOTES.forEach((n,i)=>{const option=document.createElement("option");
+  option.value=String(i);option.textContent=n+" minor";document.getElementById("keyselect").appendChild(option);});
+document.getElementById("keyselect").addEventListener("change",e=>{
+  const key=Number(e.target.value);
+  if(e.target.disabled||!Number.isInteger(key)||key<0||key>11)return;
+  state.key=key;stopDrone();state.blueLock=null;render();
+});
 BANDS.forEach(band=>{
-  const row=document.createElement("div");
-  row.className="row";
-  const lbl=document.createElement("span");
-  lbl.className="lbl";lbl.textContent=band;
-  row.appendChild(lbl);
-  document.getElementById("views").appendChild(row);
-  VIEWS.filter(([,,,c])=>c.band===band).forEach(([v,label])=>
-    mk(row,{v},label,()=>{state.view=v;render();}));});
+  const group=document.createElement("details");group.className="nav-group";
+  const heading=document.createElement("summary");heading.textContent=band;group.appendChild(heading);
+  document.getElementById("views").appendChild(group);navGroups.set(band,group);
+  VIEWS.filter(([,,,c])=>c.band===band).forEach(([v,label])=>mk(group,{v},label,()=>goToView(v)));
+});
 [["name","Note names"],["interval","Intervals"],["none","Blank"]]
   .forEach(([l,t])=>mk("labels",{l},t,()=>{state.labelMode=l;render()}));
 [["off","Off"],["i","i"],["iv","iv"],["v","v"],["band","Follow backing"]]

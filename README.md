@@ -12,7 +12,7 @@ An interactive practice desk for learning the minor pentatonic scale across the 
 
 It is one small program with the whole app built in. It runs on your own computer, opens in your browser, works offline and sends nothing anywhere. It grew out of the standalone page in `reference/`.
 
-![The practice desk: title, key selector and the full list of views](docs/screenshots/home.png)
+![The practice desk: compact risograph masthead, lesson index and current practice stage](docs/screenshots/home.png)
 
 ## Install
 
@@ -110,13 +110,19 @@ go install github.com/brucehoppe/minor-pentatonic-go@latest
 | | |
 |---|---|
 | ![Five boxes: the whole neck plus each box on its own](docs/screenshots/five-boxes.png) | ![All 12 keys: Box 1 and Box 4 zones with the slide run, in every key](docs/screenshots/all-12-keys.png) |
-| **5 boxes** — every shape across the neck, and each box on its own | **All 12 keys** — Box 1 and Box 4 in every key, with the slide run between them |
+| **5 boxes** — whole-neck map, individual shapes and focused box selection | **All 12 keys** — Box 1 and Box 4 in every key, with the slide run between them |
 | ![Open tunings: root map and retuning guide for Open D](docs/screenshots/open-tunings.png) | ![12-bar trainer: the form, the current chord and its target tones](docs/screenshots/12-bar-trainer.png) |
 | **Open tunings** — where the roots sit after retuning, and how far to turn each peg | **12-bar trainer** — the form moves with the groove and names each chord's target tones |
 
 <p align="center"><img src="docs/screenshots/seven-licks.jpg" width="360" alt="Seven Licks lesson: the pull-off pair, with fretboard, tab and a practice note"><br><b>Seven Licks</b> — a supplementary written lesson</p>
 
 ## Features
+
+- **A quieter risograph desk:** open a lesson group in **Browse lessons**, choose
+  the key beside the lesson title, and expand **Diagram settings** for labels,
+  register and note overlays. Only relevant controls appear. Playback and recording
+  sit above the exercise without covering the fretboard. **Start here** puts your
+  current stage first; the full course stays available in an expandable outline.
 
 - **Tuner & bends:** a tuner that reads your guitar input (standard, half a step down, dropped D, open D, G and E): which string you're tuning, how many cents off, which way to turn the peg, and a reference tone for every string. Beside it, a **bend and vibrato check**: choose the string, fret and how far to bend, or one of four classic bends in the current key (4 → 5 on the G string, ♭7 → root on the B, ♭3 → 4 on the high e, the ♭3 → 3 curl); hear the target, play the bend, and when the note ends it tells you where it landed (in tune within 15 cents, flat or sharp by how much, or how far it got) and how fast and wide your vibrato was and whether its speed held steady, with the pitch drawn against the target. Pitch detection is YIN (`web/pitch.js`), tested on synthetic strings from low E to 1318 Hz to within 3 cents. Nothing is recorded.
 - **Start here, with progress:** mark each stage's test passed; the first one you haven't passed is marked *You are here*, and a Today card at the top shows that stage, its test, your streak and a short plan for the session, each item with a button that opens the right view.

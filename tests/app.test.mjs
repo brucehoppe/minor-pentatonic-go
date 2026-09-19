@@ -11,6 +11,10 @@ const navButtons = document =>
   document.getElementById("views").children.flatMap(row => row.children)
     .filter(el => el.dataset.v);
 const navButton = (document, view) => navButtons(document).find(b => b.dataset.v === view);
+const chooseKey = (document, key) => {
+  const select = document.getElementById("keyselect");
+  select.value = String(key); select.dispatch("change");
+};
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
@@ -486,7 +490,7 @@ test("all keys, labels, chords, and registers update state", () => {
   const { app, document } = makeRuntime();
   navButton(document, "boxes").click();   // the view that answers to every control
   for (let key = 0; key < 12; key++) {
-    document.getElementById("keys").children[key].click();
+    chooseKey(document, key);
     assert.equal(app.getState().key, key);
   }
   for (const mode of ["name", "interval", "none"]) {
@@ -523,7 +527,7 @@ test("5 boxes combines selections and keeps the practice pair across keys and re
   buttons[0].click();
   assert.deepEqual(lit(), three, "removing Box 1 leaves Box 3 lit");
   buttons[0].click();
-  document.getElementById("keys").children[0].click();
+  chooseKey(document, 0);
   document.getElementById("regs").children[0].click();
   sameShape(app.getState().boxLock, [1, 3], "the pair survives key and register changes");
   document.getElementById("boxreset").click();
@@ -546,7 +550,7 @@ test("every register keeps all five boxes on the neck, in every key", () => {
   const { app, document } = makeRuntime();
   navButton(document, "boxes").click();
   for (let key = 0; key < 12; key++) {
-    document.getElementById("keys").children[key].click();
+    chooseKey(document, key);
     for (const [reg] of app.REGS) {
       const btn = document.getElementById("regs").children.find(b => Number(b.dataset.r) === reg);
       assert.equal(btn.disabled, false, `${app.NOTES[key]} reg ${reg} is always selectable`);
@@ -573,11 +577,11 @@ test("Start here opens the views it names, including the newest ones", () => {
     assert.ok(goto.includes(target), `the path opens ${target} rather than leaving it to be found`);
 });
 
-test("the toolbar greys out the controls a view does not use", () => {
+test("the toolbar hides the controls a view does not use", () => {
   const { app, document } = makeRuntime();
   const rows = ["keys", "labels", "chords", "regs", "extras"];
   const state = () => Object.fromEntries(rows.map(id =>
-    [id, document.getElementById(id).children.every(b => b.disabled === false)]));
+    [id, !document.getElementById(id).hidden]));
 
   navButton(document, "boxes").click();
   sameShape(state(), { keys: true, labels: true, chords: true, regs: true, extras: true },
@@ -611,7 +615,7 @@ test("every greyed control really is inert, and every live one really works", ()
   // the toolbar and nav redraw themselves on every render; what is under test is
   // whether the VIEW changed, so those are excluded from the signature
   const chrome = new Set(["keys", "keylbl", "labels", "chords", "regs", "extras",
-    "views", "play", "approw", "appver", "quitmsg", "audiomsg", "credver"]);
+    "keyselect", "settingssummary", "lessontitle", "views", "play", "approw", "appver", "quitmsg", "audiomsg", "credver"]);
   const signature = () => ids.filter(id => !chrome.has(id))
     .map(id => document.getElementById(id).innerHTML).join("\u0001");
   const draw = (fn) => { fn(); app.render(); return signature(); };
@@ -653,17 +657,17 @@ test("every greyed control really is inert, and every live one really works", ()
 
 test("the key selector says what the current view means by it", () => {
   const { app, document } = makeRuntime();
-  const labels = () => document.getElementById("keys").children.map(b => b.textContent);
+  const labels = () => document.getElementById("keyselect").children.map(b => b.textContent);
 
   navButton(document, "boxes").click();
   assert.equal(document.getElementById("keylbl").textContent, "Key");
-  assert.ok(labels().includes("Am"), "a minor-pentatonic view names minor keys");
+  assert.ok(labels().includes("A minor"), "a minor-pentatonic view names minor keys");
 
   for (const view of ["triads", "inv", "modes"]) {
     navButton(document, view).click();
     assert.equal(document.getElementById("keylbl").textContent, "Root", `${view} asks for a root`);
     assert.ok(labels().includes("A"), `${view} names bare roots`);
-    assert.ok(!labels().includes("Am"), `${view} never calls a major triad's root minor`);
+    assert.ok(!labels().includes("A minor"), `${view} never calls a major triad's root minor`);
   }
 });
 
@@ -3654,18 +3658,18 @@ test("the Inversions view mounts its explorer once, driven by the toolbar's Root
   assert.equal(findAll(el, e => (e.attributes.class || "") === "cx").length, 1, "mounted");
   const sel = findAll(el, e => e.tagName === "SELECT")[0];
   assert.ok(sel, "its own Key menu");
-  document.getElementById("keys").children[7].click();   // G, from the toolbar
+  chooseKey(document, 7);   // G, from the toolbar
   assert.match(infoText(el), /^G major, grip 1 of \d+/);
   assert.equal(sel.value, "7", "the menu follows the toolbar");
   sel.value = "2"; sel.dispatch("change");                // D, from the menu
   assert.equal(app.getState().key, 2, "the toolbar follows the menu");
-  assert.equal(document.getElementById("keys").children[2].getAttribute("aria-pressed"), "true");
+  assert.equal(document.getElementById("keyselect").value, "2");
   assert.match(infoText(el), /^D major/);
-  document.getElementById("keys").children[3].click();   // E♭, spelt as a chord root
+  chooseKey(document, 3);   // E♭, spelt as a chord root
   assert.match(infoText(el), /^E♭ major/);
-  assert.equal(document.getElementById("keys").children[3].textContent, "E♭");
+  assert.equal(document.getElementById("keyselect").children[3].textContent, "E♭");
   navButton(document, "boxes").click();
-  assert.equal(document.getElementById("keys").children[3].textContent, "D#m", "minor keys keep their spelling");
+  assert.equal(document.getElementById("keyselect").children[3].textContent, "D# minor", "minor keys keep their spelling");
   navButton(document, "inv").click();
   assert.equal(findAll(el, e => (e.attributes.class || "") === "cx").length, 1, "not mounted twice");
 });
@@ -3674,7 +3678,7 @@ test("inversions explorer: quality, strings, the pentatonic toggle and stepping 
   const { document } = makeRuntime();
   navButton(document, "inv").click();
   const el = explorerIn(document, "inversions-explorer");
-  document.getElementById("keys").children[9].click();   // A
+  chooseKey(document, 9);   // A
   buttonNamed(el, "Minor").click();
   assert.match(infoText(el), /^A minor/);
   const box = findAll(el, e => e.tagName === "INPUT")[0];
@@ -3723,13 +3727,13 @@ test("the Triads view mounts its explorer: three views, one note changing, barre
   const { app, document, audio } = makeRuntime();
   navButton(document, "triads").click();
   const el = explorerIn(document, "triads-explorer");
-  document.getElementById("keys").children[7].click();   // G
+  chooseKey(document, 7);   // G
   const sel = findAll(el, e => e.tagName === "SELECT")[0];
   assert.equal(sel.value, "7");
   assert.match(infoText(el), /^G major = major 3rd \+ minor 3rd/);
   sel.value = "0"; sel.dispatch("change");
   assert.equal(app.getState().key, 0, "the Key menu moves the toolbar's Root too");
-  document.getElementById("keys").children[7].click();
+  chooseKey(document, 7);
   buttonNamed(el, "Minor").click();
   assert.match(infoText(el), /^G minor = minor 3rd \+ major 3rd/);
   const before = audio.oscillators;
@@ -3762,7 +3766,7 @@ test("the Triads view mounts its explorer: three views, one note changing, barre
 test("the existing Triads and Inversions content stays below the explorers, spelt as chord roots", () => {
   const { document } = makeRuntime();
   navButton(document, "triads").click();
-  document.getElementById("keys").children[10].click();   // B♭
+  chooseKey(document, 10);   // B♭
   const all = ["triadsummary", "triadshapes"].map(id => document.getElementById(id).innerHTML).join("");
   assert.ok(all.length > 500, "the existing Triads content is drawn");
   assert.match(all, /B\u266d/, "B♭ spelt as on a chord chart");
@@ -4193,7 +4197,7 @@ test("on the compatibility engine a key change between choruses renders the new 
 
 // ---------- take settings: mode, focus, attempt ----------
 test("Record sits in the Play along bar; backing is the default; each take picks a length, one focus and an attempt", () => {
-  const play = html.slice(html.indexOf('<div class="row" id="play">'), html.indexOf('<div class="row" id="approw"'));
+  const play = html.slice(html.indexOf('<div class="row" id="play">'), html.indexOf('</div>', html.indexOf('<div class="row" id="play">')));
   assert.match(play, /<button id="recbtn"[^>]*>Record<\/button>/, "usable from any view, beside the tempo");
   const { app } = makeRuntime();
   const row = app.REC_ROW;
@@ -5522,7 +5526,7 @@ test("slash chords are their chord, and more chord types are understood", () => 
 
 test("the Record settings sit in a collapsed section, and a failed keep says so without hiding the earlier message", async () => {
   const { app } = makeRuntime();
-  assert.match(app.REC_ROW, /<details id="recdetails"[^>]*><summary>Settings:/);
+  assert.match(app.REC_ROW, /<details id="recdetails"[^>]*><summary>Recording &amp; input/);
   const rt = makeRuntime({ media: true, capture: { failAfter: 3 } });
   rt.document.getElementById("recbtn").click(); await settle();
   rt.worklets[0].feed(48000); await settle(); rt.worklets[0].feed(48000); await settle(); await settle();
@@ -5589,13 +5593,13 @@ test("Start here keeps which stages you passed, and puts you on the first one yo
   const { app, document } = makeRuntime();
   assert.equal(app.currentStage().n, 1);
   let html = document.getElementById("path").innerHTML;
-  assert.match(html, /You are on stage 1: Time, before notes/);
+  assert.match(html, /class="card now"><h2>1 · Time, before notes/);
   assert.match(html, /data-pass="1" aria-pressed="false">I passed this test/);
   assert.match(html, /data-goto="tune"/, "stage 1 now has somewhere to go: tune up first");
   app.togglePassed(1); app.togglePassed(2);
   assert.equal(app.currentStage().n, 3);
   html = document.getElementById("path").innerHTML;
-  assert.match(html, /You are on stage 3: Phrasing and space/);
+  assert.match(html, /class="card now"><h2>3 · Phrasing and space/);
   assert.match(html, /2 of 8 stages passed/);
   assert.match(html, /Passed [A-Z][a-z]{2} \d+/);
   assert.equal(app.readDays().length, 1, "passing a stage counts as practice today");
@@ -5736,4 +5740,47 @@ test("starting the band or finishing a focus timer counts as a practice day", ()
   assert.equal(app.readDays().length, 0);
   app.toggleTrainer(); app.toggleTrainer();
   assert.equal(app.readDays().length, 1);
+});
+
+
+test("contextual shell keeps navigation and key selection in sync without resetting disclosures", () => {
+  const { app, document } = makeRuntime();
+  const browse = document.getElementById("browse");
+  const settings = document.getElementById("diagramsettings");
+  assert.equal(document.getElementById("keys").hidden, true);
+  assert.equal(settings.hidden, true);
+  chooseKey(document, 3);
+  assert.equal(app.getState().key, 9, "a disabled key menu cannot change the lesson key");
+  navButton(document, "boxes").click();
+  assert.equal(document.getElementById("lessontitle").textContent, "5 boxes");
+  assert.equal(settings.hidden, false);
+  const groups = document.getElementById("views").children;
+  assert.equal(groups.filter(g => g.open).length, 1);
+  assert.equal(groups.find(g => g.open).children[0].textContent, "Shapes");
+  settings.open = true; browse.open = true;
+  chooseKey(document, 2);
+  assert.equal(document.getElementById("keyselect").value, "2");
+  assert.equal(settings.open, true, "changing key keeps the settings disclosure open");
+  assert.equal(browse.open, true);
+  document.getElementById("extras").children[0].click();
+  assert.match(document.getElementById("settingssummary").textContent, /♭5 on/);
+  assert.equal(document.getElementById("legendblue").hidden, false);
+  navButton(document, "tune").click();
+  assert.equal(document.getElementById("legend").hidden, true);
+  assert.equal(groups.find(g => g.open).children[0].textContent, "Fundamentals");
+});
+
+test("course shows the current goal once and keeps its outline open across progress updates", () => {
+  const { app, document } = makeRuntime();
+  const path = document.getElementById("path");
+  const goal = app.PATH[0].goal;
+  assert.equal(path.innerHTML.split(goal).length - 1, 1, "Today no longer duplicates the current lesson");
+  assert.match(path.innerHTML, /id="courseoutline"><summary>/);
+  document.getElementById("courseoutline").open = true;
+  app.togglePassed(1);
+  assert.match(path.innerHTML, /id="courseoutline" open>/);
+  assert.match(path.innerHTML, /2 · One shape/);
+  app.PATH.forEach(p => { if (p.n !== 1) app.togglePassed(p.n); });
+  assert.match(path.innerHTML, /Every stage passed/);
+  assert.equal((path.innerHTML.match(/data-pass=/g) || []).length, app.PATH.length, "completed stages remain available to undo");
 });

@@ -5,6 +5,12 @@ a second release on the same day.
 
 ## Unreleased
 
+- Adopt the quieter risograph layout: a compact kaiju masthead, collapsible lesson
+  index, contextual key/root menu and diagram settings, and one current learning
+  stage with an expandable course outline. Playback controls sit above the lesson
+  in normal page flow, so they cannot cover fretboards. Band/mix options collapse,
+  small screens use one column, and keyboard navigation lands on the lesson title.
+
 - Tuner & bends, a new view under Fundamentals. A tuner for standard, half a step
   down, dropped D and the three open tunings (the string you're tuning, how many
   cents off, which way to turn, and a reference tone per string), and a bend and

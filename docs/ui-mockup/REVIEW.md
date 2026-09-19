@@ -1,5 +1,7 @@
 # UI review: a quieter risograph practice desk
 
+**Adopted:** this design is now integrated into `web/`. The former preview URL opens the real app. The notes below record the original review; the floating playback bar was replaced by an inline panel after visual feedback.
+
 The risograph identity is worth keeping: paper, blue/pink ink, offset title, embedded Bricolage Grotesque and DM Mono, and the guitar artwork. Most clutter comes from presenting navigation, setup and teaching content at the same visual priority.
 
 ## Findings and recommendations
