@@ -610,7 +610,7 @@ func TestFrontendFeatureSuite(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node is not installed")
 	}
-	cmd := exec.Command("node", "--test", "tests/app.test.mjs")
+	cmd := exec.Command("node", "--test", "tests/app.test.mjs", "tests/pitch.test.mjs")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("frontend feature suite failed: %v\n%s", err, output)

@@ -5,6 +5,36 @@ a second release on the same day.
 
 ## Unreleased
 
+- Tuner & bends, a new view under Fundamentals. A tuner for standard, half a step
+  down, dropped D and the three open tunings (the string you're tuning, how many
+  cents off, which way to turn, and a reference tone per string), and a bend and
+  vibrato check: pick a string, fret and bend (or one of four classic bends in the
+  key on screen), hear the target, play it, and when the note ends it says where
+  the bend landed (in tune within 15 cents, flat or sharp by how much, or how far
+  it got) and the vibrato's speed, width and whether the speed held steady, with
+  the pitch drawn against the target. Recent results are kept. Pitch is YIN on the
+  shared input, in `web/pitch.js`, tested against synthetic plucked strings from
+  low E to 1318 Hz (within 3 cents), and checked in Chrome on a synthetic bend 20
+  cents flat with a 5.5 Hz, 25-cent vibrato: read as 18 to 22 cents flat, 5.5 Hz,
+  22 cents.
+- Start here remembers which stages you've passed. "I passed this test" on each
+  stage; the first one not passed is marked "You are here", and a Today card at
+  the top shows it, its test, your streak and what to do next. Stage 1 now opens
+  the tuner, the Rhythm lab and the 12-bar trainer; stage 4 opens the bend check.
+- Lick tempos: each lick keeps the tempo you last played it cleanly at ("Played
+  it clean at this tempo"), shows the history, and offers Warm up at 5 below and
+  Try 5 above. Today names the lick you've left longest and its tempo.
+- One-minute changes, in Practice: pick two chords from twelve common pairs (chord
+  boxes shown), switch between them for a minute, tap or press Space on each
+  change, and try to beat your best; a stopped minute isn't counted.
+- Today is rebuilt around these: play today, tune up, your stage, the lick to push,
+  the chord change to beat, and how your recent bends landed, five items at most,
+  each with a button that goes there. Practice days now also count starting the
+  12-bar trainer, finishing a take, a focus timer running out, a checked bend, a
+  lick tempo, a minute of changes or a passed stage, not only the ear drill and a
+  logged session.
+- Practice: a Today card (streak and what to do next) and an ear drill that ties
+  each pentatonic degree to its sound, weighted toward the ones you miss.
 - Critique of the finished app, and fixes: the Record settings (input, what to
   record, this take, latency, file options) fold into one collapsed section
   instead of filling the toolbar on every view; the Songs view's labels and status
@@ -202,7 +232,3 @@ First public release.
 - All five typefaces bundled; no network requests at all.
 - Smaller hero image (JPEG, about 100 kB); bounded audio cache; drones fade out.
 - Seven Licks diagrams describe each lick for screen readers.
-
-## Unreleased
-
-- Practice: a Today card (streak and what to do next) and an ear drill that ties each pentatonic degree to its sound, weighted toward the ones you miss.

@@ -66,6 +66,51 @@
     <div class="grid wide" id="path"></div>
   </section>
 
+  <section id="v-tune" hidden>
+    <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
+      Two things to do with your guitar plugged in (or near the microphone). Tune before every session:
+      a guitar slightly out of tune makes every bend and chord sound wrong, and you learn to hear it as
+      normal. Then check your bends: your ear can't judge a bend while your hands are busy making it.
+      Both use the input chosen under <b>Record → Settings</b>; nothing is recorded or kept.</p>
+    <div class="grid wide">
+      <div class="card" id="tunercard">
+        <h2>Tuner<em>play one open string at a time</em></h2>
+        <div class="row" id="tunings"><span class="lbl">Tuning</span></div>
+        <div class="row" style="margin-top:8px"><button id="tunelisten" aria-pressed="false">Start listening</button></div>
+        <div id="tunerread" class="tunerread" aria-live="polite"></div>
+        <div class="row" id="tunerefs" style="margin-top:10px"><span class="lbl">Hear a string</span></div>
+        <p class="tip">Tune up to a note, not down: if a string is sharp, go below it and come back up, so the
+          string settles against the peg and stays in tune. Within 5 cents is in tune.</p>
+      </div>
+      <div class="card" id="bendcard">
+        <h2>Bend and vibrato check<em>hear the target, then bend to it</em></h2>
+        <div class="row" id="bendpresets"><span class="lbl">Classic bends</span></div>
+        <div class="row" style="margin-top:6px"><span class="lbl">String</span>
+          <select id="bendstring" aria-label="String"></select>
+          <span class="lbl">Fret</span><input type="number" id="bendfret" min="1" max="22" value="7" aria-label="Fret" style="width:4.5em">
+          <span class="lbl">Bend</span><select id="bendamt" aria-label="How far to bend">
+            <option value="1">½ step</option><option value="2" selected>Whole step</option>
+            <option value="3">1½ steps</option><option value="0">None: vibrato only</option></select></div>
+        <p class="tip" id="bendwhat"></p>
+        <div class="row"><button id="bendheartarget">Hear the target</button><button id="bendhearfret">Hear the fretted note</button>
+          <button id="bendlisten" aria-pressed="false">Start listening</button></div>
+        <div id="bendtrace" class="bendtrace"></div>
+        <div class="status" id="bendstatus" aria-live="polite"></div>
+        <ul class="loglist" id="bendlog"></ul>
+      </div>
+      <div class="card">
+        <h2>How to use it<em>three minutes, every session</em></h2>
+        <ol>
+          <li><b>Hear the target</b>, then play the target note fretted, so it's in your head.</li>
+          <li>Play the fretted note and bend up to it. Hold it. Let the note finish: the check reads it when the sound stops.</li>
+          <li>Flat is the usual miss, and it's the one that sounds like a mistake. If you land flat, push further with the same fingers; add a finger behind the one bending (third finger bending, second and first behind it).</li>
+          <li>Then vibrato: hold the bent note and move it with the wrist, not the finger. Aim for an even speed. Five or six wobbles a second, a quarter of a semitone either side, is a usual blues vibrato; faster and narrower sounds nervous, slower and wider sounds like a singer.</li>
+          <li>Five bends in tune in a row, then take it into a lick. Record one, and listen back.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
   <section id="v-song" hidden>
     <p class="tip" style="max-width:64ch;margin:0 0 18px;font-size:12.5px">
       The missing piece is almost always this: <b>the scale comes from the song, not from the guitar.</b>
@@ -574,6 +619,18 @@
         <div class="status" id="todaystreak"></div>
         <ul class="loglist" id="todaylist"></ul>
       </div>
+      <div class="card" id="changescard">
+        <h2>One-minute changes<em>the chord change, not the chord</em></h2>
+        <p class="tip">Pick two chords. For one minute, switch between them as cleanly as you can, strumming once on each,
+          and count each change (tap the button or press Space). Most of the difficulty in songs is the change,
+          and this is the fastest way to make it automatic. Do two or three pairs a day; beat your best.</p>
+        <div class="row" id="changepairs"></div>
+        <div id="changeshapes" class="changeshapes"></div>
+        <div class="row" style="margin-top:10px"><button id="changestart" aria-pressed="false">Start a minute</button>
+          <button id="changetap" class="big" disabled>Changed</button><span id="changeclock" class="changeclock">1:00</span></div>
+        <div class="status" id="changestatus" aria-live="polite"></div>
+        <ul class="loglist" id="changelog"></ul>
+      </div>
       <div class="card">
         <h2>Ear drill<em>hear the degree, then find it</em></h2>
         <p class="tip">The root plays, then one note of the scale. Name its degree by ear, then play it on your guitar.</p>
@@ -994,6 +1051,9 @@
 <script src="inversions-explorer.js" defer></script>
 <script src="band.js" defer></script>
 <script src="analysis.js" defer></script>
+<script src="pitch.js" defer></script>
+<script src="tune.js" defer></script>
+<script src="changes.js" defer></script>
 <script src="library.js" defer></script>
 <script src="looper.js" defer></script>
 <script src="songs.js" defer></script>

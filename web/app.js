@@ -32,7 +32,9 @@ const state={
   // register and the box selection instead of being pinned to absolute frets.
   soloBoxes:[1], soloRun:[], soloTimer:null, soloStep:-1,
   // practice - find-the-note quiz, focus timer and tempo ladder
-  quiz:null,
+  quiz:null, changes:null,
+  // Tuner & bends: the tuning, and the live pitch reading while the view listens
+  tuneTuning:"standard", pitch:null,
   timerSeconds:300, timerInitial:300, timerHandle:null, ladderStart:90, ladderRound:1,
   // 12-bar trainer and rhythm lab
   trainerTimer:null, trainerBar:-1, trainerBeat:0, trainerCount:4,
@@ -878,8 +880,15 @@ function renderLicks(){
     return `<div class="card${l.g?" fromguide":""}"><h2>${l.t}<em>${l.e}</em></h2>${
       l.g?`<p class="badge">Practice guide</p>`:""}${fretboard([...map.values()],{w:44})}<pre>${tab(l.n,LR)}</pre>
       <p class="tip">${l.tip.replace(/\$\{K\}/g,k)}</p>
-      <p class="tip"><button data-hear="${LICKS.indexOf(l)}">Hear the model</button> then press Record in the Play along bar and play it back to yourself.</p></div>`;}).join("");
-  document.getElementById("licks").onclick=e=>{const d=e.target&&e.target.dataset;if(d&&d.hear!==undefined)hearLick(+d.hear);};
+      <p class="tip"><button data-hear="${LICKS.indexOf(l)}">Hear the model</button> then press Record in the Play along bar and play it back to yourself.</p>
+      <p class="tip licktempo" id="licktempo-${LICKS.indexOf(l)}">${lickTempoLine(l)}</p>
+      <div class="row"><button data-clean="${LICKS.indexOf(l)}">Played it clean at this tempo</button>${
+        (r=>r.length?`<button data-bpm="${Math.max(40,r[0].bpm-5)}">Warm up at ${Math.max(40,r[0].bpm-5)}</button><button data-bpm="${Math.min(220,r[0].bpm+5)}">Try ${Math.min(220,r[0].bpm+5)}</button>`:"")(readLickTempos()[l.t]||[])}</div></div>`;}).join("");
+  document.getElementById("licks").onclick=e=>{const d=e.target&&e.target.dataset;if(!d)return;
+    if(d.hear!==undefined)hearLick(+d.hear);
+    else if(d.clean!==undefined){saveLickTempo(+d.clean);renderLicks();
+      const t=document.getElementById("licktempo-"+d.clean);if(t)t.innerHTML=`Saved: clean at <b>${state.bpm} bpm</b>. Next time, start here.`;}
+    else if(d.bpm!==undefined)setBpm(+d.bpm);};
   document.querySelectorAll(".guidekey").forEach(b=>b.onclick=()=>{
     state.key=+b.dataset.k;stopDrone();state.blueLock=null;
     render();});
@@ -898,7 +907,7 @@ function hearLick(i){
 
 // ---------- learning path ----------
 const PATH=[
- {n:1,t:"Time, before notes",d:"about a week",go:[],
+ {n:1,t:"Time, before notes",d:"about a week",go:[["tune","Tune up first"],["rhythm","Rhythm lab"],["trainer","Twelve bars with the band"]],
   goal:"Play <b>one note</b> over the metronome and drone for twelve bars without drifting. Then two notes. Then a note on beat one of every bar, nothing else.",
   why:"Everything that makes a solo sound good is rhythmic. A player with perfect time and five notes sounds better than a player with bad time and fifty. Starting here is not a warm-up, it's the foundation.",
   test:"Twelve bars, one note, click on — you land on beat one every time and can feel the bar turn over without counting out loud."},
@@ -910,12 +919,12 @@ const PATH=[
   goal:"Four notes maximum per phrase, then silence for as long as the phrase lasted. Ask a question, answer it. Sing a line first, then find it.",
   why:"This is what separates playing a scale from playing music, and it's the stage almost everyone skips in a hurry to learn more notes. Space is what makes the notes mean anything.",
   test:"Record twelve bars using no more than four notes that you'd be willing to play to another person. That's the bar. It's harder than it sounds."},
- {n:4,t:"The sound: bends and vibrato",d:"start now, never stops",go:[["blues","Open the drills"]],
+ {n:4,t:"The sound: bends and vibrato",d:"start now, never stops",go:[["tune","Check your bends"],["blues","Open the drills"]],
   goal:"Play the target note, hold it in your head, then bend to it and check. Vibrato from the wrist, even in speed and width, on a held note.",
   why:"Bad bends and shaky vibrato make good note choices sound amateur. Good ones make three notes sound professional. This is the highest-return technical work in blues playing.",
-  test:"A recorded bend that lands in tune, held with vibrato that doesn't wobble in speed. Listen back — recording is the only honest judge here."},
+  test:"Five bends in a row that the bend check calls in tune, and a recorded one held with vibrato that doesn't wobble in speed. Listen back — recording is the only honest judge here."},
  {n:5,t:"Vocabulary — three licks, not thirty",d:"2–4 weeks",go:[["licks","Open the drills"]],
-  goal:"Take three licks. Learn each in three keys. Then break each into fragments and rearrange them — first half of one, second half of another.",
+  goal:"Take three licks. Learn each in three keys, and save the tempo you can play each one cleanly at, so the next session starts there. Then break each into fragments and rearrange them — first half of one, second half of another.",
   why:"Licks are raw material, not finished sentences. Players who collect fifty licks play fifty licks; players who own three recombine them into hundreds.",
   test:"Play each from memory at two tempos, and use half of one inside an improvisation without planning it first."},
  {n:6,t:"Movement",d:"3–6 weeks",go:[["cross","Open the drills"],["solo","Build a run"]],
@@ -947,18 +956,47 @@ const HOWTO=[
   "Practising only alone and unaccompanied.",
   "Moving on from a stage because it got boring rather than because you passed the test."]}
 ];
+// Which stages you have passed, and when: {stage number: "YYYY-MM-DD"}, in this browser.
+// The stage you are on is the first one not passed.
+const PATH_KEY="minor-pentatonic-path-v1";
+function readPath(){try{const v=JSON.parse(window.localStorage.getItem(PATH_KEY)||"{}"),o={};
+  if(v&&typeof v==="object")PATH.forEach(p=>{if(typeof v[p.n]==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(v[p.n]))o[p.n]=v[p.n];});
+  return o;}catch(e){return {};}}
+function writePath(v){try{window.localStorage.setItem(PATH_KEY,JSON.stringify(v));}catch(e){/* this visit only */}}
+function currentStage(passed=readPath()){return PATH.find(p=>!passed[p.n])||null;}
+function togglePassed(n){const v=readPath();
+  if(v[n])delete v[n];else{v[n]=dayKey(new Date());markToday();}
+  writePath(v);renderPath();renderToday();}
+const shortDate=k=>{const [y,m,d]=k.split("-").map(Number);
+  return new Date(y,m-1,d).toLocaleDateString(undefined,{month:"short",day:"numeric"});};
 function renderPath(){
-  document.getElementById("path").innerHTML=
-    PATH.map(p=>`<div class="card"><h2>${p.n} · ${p.t}<em>${p.d}</em></h2>
+  const passed=readPath(),now=currentStage(passed),done=PATH.filter(p=>passed[p.n]).length;
+  const here=`<div class="card wide pathnow"><h2>Today<em>${done} of ${PATH.length} stages passed</em></h2>
+      <div class="status" id="pathstreak">${streakMessage(readDays())}</div>
+      ${now?`<p class="tip"><b>You are on stage ${now.n}: ${now.t}.</b> ${now.goal}</p>
+      <p class="tip"><b>Move on when.</b> ${now.test}</p>`
+        :`<p class="tip"><b>Every stage passed.</b> Keep going round: a new key, a new song, a faster tempo, the next solo to learn by ear.</p>`}
+      <ul class="loglist" id="pathtoday">${todayAdvice().map(x=>`<li><span>${x}</span></li>`).join("")}</ul></div>`;
+  document.getElementById("path").innerHTML=here+
+    PATH.map(p=>`<div class="card${now&&p.n===now.n?" now":""}${passed[p.n]?" passed":""}"><h2>${p.n} · ${p.t}<em>${p.d}</em></h2>
+      ${passed[p.n]?`<p class="badge">Passed ${escapeHTML(shortDate(passed[p.n]))}</p>`:now&&p.n===now.n?`<p class="badge here">You are here</p>`:""}
       <p class="tip"><b>Do this.</b> ${p.goal}</p>
       <p class="tip"><b>Why here.</b> ${p.why}</p>
       <p class="tip"><b>Move on when.</b> ${p.test}</p>
-      ${p.go.length?`<div class="row" style="margin-top:10px">${
-        p.go.map(([v,t])=>`<button data-goto="${v}">${t}</button>`).join("")}</div>`:""}
+      <div class="row" style="margin-top:10px">${
+        p.go.map(([v,t])=>`<button data-goto="${v}">${t}</button>`).join("")}<button data-pass="${p.n}" aria-pressed="${!!passed[p.n]}">${
+        passed[p.n]?"Passed ✓ (undo)":"I passed this test"}</button></div>
       </div>`).join("")
    +HOWTO.map(h=>`<div class="card"><h2>${h.t}</h2><ol>${h.items.map(i=>`<li>${i}</li>`).join("")}</ol></div>`).join("");
-  document.querySelectorAll("#path button[data-goto]").forEach(b=>
+  wireGoto("#path");
+  document.querySelectorAll("#path button[data-pass]").forEach(b=>b.onclick=()=>togglePassed(+b.dataset.pass));
+}
+// Buttons that open a view, or set the tempo, inside a block of text: the path's cards
+// and the Today lists.
+function wireGoto(sel){
+  document.querySelectorAll(sel+" button[data-goto]").forEach(b=>
     b.onclick=()=>{state.view=b.dataset.goto;render();window.scrollTo({top:0,behavior:"smooth"});});
+  document.querySelectorAll(sel+" button[data-bpm]").forEach(b=>b.onclick=()=>setBpm(+b.dataset.bpm));
 }
 
 // ---------- over a song ----------
@@ -1413,6 +1451,7 @@ function toggleTimer(){if(state.timerHandle){stopTimer();document.getElementById
   const b=document.getElementById("toggletimer");b.textContent="Pause";b.setAttribute("aria-pressed",true);
   document.getElementById("timerstatus").textContent="Focus on one thing until the cue.";
   state.timerHandle=setInterval(()=>{state.timerSeconds=Math.max(0,state.timerSeconds-1);paintTimer();if(state.timerSeconds===0){stopTimer();timerCue();
+    markToday();renderToday();
     document.getElementById("timerstatus").innerHTML="Time. <b>Stop, breathe, and name what improved.</b>";}},1000);}
 function resetTimer(){stopTimer();state.timerSeconds=state.timerInitial;paintTimer();document.getElementById("timerstatus").textContent="Reset and ready.";}
 function ladder(delta){state.bpm=Math.max(40,Math.min(220,state.bpm+delta));state.ladderRound++;
@@ -1513,24 +1552,64 @@ function renderEar(){
   document.getElementById("earstats").innerHTML=EAR_DEGREES.map(([d,l,n])=>{const [r,t]=s[d];
     return `<li><span>${l} · ${n}</span><span>${t?Math.round(100*r/t)+"% of "+t:"not tried"}</span></li>`;}).join("");
 }
-// What to do next: keep the streak, work the weakest sound, and try a key not yet logged.
+// What to do next, from what this browser knows: whether you have played today, the stage
+// you are on, and the drills with a score to beat (lick tempos, chord changes, bends).
+// Five items at most, so it stays a plan and not a list of everything.
 function todayAdvice(){
-  const items=[],s=readEar(),log=readLog(),days=readDays();
-  const tried=EAR_DEGREES.filter(([d])=>s[d][1]>=5).sort((a,b)=>s[a[0]][0]/s[a[0]][1]-s[b[0]][0]/s[b[0]][1]);
-  const done=days.includes(dayKey(new Date()));
-  if(!done)items.push("Practise today: even five minutes keeps the habit.");
-  if(!EAR_DEGREES.some(([d])=>s[d][1]>0))items.push("Try the ear drill: ten notes, so the shapes have a sound.");
-  else if(tried.length&&s[tried[0][0]][0]/s[tried[0][0]][1]<.8)items.push(`Your weakest sound is <b>${tried[0][1]}</b> (${tried[0][2]}): hum it over the root drone, then play it.`);
+  const items=[],days=readDays(),log=readLog(),now=currentStage();
+  const go=(v,t)=>` <button data-goto="${v}">${t}</button>`;
+  if(!days.includes(dayKey(new Date())))items.push("Practise today: even five minutes keeps the habit.");
+  items.push("Tune up before you play: a guitar a little out of tune makes every bend sound wrong."+go("tune","Tuner"));
+  if(now&&state.view!=="path")items.push(`You are on stage ${now.n}, <b>${now.t}</b>.`+go("path","Start here"));
+  const lick=lickToPush();
+  if(lick)items.push(`Push <b>${lick.t}</b>: clean at ${lick.bpm} bpm on ${escapeHTML(shortDate(lick.d))}. Start there, then try ${Math.min(220,lick.bpm+5)}.`+
+    ` <button data-bpm="${lick.bpm}">Set ${lick.bpm} bpm</button>`);
+  else if(now&&now.n>=5)items.push("Pick three licks and save the tempo you can play each one cleanly at."+go("licks","Licks"));
+  const ch=typeof readChanges==="function"?readChanges():{},pairs=Object.entries(ch).filter(([,r])=>r.length);
+  if(pairs.length){const [k,r]=pairs.sort((a,b)=>a[1][0].d<b[1][0].d?-1:1)[0];
+    items.push(`One-minute changes: beat <b>${changesBest(r)}</b> on ${k.replace("-"," ↔ ")}.`);}
+  else if(!now||now.n<=2)items.push("One-minute changes: two chords, one minute, count the changes."+go("practice","Practice"));
+  const bends=(typeof readBends==="function"?readBends():[]).filter(x=>x.by).slice(0,10);
+  if(bends.length)items.push(`Bends: ${bends.filter(x=>x.verdict==="in tune").length} of your last ${bends.length} landed in tune.`+go("tune","Check more"));
+  else if(now&&now.n>=4)items.push("Check five bends against the target before you play."+go("tune","Bend check"));
+  const s=readEar(),tried=EAR_DEGREES.filter(([d])=>s[d][1]>=5).sort((a,b)=>s[a[0]][0]/s[a[0]][1]-s[b[0]][0]/s[b[0]][1]);
+  if(tried.length&&s[tried[0][0]][0]/s[tried[0][0]][1]<.8)items.push(`Your weakest sound is <b>${tried[0][1]}</b> (${tried[0][2]}): hum it over the root drone, then play it.`);
   const seen=new Set(log.map(x=>x.key));const unseen=NOTES.filter((n,i)=>!seen.has(n)&&i!==state.key);
   if(log.length&&unseen.length)items.push(`Take your box shapes to a new key: <b>${unseen[0]}</b> minor.`);
-  else if(!log.length)items.push("Build a session below and log it when you finish.");
   items.push("Record one take and listen back once: it shows what practice can't.");
-  return items;
+  return items.slice(0,5);
 }
 function renderToday(){
   document.getElementById("todaystreak").innerHTML=streakMessage(readDays());
   document.getElementById("todaylist").innerHTML=todayAdvice().map(x=>`<li><span>${x}</span></li>`).join("");
+  wireGoto("#todaylist");
+  const ps=document.getElementById("pathstreak");
+  if(ps&&state.view==="path")renderPath();
 }
+
+// ---------- lick tempos ----------
+// The tempo you last played each lick cleanly at, so a session starts where the last one
+// left off instead of from nothing: {lick title: [{bpm, d}], newest first}.
+const LICK_TEMPO_KEY="minor-pentatonic-lick-tempos-v1";
+function readLickTempos(){try{const v=JSON.parse(window.localStorage.getItem(LICK_TEMPO_KEY)||"{}"),o={};
+  if(v&&typeof v==="object")LICKS.forEach(l=>{const r=v[l.t];
+    if(Array.isArray(r))o[l.t]=r.filter(x=>x&&Number.isInteger(x.bpm)&&x.bpm>=40&&x.bpm<=220&&typeof x.d==="string").slice(0,12);});
+  return o;}catch(e){return {};}}
+function saveLickTempo(i){const l=LICKS[i];if(!l)return null;
+  const v=readLickTempos(),r=v[l.t]||[];
+  v[l.t]=[{bpm:state.bpm,d:dayKey(new Date())},...r].slice(0,12);
+  try{window.localStorage.setItem(LICK_TEMPO_KEY,JSON.stringify(v));}catch(e){/* this visit only */}
+  markToday();return v[l.t];}
+// The lick you have a tempo for but have left longest.
+function lickToPush(){const v=readLickTempos(),have=Object.entries(v).filter(([,r])=>r.length);
+  if(!have.length)return null;
+  const [t,r]=have.sort((a,b)=>a[1][0].d<b[1][0].d?-1:a[1][0].d>b[1][0].d?1:0)[0];
+  return {t,bpm:r[0].bpm,d:r[0].d};}
+function lickTempoLine(l){const r=readLickTempos()[l.t]||[];
+  if(!r.length)return "No clean tempo saved yet. Start slow enough to play it perfectly.";
+  const best=Math.max(...r.map(x=>x.bpm)),last=r[0];
+  return `Clean at <b>${last.bpm} bpm</b> on ${escapeHTML(shortDate(last.d))}${best>last.bpm?`, best ${best}`:""}${
+    r.length>1?` · ${r.slice(0,5).reverse().map(x=>x.bpm).join(" → ")}`:""}.`;}
 
 // ---------- the backing band ----------
 // The trainer's beats drive web/band.js: each beat the trainer books, the band
@@ -1831,7 +1910,7 @@ function stopTrainer(){if(state.trainerTimer){clearInterval(state.trainerTimer);
   if(b){b.textContent="Start with count-in";b.setAttribute("aria-pressed",false);}}
 function toggleTrainer(){if(state.trainerTimer){stopTrainer();return;}state.trainerCount=4;state.trainerBar=-1;state.trainerBeat=0;
   const b=document.getElementById("toggletrainer");b.textContent="Stop";b.setAttribute("aria-pressed",true);
-  bandStart();state.trainerEnding=false;state.trainerChorus=0;state.dropBars=[];state.liveChordKey="";
+  markToday();bandStart();state.trainerEnding=false;state.trainerChorus=0;state.dropBars=[];state.liveChordKey="";
   state.trainerTimer=beatLoop(()=>60/state.bpm,trainerTick);}
 function resetTrainer(){stopTrainer();state.trainerBar=-1;state.trainerBeat=0;state.trainerCount=4;renderTrainer();}
 
@@ -2489,12 +2568,13 @@ function releaseInput(){
   if(!h)return;
   state.inputHeld=null;clearTimeout(h.idle);
   meterDetach();
+  if(state.pitch&&typeof pitchStop==="function")pitchStop();
   if(state.checking){state.checking=false;checkButton();}
   h.stream.getTracks().forEach(t=>t.stop());}
 // Called whenever the recorder, the monitor or Check input lets go of the input.
 function inputIdle(){
   const h=state.inputHeld;
-  if(!h||state.monitor||state.rec||state.checking)return;
+  if(!h||state.monitor||state.rec||state.checking||state.pitch)return;
   clearTimeout(h.idle);h.idle=setTimeout(releaseInput,INPUT_IDLE_MS);}
 // The input as a Web Audio source, with the chosen channel split out. link(node)
 // connects it onward; one splitter output is mono, which a stereo node spreads to
@@ -2678,7 +2758,7 @@ function drillBar(when){
 function stopRecording(){
   const r=state.rec;
   if(!r||r.phase!=="recording")return;
-  r.phase="finishing";clearInterval(r.clock);
+  r.phase="finishing";clearInterval(r.clock);markToday();
   recButtons();recSay("Saving the take…");
   // a drill's capture was told its last frame; otherwise it stops now
   [r.capture,r.stem].forEach(c=>{if(c&&!c.ending)c.node.port.postMessage({stop:true});});
@@ -4089,6 +4169,7 @@ function renderInversions(){
 // and joins the table below like any other.
 function renderPractice(){
   renderGuide();newQuiz();newSession();paintTimer();renderLog();renderEar();renderToday();
+  if(typeof renderChanges==="function")renderChanges();
   document.getElementById("ladderbpm").textContent=state.bpm;
 }
 
@@ -4292,6 +4373,7 @@ const VIEWS=[
   ["path",    "Start here",       renderPath,       {band:"Fundamentals"}],
   ["song",    "Over a song",      renderSong,       {band:"Fundamentals",tools:"keys"}],
   ["notes",   "Note names",       renderNotes,      {band:"Fundamentals"}],
+  ["tune",    "Tuner & bends",    renderTune,       {band:"Fundamentals"}],
 
   ["boxes",   "5 boxes",          renderBoxes,      {band:"Shapes",tools:"keys labels chords regs extras"}],
   ["land",    "Box 1 & 4",        renderLand,       {band:"Shapes",tools:"keys labels chords regs extras"}],
@@ -4355,6 +4437,8 @@ function render(){
   // Hide everything first, then draw: a view's own renderer may measure or reach
   // into the page, and should not see a half-switched shell.
   VIEWS.forEach(([v])=>document.getElementById("v-"+v).hidden=(v!==state.view));
+  // the tuner stops listening when you leave it: the microphone light should mean something
+  if(state.view!=="tune"&&state.pitch&&typeof pitchStop==="function")pitchStop();
   VIEWS.forEach(([v,,draw])=>{if(v===state.view)draw();});
   document.querySelectorAll("#keys button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.k===state.key));
   document.querySelectorAll("#views button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===state.view));

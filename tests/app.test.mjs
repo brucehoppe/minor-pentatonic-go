@@ -23,6 +23,7 @@ const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-
   .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
 const analysisScript = readFileSync(new URL("../web/analysis.js", import.meta.url), "utf8");
+const pitchScripts = ["pitch.js", "tune.js", "changes.js"].map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const songsScript = readFileSync(new URL("../web/songs.js", import.meta.url), "utf8");
 const libraryScript = readFileSync(new URL("../web/library.js", import.meta.url), "utf8");
 const looperScript = readFileSync(new URL("../web/looper.js", import.meta.url), "utf8");
@@ -351,6 +352,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   if (explorers) for (const f of explorerScripts) vm.runInContext(f, context);
   if (band) vm.runInContext(bandScript, context);   // band:false is the page without web/band.js
   vm.runInContext(analysisScript, context);
+  for (const f of pitchScripts) vm.runInContext(f, context);
   vm.runInContext(libraryScript, context);
   vm.runInContext(looperScript, context);
   vm.runInContext(songsScript, context);
@@ -383,7 +385,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
-    completeSession,clearLog,readLog,streakOf,streakMessage,bestStreak,earPick,earNew,earAnswer,readEar,readDays,todayAdvice,EAR_DEGREES,dayKey,getEar:()=>state.ear,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
+    completeSession,clearLog,readLog,streakOf,streakMessage,bestStreak,earPick,earNew,earAnswer,readEar,readDays,todayAdvice,EAR_DEGREES,readPath,currentStage,togglePassed,PATH,readLickTempos,saveLickTempo,lickToPush,renderLicks,renderPath,renderToday,
+    renderTune,pitchToggle,pitchStop,bendFinish,readBends,renderChanges,changesToggle,changesTap,changesDone,readChanges,CHANGE_PAIRS,dayKey,getEar:()=>state.ear,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
     getState:()=>({key:state.key,view:state.view,labelMode:state.labelMode,chord:state.chord,reg:state.reg,chartOpen:state.chartOpen,boxLock:state.boxLock,droneNodes:state.droneHandle,clickTimer:state.clickTimer,bpm:state.bpm,timerSeconds:state.timerSeconds,timerInitial:state.timerInitial,timerHandle:state.timerHandle,ladderRound:state.ladderRound,
       trainerTimer:state.trainerTimer,trainerBar:state.trainerBar,trainerBeat:state.trainerBeat,trainerCount:state.trainerCount,rhythmTimer:state.rhythmTimer,rhythmStep:state.rhythmStep,rhythm:[...state.rhythm],showB5:state.showB5,blueLock:state.blueLock,
       soloBoxes:[...state.soloBoxes],soloRun:[...state.soloRun],soloTimer:state.soloTimer,soloStep:state.soloStep,storage:window.localStorage})};`, context);
@@ -391,7 +394,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // which is what the browser's 25 ms pump timer does in real life.
   const advance = seconds => { clock.t += seconds; for (const fn of [...intervals.values()]) fn(); };
   const runIdle = () => { for (const [id, fn] of [...idle]) { idle.delete(id); fn(); } };
-  return { app: context.appTest, document, audio, intervals, fetched, audioElements, clock, advance, rec, runIdle,
+  return { app: context.appTest, context, document, audio, intervals, fetched, audioElements, clock, advance, rec, runIdle,
     worklets, modules, idb, workers,
     closed: () => windowClosed };
 }
@@ -457,7 +460,7 @@ test("song count-in can be cancelled and invalid loops never play", async () => 
 
 test("all revised navigation views render", () => {
   const { app, document } = makeRuntime();
-  const views = ["hijaz","open","path","song","songs","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","theory","practice"];
+  const views = ["hijaz","open","path","tune","song","songs","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","theory","practice"];
   for (const view of views) {
     navButton(document, view).click();
     assert.equal(app.getState().view, view);
@@ -3768,7 +3771,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="pitch\.js" defer><\/script>\s*<script src="tune\.js" defer><\/script>\s*<script src="changes\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {
@@ -5578,4 +5581,159 @@ test("the streak message encourages and never scolds", () => {
   assert.match(back, /Welcome back.*best run is 3/);
   assert.doesNotMatch(back, /lost|broke|missed|failed/i);
   assert.equal(app.bestStreak(["2026-09-01", "2026-09-02", "2026-09-05"]), 2);
+});
+
+// ---------- practical additions: path progress, Today, lick tempos, changes, tuner ----------
+
+test("Start here keeps which stages you passed, and puts you on the first one you haven't", () => {
+  const { app, document } = makeRuntime();
+  assert.equal(app.currentStage().n, 1);
+  let html = document.getElementById("path").innerHTML;
+  assert.match(html, /You are on stage 1: Time, before notes/);
+  assert.match(html, /data-pass="1" aria-pressed="false">I passed this test/);
+  assert.match(html, /data-goto="tune"/, "stage 1 now has somewhere to go: tune up first");
+  app.togglePassed(1); app.togglePassed(2);
+  assert.equal(app.currentStage().n, 3);
+  html = document.getElementById("path").innerHTML;
+  assert.match(html, /You are on stage 3: Phrasing and space/);
+  assert.match(html, /2 of 8 stages passed/);
+  assert.match(html, /Passed [A-Z][a-z]{2} \d+/);
+  assert.equal(app.readDays().length, 1, "passing a stage counts as practice today");
+  app.togglePassed(1);
+  assert.equal(app.currentStage().n, 1, "undo puts you back");
+  // anything else in storage is ignored
+  const { app: other } = makeRuntime({ stored: { "minor-pentatonic-path-v1": '{"1":"2026-09-01","2":"<img>","99":"2026-01-01"}' } });
+  assert.equal(JSON.stringify(other.readPath()), '{"1":"2026-09-01"}');
+});
+
+test("Today suggests the stage, the lick to push and the chord change to beat, five items at most", () => {
+  const { app, document } = makeRuntime();
+  navButton(document, "practice").click();
+  let items = app.todayAdvice();
+  assert.ok(items.length <= 5);
+  assert.ok(items.some(x => /data-goto="tune"/.test(x)), "tune up first");
+  assert.ok(items.some(x => /stage 1/.test(x)));
+  assert.ok(items.some(x => /One-minute changes/.test(x)), "a beginner is pointed at chord changes");
+  app.setBpm(84); app.saveLickTempo(0);
+  items = app.todayAdvice();
+  const lick = items.find(x => /^Push/.test(x));
+  assert.ok(lick, "a lick with a saved tempo is one to push");
+  assert.match(lick, new RegExp(app.LICKS[0].t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(lick, /clean at 84 bpm/); assert.match(lick, /try 89/); assert.match(lick, /data-bpm="84"/);
+  assert.match(document.getElementById("todaylist").innerHTML, /./);
+});
+
+test("a lick keeps the tempo you played it clean at, and offers the next step up", () => {
+  const { app, document } = makeRuntime();
+  navButton(document, "licks").click();
+  assert.match(document.getElementById("licks").innerHTML, /No clean tempo saved yet/);
+  app.setBpm(70); app.saveLickTempo(1);
+  app.setBpm(76); app.saveLickTempo(1);
+  const r = app.readLickTempos()[app.LICKS[1].t];
+  sameShape(r.map(x => x.bpm), [76, 70]);
+  app.renderLicks();
+  const html = document.getElementById("licks").innerHTML;
+  assert.match(html, /Clean at <b>76 bpm<\/b>/);
+  assert.match(html, /70 → 76/);
+  assert.match(html, /data-bpm="81">Try 81/);
+  assert.match(html, /data-bpm="71">Warm up at 71/);
+  assert.equal(app.lickToPush().bpm, 76);
+  assert.equal(app.readDays().length, 1);
+  const { app: bad } = makeRuntime({ stored: { "minor-pentatonic-lick-tempos-v1": '{"nope":[{"bpm":90,"d":"x"}]}' } });
+  assert.equal(bad.lickToPush(), null, "tempos for licks that don't exist are dropped");
+});
+
+test("one-minute changes counts taps for a minute, keeps the best, and a stop isn't counted", () => {
+  const { app, document, clock, advance } = makeRuntime();
+  navButton(document, "practice").click();
+  assert.equal(document.getElementById("changetap").disabled, true);
+  document.getElementById("changestart").click();
+  assert.equal(document.getElementById("changetap").disabled, false);
+  for (let i = 0; i < 12; i++) document.getElementById("changetap").click();
+  assert.equal(document.getElementById("changetap").textContent, "Changed · 12");
+  document.getElementById("changestart").click();   // stop
+  assert.equal(JSON.stringify(app.readChanges()), "{}", "a stopped minute isn't kept");
+  document.getElementById("changestart").click();
+  for (let i = 0; i < 18; i++) app.changesTap();
+  clock.wall += 61; advance(0);
+  assert.equal(app.readChanges()["A-D"][0].n, 18);
+  assert.match(document.getElementById("changestatus").innerHTML, /first score/);
+  document.getElementById("changestart").click();
+  for (let i = 0; i < 22; i++) app.changesTap();
+  clock.wall += 61; advance(0);
+  assert.match(document.getElementById("changestatus").innerHTML, /new best, up from 18/);
+  assert.match(document.getElementById("changelog").innerHTML, /<b>22<\/b> a minute/);
+  assert.equal(app.changesTap(), false, "no counting after the minute");
+  assert.ok(app.todayAdvice().some(x => /beat <b>22<\/b> on A ↔ D/.test(x)));
+});
+
+test("the tuner reads the input and says which string, how far off, and which way", async () => {
+  const { app, context, document, advance, rec } = makeRuntime({ media: true });
+  navButton(document, "tune").click();
+  assert.match(document.getElementById("tunerread").innerHTML, /Press Start listening/);
+  let hz = 82.41 * Math.pow(2, -20 / 1200);
+  context.detectPitch = () => ({ hz, clarity: 0.97 });
+  document.getElementById("tunelisten").click();
+  await settle();
+  assert.equal(rec.asked.length, 1, "it opens the shared input");
+  assert.equal(document.getElementById("tunelisten").textContent, "Stop listening");
+  advance(0.03); advance(0.03); advance(0.03);
+  let read = document.getElementById("tunerread").innerHTML;
+  assert.match(read, /string 6/); assert.match(read, /tune up/); assert.match(read, /-20 cents/);
+  hz = 196; for (let i = 0; i < 5; i++) advance(0.03);
+  read = document.getElementById("tunerread").innerHTML;
+  assert.match(read, /string 3/); assert.match(read, /in tune/);
+  // leaving the view lets go of the input
+  navButton(document, "boxes").click();
+  assert.equal(app.getState().view, "boxes");
+  assert.equal(document.getElementById("tunelisten").textContent, "Start listening");
+});
+
+test("the bend check reads a whole note, says where it landed, and keeps the result", async () => {
+  const { app, context, document, advance } = makeRuntime({ media: true });
+  navButton(document, "tune").click();
+  document.getElementById("bendstring").value = "2";
+  document.getElementById("bendfret").value = "7";   // D on the G string, bent to E
+  document.getElementById("bendamt").value = "2";
+  const d = 293.66;   // D4: the G string is G3, and fret 7 is a fifth above it
+  let st = null;
+  context.detectPitch = () => st === null ? null : ({ hz: d * Math.pow(2, st / 12), clarity: 0.95 });
+  document.getElementById("bendlisten").click();
+  await settle();
+  // fretted for 0.3 s, up to 1.7 semitones (30 cents flat), with vibrato, then silence
+  for (let t = 0; t < 1.5; t += 0.025) {
+    st = t < 0.3 ? 0 : t < 0.45 ? 1.7 * (t - 0.3) / 0.15 : 1.7 + (t > 0.6 ? 0.25 * Math.sin(2 * Math.PI * 5.5 * t) : 0);
+    advance(0.025);
+  }
+  st = null; for (let i = 0; i < 14; i++) advance(0.025);
+  const b = app.readBends()[0];
+  assert.ok(b, "the note was checked when it ended");
+  assert.equal(b.verdict, "flat"); assert.ok(Math.abs(b.cents + 30) <= 3, `landed ${b.cents}`);
+  assert.ok(b.rate && Math.abs(b.rate - 5.5) < 0.6, `vibrato ${b.rate}`);
+  assert.match(document.getElementById("bendstatus").innerHTML, /<b>Flat<\/b> by (2[7-9]|3[0-3]) cents/);
+  assert.match(document.getElementById("bendlog").innerHTML, /0<\/b> in tune/);
+  assert.equal(app.readDays().length, 1, "a checked bend counts as practice");
+  // an in-tune one
+  for (let t = 0; t < 1; t += 0.025) { st = t < 0.3 ? 0 : 2.05; advance(0.025); }
+  st = null; for (let i = 0; i < 14; i++) advance(0.025);
+  assert.equal(app.readBends()[0].verdict, "in tune");
+  assert.match(document.getElementById("bendlog").innerHTML, /1<\/b> in tune/);
+});
+
+test("the classic bend presets follow the key", () => {
+  const { app, document } = makeRuntime();
+  navButton(document, "tune").click();
+  const preset = findAll(document.getElementById("bendpresets"), e => e.tagName === "BUTTON");
+  preset[0].click();   // 4 → 5 on the G string, in A minor: fret 7 (D) to E
+  assert.equal(document.getElementById("bendfret").value, "7");
+  assert.match(document.getElementById("bendwhat").innerHTML, /<b>D<\/b>, bent a whole step to <b>E<\/b>/);
+  preset[1].click();   // ♭7 → root on the B string: fret 8 (G) to A
+  assert.equal(document.getElementById("bendfret").value, "8");
+});
+
+test("starting the band or finishing a focus timer counts as a practice day", () => {
+  const { app, document } = makeRuntime();
+  assert.equal(app.readDays().length, 0);
+  app.toggleTrainer(); app.toggleTrainer();
+  assert.equal(app.readDays().length, 1);
 });

@@ -167,6 +167,25 @@
     overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .formblk i{font-size:10px;font-style:normal;opacity:.75;font-family:"DM Mono",monospace}
   .card.wide{grid-column:1/-1}
+  /* Start here: where you are on the path */
+  #path .card.now{border:2px solid var(--pink)}
+  #path .card.passed{opacity:.72}
+  #path .card.passed:hover,#path .card.passed:focus-within{opacity:1}
+  .badge.here{background:var(--pink);color:var(--paper)}
+  .pathnow{border-left:3px solid var(--blue)}
+  .loglist li button{font-size:11px;padding:2px 8px;margin-left:6px}
+  /* Tuner & bends */
+  .tunerread{margin:12px 0 4px;color:var(--ink)}
+  .tunerread svg{display:block;max-width:100%}
+  .tunernote{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:40px;font-weight:800;line-height:1.1;margin:2px 0 4px}
+  .tunernote small{font-family:"DM Mono",monospace;font-size:12px;font-weight:400;opacity:.6;margin-left:10px}
+  .bendtrace{margin:10px 0 4px;color:var(--ink)}
+  .bendtrace svg{display:block}
+  #bendcard select,#bendcard input{font-size:12px;padding:4px 6px;font-family:"DM Mono",monospace}
+  /* One-minute changes */
+  .changeshapes{display:flex;gap:14px;margin:10px 0 0;color:var(--ink)}
+  .changeclock{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:26px;font-weight:800;color:var(--blue);margin-left:6px}
+  button.big{font-size:15px;padding:10px 22px}
   #power table td:last-child,#form table td:last-child{font-weight:400}
   .credit{border-top:1px solid var(--rule);margin-top:40px;padding:16px 0 28px;
     display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
