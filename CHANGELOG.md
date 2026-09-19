@@ -5,6 +5,9 @@ a second release on the same day.
 
 ## Unreleased
 
+- The **Key** (or **Root**) label beside the key menu is larger, bold blue capitals
+  with a pink underline, and the menu has a blue border, so it can't be missed:
+  the key decides what every diagram shows.
 - Downloading a take is now hard to miss. When a take ends, a bordered "Your take
   is ready" panel appears in the Record row (under Play along, on every view) with
   the player and the downloads marked ↓, WAV and MP3 first, then solo only and the

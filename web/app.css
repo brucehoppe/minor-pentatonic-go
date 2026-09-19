@@ -417,6 +417,11 @@ body{padding:0 28px 24px;background-image:radial-gradient(#15161a14 .45px,transp
 .lesson-title{font-family:'Bricolage Grotesque',sans-serif;font-size:32px;letter-spacing:-.025em;line-height:1;margin:0}
 .key-select{font-size:12px;white-space:nowrap}
 .key-select select{font-family:inherit;font-size:13px;border:1px solid var(--rule);background:var(--card);padding:9px;color:var(--ink);margin-left:6px}
+/* The key decides what every diagram shows, so its label should be the first thing seen there */
+.key-select #keylbl{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-size:19px;
+  color:var(--blue);text-transform:uppercase;letter-spacing:.06em;vertical-align:middle;
+  border-bottom:3px solid var(--pink);padding-bottom:1px}
+.key-select select{border:2px solid var(--blue);font-weight:600}
 .diagram-settings{border-bottom:1px solid var(--rule);padding:0 0 15px;margin-bottom:18px}
 .diagram-settings summary,.course-outline>summary,.course-intro>summary{cursor:pointer;font-size:12px;padding:7px 0;color:#313840}
 .diagram-settings[open] summary{margin-bottom:15px}
@@ -448,7 +453,7 @@ button:focus-visible,summary:focus-visible,select:focus-visible,a:focus-visible{
 @media(min-width:1100px){#boxes{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:740px){
  body{padding:0 16px 15px}.masthead{padding:22px 0;margin-bottom:20px;gap:12px}.masthead .hero{width:100px;max-width:27%}.masthead h1{font-size:29px}.masthead .sub{font-size:10px;max-width:23ch;line-height:1.5}
- .desk-layout{display:block}.lesson-index{position:static;border-bottom:1px solid var(--rule);margin-bottom:24px}.browse>summary{font-size:15px;margin-bottom:14px}.lesson-title{font-size:25px}.lesson-context{align-items:center}.key-select{font-size:11px}.key-select select{max-width:116px;margin-left:0}.grid,.grid.wide{grid-template-columns:minmax(0,1fr)}.practice-audio{padding:10px;margin:0 0 20px}.practice-audio #play>.lbl{flex-basis:100%}.legend{gap:10px}.card h2 em{font-size:10px}.map{overflow-x:auto}.map svg{min-width:570px}#path>.card{padding:16px}
+ .desk-layout{display:block}.lesson-index{position:static;border-bottom:1px solid var(--rule);margin-bottom:24px}.browse>summary{font-size:15px;margin-bottom:14px}.lesson-title{font-size:25px}.lesson-context{align-items:center}.key-select{font-size:12px}.key-select select{max-width:116px;margin-left:0}.grid,.grid.wide{grid-template-columns:minmax(0,1fr)}.practice-audio{padding:10px;margin:0 0 20px}.practice-audio #play>.lbl{flex-basis:100%}.legend{gap:10px}.card h2 em{font-size:10px}.map{overflow-x:auto}.map svg{min-width:570px}#path>.card{padding:16px}
 }
 .trainer-options{border-block:1px solid var(--rule);padding:10px 0;margin:15px 0}
 .trainer-options>summary{cursor:pointer;font-size:12px;padding:6px 0}
