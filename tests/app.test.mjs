@@ -5855,3 +5855,38 @@ test("the bend check ends a note even when another string keeps ringing", async 
   for (let i = 0; i < 16; i++) advance(0.025);
   assert.equal(app.readBends()[0] && app.readBends()[0].verdict, "in tune", "checked, not stuck waiting for silence");
 });
+
+test("a finished take shows a clear 'ready' panel with its downloads, and says where a download went", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const { document, app } = rt;
+  assert.match(app.REC_ROW, /<div id="recdone" class="recdone" hidden>/, "nothing to download before a take");
+  await recordTake(rt, {});
+  assert.equal(document.getElementById("recdone").hidden, false, "the panel appears when the take ends");
+  const take = app.getTake();
+  assert.equal(document.getElementById("recdonehead").textContent, "Your take is ready: " + take.name.replace(/\.\w+$/, ""),
+    "named without the compressed file's extension");
+  for (const id of ["recdlw", "recdlm", "recdlc"]) assert.equal(document.getElementById(id).hidden, false, id + " is offered");
+  document.getElementById("recdlw").click();
+  await settle();
+  assert.match(document.getElementById("recmsg").textContent, /^Downloaded practice-A-full-\d+bpm-.*-cold\.wav\. It is in your browser's Downloads folder\.$/);
+  // in the page's own markup the WAV and MP3 come before the compressed file
+  const ids = [...app.REC_ROW.matchAll(/<button id="(recdl\w)"/g)].map(m => m[1]);
+  assert.equal(JSON.stringify(ids), JSON.stringify(["recdlw", "recdlm", "recdls", "recdlc"]));
+  assert.match(app.REC_ROW, /Songs → Your takes/);
+});
+
+test("a kept take can be downloaded again from Songs → Your takes", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const { document, app } = rt;
+  await recordTake(rt, {});
+  navButton(document, "songs").click();
+  await settle();
+  const [t] = await app.libList();
+  await app.libOpen(t.id);
+  assert.match(html, /<button id="takedl" class="dl"[^>]*>Download take<\/button>/);
+  document.getElementById("takedl").click();
+  const link = document.body.children.at(-1);
+  assert.equal(link.download, t.name);
+  assert.match(link.download, /\.webm$/);
+  assert.match(document.getElementById("recmsg").textContent, /Downloaded practice-.*\.webm/);
+});

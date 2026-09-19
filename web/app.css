@@ -180,6 +180,15 @@
   .badge.here{background:var(--pink);color:var(--paper)}
   .pathnow{border-left:3px solid var(--blue)}
   .loglist li button{font-size:11px;padding:2px 8px;margin-left:6px}
+  /* The finished take and where to download it: the one thing to do after recording */
+  .recdone{flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 14px;
+    border:2px solid var(--blue);background:var(--card)}
+  .recdone[hidden]{display:none}
+  .recdonehead{flex-basis:100%;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-size:15px;
+    overflow-wrap:anywhere}
+  .recdonefoot{flex-basis:100%;font-size:11.5px;line-height:1.55;opacity:.75}
+  button.dl{border-color:var(--blue);color:var(--blue);font-weight:600}
+  button.dl::before{content:"\2193\00a0"}
   /* Tuner & bends */
   .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .tunerread{margin:12px 0 4px;color:var(--ink)}

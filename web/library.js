@@ -205,6 +205,17 @@ async function libOpen(id){
   libPeaks(t.blob).then(peaks=>{ if(generation===lib.playGeneration){ lib.peaks=peaks; libWave(); } }, ()=>{});
 }
 
+// The kept take as a file: the compressed recording, under its own name. (The lossless
+// WAV master is offered in the Record row when a take ends, and dropped once downloaded.)
+function libDownload(){
+  const t = lib.selected;
+  if(!t||!t.blob){ libSay("That take is no longer stored."); return null; }
+  const url = URL.createObjectURL(t.blob);
+  saveFile({url, name:t.name});
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  return t.name;
+}
+
 // ---- the waveform ----
 // The loudest sample in each of 600 columns of the decoded take. Needs Web Audio's
 // decoder; without it the take still plays and its markers still list.
@@ -553,6 +564,7 @@ function libInit(){
     else if(d&&d.loopsection) libLoopSection(d.loopsection); };
   el("takenext").onchange = ()=>libSaveNext().catch(()=>libSay("That note couldn't be saved."));
   el("takespeed").onchange = ()=>{ const r=Number(el("takespeed").value); if([.5,.75,.9,1].includes(r)) el("takeplay").playbackRate=r; };
+  el("takedl").onclick = libDownload;
   el("takeclose").onclick = libClose;
   el("abplay").onclick = abPlay; el("abswitch").onclick = abSwitch; el("abstop").onclick = abStop;
   el("layplay").onclick = libLayersPlay; el("laystop").onclick = libLayersStop;

@@ -5,6 +5,15 @@ a second release on the same day.
 
 ## Unreleased
 
+- Downloading a take is now hard to miss. When a take ends, a bordered "Your take
+  is ready" panel appears in the Record row (under Play along, on every view) with
+  the player and the downloads marked ↓, WAV and MP3 first, then solo only and the
+  compressed file, and a line saying the file goes to your browser's Downloads
+  folder and that every take is also kept in Songs → Your takes. After a download
+  the status names the file. A kept take now has its own **Download take** button
+  in Songs → Your takes (its compressed recording); before, only the Layers
+  downloads and Export all (zip) were there. Checked in Chrome by recording a take
+  and downloading it: a 16-bit stereo WAV, a 192 kbps MP3 and a WebM, all valid.
 - Screenshots refreshed for the redesigned desk (home, 5 boxes, All 12 keys, Open
   tunings, 12-bar trainer), with two new ones: Tuner & bends, showing a bend
   checked against its target, and Practice. The README's file layout and test

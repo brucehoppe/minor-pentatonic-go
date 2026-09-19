@@ -2436,11 +2436,15 @@ const REC_ROW=`<div class="row" id="recrow">
   <select id="recq" aria-label="MP3 quality"><option value="standard">MP3 standard</option><option value="high">MP3 high</option><option value="best">MP3 best (320)</option></select>
   </div></details>
   <button id="recmark" class="bigmark" hidden>Mark a mistake (M)</button>
-  <audio id="recplay" controls hidden style="height:32px;max-width:100%"></audio>
-  <button id="recdlc" hidden>Download compressed</button>
-  <button id="recdlw" hidden>Download WAV</button>
-  <button id="recdlm" hidden>Download MP3</button>
-  <button id="recdls" hidden>Download solo only (WAV)</button>
+  <div id="recdone" class="recdone" hidden>
+    <div class="recdonehead" id="recdonehead">Your take is ready</div>
+    <audio id="recplay" controls hidden style="height:32px;max-width:100%"></audio>
+    <button id="recdlw" class="dl" hidden>Download WAV</button>
+    <button id="recdlm" class="dl" hidden>Download MP3</button>
+    <button id="recdls" class="dl" hidden>Download solo only (WAV)</button>
+    <button id="recdlc" class="dl" hidden>Download compressed</button>
+    <div class="recdonefoot">The file goes to your browser's Downloads folder. Every take is also kept in <b>Songs → Your takes</b>, where you can play it back, rate it and download it again.</div>
+  </div>
   <span id="recmeter" hidden style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;flex-basis:100%">
     <button id="recbar0" class="lvl" aria-label="Input 1 level; select Input 1" style="display:flex;align-items:center;gap:8px;padding:4px 8px"><span style="font-size:11.5px">Input 1</span><span style="position:relative;width:120px;height:8px;border:1px solid var(--rule)"><span id="recfill0" style="position:absolute;left:0;top:0;bottom:0;width:0"></span></span></button>
     <button id="recbar1" class="lvl" aria-label="Input 2 level; select Input 2" style="display:flex;align-items:center;gap:8px;padding:4px 8px"><span style="font-size:11.5px">Input 2</span><span style="position:relative;width:120px;height:8px;border:1px solid var(--rule)"><span id="recfill1" style="position:absolute;left:0;top:0;bottom:0;width:0"></span></span></button>
@@ -3035,9 +3039,11 @@ function keepFailed(e){
 function showTake(){
   const t=state.recTake,play=document.getElementById("recplay");
   const c=document.getElementById("recdlc"),w=document.getElementById("recdlw"),m=document.getElementById("recdlm");
+  document.getElementById("recdone").hidden=!t;
   play.hidden=c.hidden=!t;w.hidden=!(t&&t.wav);m.hidden=w.hidden||typeof Worker!=="function";
   const sd=document.getElementById("recdls");sd.hidden=!(t&&t.stemMeta&&!t.stemGone);
   if(!t)return;
+  document.getElementById("recdonehead").textContent=`Your take is ready: ${t.name.replace(/\.\w+$/,"")}`;
   if(t.stemMeta)sd.textContent=`Download solo only (WAV, ${fileSize(t.stemSize||0)})`;
   play.src=t.url;
   c.textContent=`Download compressed (${fileSize(t.blob.size)})`;
@@ -3380,7 +3386,9 @@ function saveFile(f){
   if(!f)return;
   const a=document.createElement("a");
   a.href=f.url;a.download=f.name;a.hidden=true;
-  document.body.appendChild(a);a.click();if(a.remove)a.remove();}
+  document.body.appendChild(a);a.click();if(a.remove)a.remove();
+  // say where it went: the browser, not this page, decides, and it saves without asking
+  if(f.name&&typeof recSay==="function")recSay(`Downloaded ${f.name}. It is in your browser's Downloads folder.`);}
 // ---------- major pentatonic: the diagonal shape ----------
 // A different diagram from everything above: the neck runs downwards, low E on the
 // left, so one continuous run up the fretboard reads as a single diagonal. It keeps
