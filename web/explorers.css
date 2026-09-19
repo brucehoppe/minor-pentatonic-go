@@ -4,7 +4,8 @@
    and tritan vision: 3rd and 5th (both circles) stay far apart for all three; the
    closest pair is root against 3rd for protan, which the square tells apart.
    Labels are dark on pink and gold and light on blue, for contrast. The desk has
-   no dark theme, so neither do these. Buttons take the desk's own button style. */
+   no dark theme, so neither do these. Controls are rounded, as in the drafts, and
+   keep the desk's colours for the pressed choice. */
 .cx {
   --cx-root: var(--pink);
   --cx-third: var(--blue);
@@ -21,7 +22,13 @@
 }
 
 .cx-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }
-.cx-key { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; }
+.cx-key { display: inline-flex; gap: 8px; align-items: center; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
+.cx-key span { opacity: .6; }
+.cx button { border-radius: 8px; min-height: 2.25rem; padding: 0 .9rem; }
+.cx select { font: inherit; font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--cx-text);
+  background: var(--cx-surface); border: 1px solid var(--cx-line-strong); border-radius: 8px;
+  min-height: 2.25rem; padding: 0 .6rem; cursor: pointer; }
+.cx select:focus-visible, .cx button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .cx-seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .cx-controls .cx-row { margin-bottom: 8px; }
 .cx-board:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

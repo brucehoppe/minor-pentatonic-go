@@ -3078,8 +3078,8 @@ function triadShapes(kind,set,rootPc=state.key){
 const INVERSION=["Root position","1st inversion","2nd inversion"];
 // ---- the explorers at the top of Triads and Inversions ----
 // Mounted the first time their view opens (web/triads-explorer.js and
-// web/inversions-explorer.js, on web/chord-explorer.js). They have no key menu of
-// their own here: the toolbar's Root buttons drive them. Their sound goes through
+// web/inversions-explorer.js, on web/chord-explorer.js). Each keeps its own Key
+// menu, synced both ways with the toolbar's Root buttons. Their sound goes through
 // the app's audio, so it works on the compatibility engine too.
 const explorers={};
 // The explorers' links into another view, as the Start here buttons do it.
@@ -3099,7 +3099,7 @@ function mountExplorer(name,elId){
   const el=document.getElementById(elId);
   if(!Mod||typeof Mod.mount!=="function"||!el)return;   // its script didn't load: the rest of the view still works
   try{
-    explorers[name]=Mod.mount(el,{key:state.key,showKey:false,playNotes:playChordNotes,playGrip:playChordNotes,
+    explorers[name]=Mod.mount(el,{key:state.key,playNotes:playChordNotes,playGrip:playChordNotes,
       onKeyChange:pc=>{state.key=pc;render();},onNavigate:goToView});
   }catch(e){explorers[name]=null;}}
 function renderTriads(){

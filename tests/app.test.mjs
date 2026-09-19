@@ -3518,9 +3518,15 @@ test("the Inversions view mounts its explorer once, driven by the toolbar's Root
   navButton(document, "inv").click();
   const el = explorerIn(document, "inversions-explorer");
   assert.equal(findAll(el, e => (e.attributes.class || "") === "cx").length, 1, "mounted");
-  assert.equal(findAll(el, e => e.tagName === "SELECT").length, 0, "no key menu of its own: one Root control");
-  document.getElementById("keys").children[7].click();   // G
+  const sel = findAll(el, e => e.tagName === "SELECT")[0];
+  assert.ok(sel, "its own Key menu");
+  document.getElementById("keys").children[7].click();   // G, from the toolbar
   assert.match(infoText(el), /^G major, grip 1 of \d+/);
+  assert.equal(sel.value, "7", "the menu follows the toolbar");
+  sel.value = "2"; sel.dispatch("change");                // D, from the menu
+  assert.equal(app.getState().key, 2, "the toolbar follows the menu");
+  assert.equal(document.getElementById("keys").children[2].getAttribute("aria-pressed"), "true");
+  assert.match(infoText(el), /^D major/);
   document.getElementById("keys").children[3].click();   // E♭, spelt as a chord root
   assert.match(infoText(el), /^E♭ major/);
   assert.equal(document.getElementById("keys").children[3].textContent, "E♭");
@@ -3584,8 +3590,12 @@ test("the Triads view mounts its explorer: three views, one note changing, barre
   navButton(document, "triads").click();
   const el = explorerIn(document, "triads-explorer");
   document.getElementById("keys").children[7].click();   // G
-  assert.equal(findAll(el, e => e.tagName === "SELECT").length, 0);
+  const sel = findAll(el, e => e.tagName === "SELECT")[0];
+  assert.equal(sel.value, "7");
   assert.match(infoText(el), /^G major = major 3rd \+ minor 3rd/);
+  sel.value = "0"; sel.dispatch("change");
+  assert.equal(app.getState().key, 0, "the Key menu moves the toolbar's Root too");
+  document.getElementById("keys").children[7].click();
   buttonNamed(el, "Minor").click();
   assert.match(infoText(el), /^G minor = minor 3rd \+ major 3rd/);
   const before = audio.oscillators;

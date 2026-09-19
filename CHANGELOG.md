@@ -10,7 +10,8 @@ a second release on the same day.
   material below. Triads: Build it, Change one note, Inside barre chords.
   Inversions: every grip up the neck on four string sets, a card stack, the
   pentatonic behind the grip, Play all. They share `web/chord-explorer.js`,
-  follow the toolbar's Root buttons, play through the app's audio (so they
+  have their own Key menu kept in step with the toolbar's Root buttons, play
+  through the app's audio (so they
   work in Lockdown Mode), and colour notes by job with the root as a square.
   In these two views chords are spelt as on a chart: E♭, A♭, B♭, C♯, F♯.
 - WAV masters can be 24-bit, and MP3 quality is a choice: standard (128 kbps mono,
