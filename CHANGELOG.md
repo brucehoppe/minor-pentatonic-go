@@ -5,6 +5,11 @@ a second release on the same day.
 
 ## Unreleased
 
+- Solo and song together: a take with backing is the guitar and the backing in
+  one recording, and your guitar is also kept on its own, on the same audio
+  clock and the same length to the sample, as a mono stem: Download solo only
+  (WAV). It is linked from the take in the library. Checked in Chrome: with a
+  drone as backing, the mix carries it 12 dB above the stem, which does not.
 - Your takes: finished takes are kept in a library (the compressed file plus
   focus, cold/retest, mistake marks and calibration), listed in the Songs view.
   Open one for a waveform with bar lines, sections and marks (click to jump),

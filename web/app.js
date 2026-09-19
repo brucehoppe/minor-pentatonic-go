@@ -2245,6 +2245,7 @@ const REC_ROW=`<div class="row" id="recrow">
   <button id="recdlc" hidden>Download compressed</button>
   <button id="recdlw" hidden>Download WAV</button>
   <button id="recdlm" hidden>Download MP3</button>
+  <button id="recdls" hidden>Download solo only (WAV)</button>
   <select id="recbits" aria-label="WAV bit depth"><option value="16">WAV 16-bit</option><option value="24">WAV 24-bit</option></select>
   <select id="recq" aria-label="MP3 quality"><option value="standard">MP3 standard</option><option value="high">MP3 high</option><option value="best">MP3 best (320)</option></select>
   <span id="recmeter" hidden style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;flex-basis:100%">
@@ -2410,7 +2411,12 @@ function openTake(){
   let input;
   return acquireInput(mono&&!(ac&&ac.createMediaStreamDestination))
   .then(i=>{input=i;return ac&&ac.createMediaStreamDestination?openCapture(ac,channels):null;})
-  .then(capture=>{
+  // With backing in the take, your guitar is also kept on its own: a second, mono
+  // capture that hears only the input. So the take is the solo and the song together,
+  // and the solo alone is still there for a WAV, for timing analysis, and for a layer
+  // mixer that turns the backing down.
+  .then(capture=>(capture&&backing?openCapture(ac,1).then(stem=>[capture,stem]):[capture,null]))
+  .then(([capture,stem])=>{
     let stream=input,src=null,dest=null,chanNote="",bus=null,bed=null;
     // Through Web Audio when there is one: that is where backing is mixed in, and a
     // one-channel destination downmixes a stereo interface to a true mono take.
@@ -2421,6 +2427,7 @@ function openTake(){
       src=n.src;chanNote=n.note;
       // the raw capture hears exactly what the compressed recording does
       const outs=capture?[dest,capture.node]:[dest];
+      if(stem)n.link(stem.node);
       if(backing){
         bus=ac.createGain();bus.channelCount=2;bus.channelCountMode="explicit";bus.channelInterpretation="speakers";
         bed=ac.createGain();bed.gain.value=REC_BACKING_LEVEL;
@@ -2437,10 +2444,11 @@ function openTake(){
     const late=recLatencyMs(ac,input);
     const warn=late>REC_LATE_MS?`Your audio adds about ${late} ms of delay, so the take will sound late against the backing. `
       +"Bluetooth headphones are the usual cause: use wired ones, or your interface's outputs.":"";
-    const take={phase:"ready",input,src,dest,bus,bed,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,capture,
+    const take={phase:"ready",input,src,dest,bus,bed,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,capture,stem,
       note:[note,chanNote,warn].filter(Boolean).join(" ")};
     // Storage full: stop cleanly, keeping everything written so far.
     if(capture)capture.onFail=()=>{if(state.rec===take)stopRecording();};
+    if(stem)stem.onFail=capture?capture.onFail:null;
     recorder.ondataavailable=e=>{if(e.data&&e.data.size)take.chunks.push(e.data);};
     recorder.onstop=()=>finishTake(take);
     listInputs();
@@ -2482,6 +2490,7 @@ function startTake(t,fromTrainer){
   if(!t.info)t.info={...takeSettings(),trainer:fromTrainer,song:sg?sg.title:undefined,songId:sg?sg.id:undefined};
   const bars=TAKE_MODES[t.info.mode].bars;
   beginCapture(t.capture,0,takeMeta(t));   // unless bar 1 already booked it to the sample
+  beginStem(t,0);
   t.recorder.start(1000);
   const say=()=>{const s=Math.floor((Date.now()-t.t0)/1000);
     // A drill on its own, off the trainer, stops after its bars at the current tempo.
@@ -2491,6 +2500,12 @@ function startTake(t,fromTrainer){
       +` · focus: ${TAKE_FOCUS[t.info.focus]}`+(t.note?" · "+t.note:""));};
   say();t.clock=setInterval(say,250);
   recButtons();}
+// The solo-only stem starts on the same frame as the take, and is filed as a master of
+// its own, named for the take, so it can be listed, downloaded and recovered like one.
+function beginStem(t,frame){
+  if(!t.stem||!t.capture||t.stem.began)return;
+  const meta=takeMeta(t);
+  beginCapture(t.stem,frame,{...meta,name:meta.name.replace(/\.wav$/,"-solo.wav"),stem:true,of:t.capture.id,mono:true});}
 // What storage keeps about a take, so a saved master can be named and listed later.
 function takeMeta(t){
   const info=t.info||{};
@@ -2507,7 +2522,8 @@ function recOnBarOne(when){
   if(r.capture&&ac){
     r.key=state.key;r.bpm=state.bpm;r.date=new Date();r.info={...takeSettings(),trainer:true};
     r.startFrame=Math.round((ac.currentTime+when)*ac.sampleRate);
-    beginCapture(r.capture,r.startFrame,takeMeta(r));}
+    beginCapture(r.capture,r.startFrame,takeMeta(r));
+    beginStem(r,r.startFrame);}
   atBeat(when,()=>{if(state.rec===r&&r.phase==="starting")startTake(r,true);});}
 // Every downbeat the trainer books: a drill over the trainer ends on the downbeat after
 // its last bar, to the sample for the raw master.
@@ -2519,7 +2535,8 @@ function drillBar(when){
   r.bars=(r.bars||0)+1;
   if(r.bars<=bars)return;
   const ac=state.engine&&state.engine.context;
-  if(r.capture&&ac){r.capture.node.port.postMessage({stopAt:Math.round((ac.currentTime+when)*ac.sampleRate)});r.capture.ending=true;}
+  if(r.capture&&ac){const end=Math.round((ac.currentTime+when)*ac.sampleRate);
+    [r.capture,r.stem].forEach(c=>{if(c){c.node.port.postMessage({stopAt:end});c.ending=true;}});}
   atBeat(when,()=>{if(state.rec===r)stopRecording();});}
 function stopRecording(){
   const r=state.rec;
@@ -2527,7 +2544,7 @@ function stopRecording(){
   r.phase="finishing";clearInterval(r.clock);
   recButtons();recSay("Saving the take…");
   // a drill's capture was told its last frame; otherwise it stops now
-  if(r.capture&&!r.capture.ending)r.capture.node.port.postMessage({stop:true});
+  [r.capture,r.stem].forEach(c=>{if(c&&!c.ending)c.node.port.postMessage({stop:true});});
   r.recorder.stop();}
 function cancelRecording(){
   const r=state.rec;
@@ -2535,7 +2552,7 @@ function cancelRecording(){
   state.rec=null;
   if(r.clock)clearInterval(r.clock);
   if(r.recorder){r.recorder.onstop=null;if(r.recorder.state==="recording")r.recorder.stop();closeTake(r);}
-  if(r.capture)endCapture(r.capture).then(meta=>meta&&dropTake(meta.id)).catch(()=>{});
+  [r.capture,r.stem].forEach(c=>{if(c)endCapture(c).then(meta=>meta&&dropTake(meta.id)).catch(()=>{});});
   document.getElementById("recmark").hidden=true;
   inputIdle();recButtons();recSay("Recording cancelled.");}
 function releaseTake(t){
@@ -2754,7 +2771,7 @@ function fixTakeLength(kept,seconds){
 function finishTake(t){
   closeTake(t);
   document.getElementById("recmark").hidden=true;
-  if(t.capture&&t.capture.meta){t.capture.meta.markers=t.markers||[];if(t.songPlay)t.capture.meta.songPlay=t.songPlay;}
+  [t.capture,t.stem].forEach(c=>{if(c&&c.meta){c.meta.markers=t.markers||[];if(t.songPlay)c.meta.songPlay=t.songPlay;}});
   const blob=new Blob(t.chunks,{type:t.mime||"audio/webm"});
   if(state.recTake)releaseTake(state.recTake);
   const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm,t.info),wav:null,info:t.info,markers:t.markers||[],calMs:state.cal?state.cal.ms:null,songId:(t.info&&t.info.songId)||null};
@@ -2767,14 +2784,15 @@ function finishTake(t){
   showTake();recButtons();recSay(what+" Making the WAV…");
   // The raw master, when there is one: its length is exact to the sample, and its WAV
   // is assembled from storage when you download it.
-  return endCapture(t.capture).then(meta=>{
+  return Promise.all([endCapture(t.capture),endCapture(t.stem)]).then(([meta,stemMeta])=>{
+    if(stemMeta&&stemMeta.frames){kept.stemMeta=stemMeta;kept.stemSize=wavSize(stemMeta.frames,1,bitsOf(stemMeta));}
     if(meta&&meta.frames){
       kept.wav={meta,name:kept.name.replace(/\.\w+$/,".wav"),size:wavSize(meta.frames,meta.channels,bitsOf(meta)),blob:null,url:null,
         channels:meta.channels,seconds:meta.frames/meta.sampleRate};
       return fixTakeLength(kept,meta.frames/meta.sampleRate).then(storageNote).then(note=>{
         if(state.recTake!==kept)return;
         showTake();recSay(what+(note?" "+note:""));listSaved();
-        return typeof libKeep==="function"?libKeep(kept,t,meta).catch(()=>{}):null;});}
+        return typeof libKeep==="function"?libKeep(kept,t,meta,stemMeta).catch(()=>{}):null;});}
     return decodedWav(kept,t,blob,what).then(()=>typeof libKeep==="function"?libKeep(kept,t,null).catch(()=>{}):null);});}
 // Without a raw master, the WAV is decoded from the compressed file. The decoded
 // length is exact; without a decoder, the recorder's own clock will do.
@@ -2790,7 +2808,9 @@ function showTake(){
   const t=state.recTake,play=document.getElementById("recplay");
   const c=document.getElementById("recdlc"),w=document.getElementById("recdlw"),m=document.getElementById("recdlm");
   play.hidden=c.hidden=!t;w.hidden=!(t&&t.wav);m.hidden=w.hidden||typeof Worker!=="function";
+  const sd=document.getElementById("recdls");sd.hidden=!(t&&t.stemMeta&&!t.stemGone);
   if(!t)return;
+  if(t.stemMeta)sd.textContent=`Download solo only (WAV, ${fileSize(t.stemSize||0)})`;
   play.src=t.url;
   c.textContent=`Download compressed (${fileSize(t.blob.size)})`;
   if(!t.wav)return;
@@ -2798,6 +2818,18 @@ function showTake(){
   // MP3 is encoded on the first click; until then its size is the bitrate's estimate.
   if(!t.mp3Busy)m.textContent=t.mp3&&t.mp3.kbps===mp3Kbps(t.wav.channels)?`Download MP3 (${fileSize(t.mp3.blob.size)})`
     :`Download MP3 (~${fileSize(Math.round(mp3Kbps(t.wav.channels)*125*(t.wav.seconds||0)))})`;}
+// Your guitar alone from a take that also has backing in it: the stem's master, as a
+// WAV. Like the take's own WAV it is your copy once downloaded, so it is dropped from
+// storage afterwards.
+function downloadSolo(){
+  const t=state.recTake;
+  if(!t||!t.stemMeta)return Promise.resolve();
+  return masterWav(t.stemMeta).then(b=>{
+    if(!b){recSay("The solo-only master couldn't be read.");return;}
+    saveFile({url:URL.createObjectURL(b),name:t.stemMeta.name&&/\.wav$/.test(t.stemMeta.name)?t.stemMeta.name:t.name.replace(/\.\w+$/,"-solo.wav")});
+    t.stemGone=true;showTake();
+    return dropTake(t.stemMeta.id).then(listSaved,listSaved);
+  }).catch(()=>recSay("The solo-only master couldn't be read."));}
 // ---- MP3 ----
 // Encoded from the lossless master (never from the compressed file, which would
 // compress it twice) by LAME in mp3-worker.js, off the main thread.
@@ -2856,7 +2888,8 @@ function downloadWav(){
 function listSaved(){
   const box=document.getElementById("recsaved");
   const current=[state.recTake&&state.recTake.wav&&state.recTake.wav.meta&&state.recTake.wav.meta.id,
-    state.rec&&state.rec.capture&&state.rec.capture.id];
+    state.recTake&&state.recTake.stemMeta&&state.recTake.stemMeta.id,
+    state.rec&&state.rec.capture&&state.rec.capture.id,state.rec&&state.rec.stem&&state.rec.stem.id];
   return savedTakes().then(list=>{
     list=list.filter(m=>!current.includes(m.id)).sort((a,b)=>(b.started||0)-(a.started||0));
     state.savedList=list;
@@ -4352,6 +4385,7 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
   document.getElementById("recdlc").onclick=()=>saveFile(state.recTake);
   document.getElementById("recdlw").onclick=downloadWav;
   document.getElementById("recdlm").onclick=downloadMp3;
+  document.getElementById("recdls").onclick=downloadSolo;
   readCal();calShow();
   document.getElementById("calloop").onclick=calibrateLoopback;
   document.getElementById("caltap").onclick=calibrateTap;

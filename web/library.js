@@ -44,14 +44,14 @@ async function libList(){
 const libPut = rec => dbDo("library","readwrite",tx=>{tx.objectStore("library").put(rec);});
 // Called by the recorder when a take is finished. The compressed file is kept; the
 // WAV master stays with the recorder's own store until you download or discard it.
-async function libKeep(kept, t, meta){
+async function libKeep(kept, t, meta, stemMeta){
   const info = t.info||{};
   const seconds = meta&&meta.frames ? meta.frames/meta.sampleRate : (kept.wav&&kept.wav.seconds)||(Date.now()-t.t0)/1000;
   const rec = {id:"take-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7), created:Date.now(),
     name:kept.name, mime:kept.blob.type||"audio/webm", blob:kept.blob, seconds,
     key:t.key, bpm:t.bpm, mode:info.mode||"full", focus:info.focus||"timing", attempt:info.attempt||"cold",
     mono:!!t.mono, backing:!!t.backing, markers:(t.markers||[]).map(m=>({t:m.t,kind:"mistake"})), calMs:kept.calMs,
-    songId:info.songId||null, songPlay:t.songPlay||null, section:info.section||null, masterId:meta?meta.id:null,
+    songId:info.songId||null, songPlay:t.songPlay||null, section:info.section||null, masterId:meta?meta.id:null, stemId:stemMeta?stemMeta.id:null,
     ratings:cleanRatings(null), rerate:null, next:"", onsets:t.onsets||[], backingTakeId:t.backingTakeId||null};
   kept.libId = rec.id;
   await libPut(rec);

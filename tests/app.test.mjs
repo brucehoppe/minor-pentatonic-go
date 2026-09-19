@@ -4641,3 +4641,77 @@ test("a take can be deleted from the library, and the list can be filtered by so
   rt.document.getElementById("takefilter").value = "no-such-song"; rt.document.getElementById("takefilter").onchange();
   assert.match(rt.document.getElementById("takelist").innerHTML, /^<option|No takes kept yet|takerow/, "the list redraws for the filter");
 });
+
+// ---------- the solo and the song, together ----------
+test("recording guitar + backing keeps the solo on its own too, in step with the mix", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  rt.app.setBpm(100);
+  rt.document.getElementById("recmix").value = "backing";
+  rt.document.getElementById("recbtn").click();
+  await settle();
+  const [mix, stem] = rt.worklets;
+  assert.equal(rt.worklets.length, 2, "one capture for the mix, one for the solo");
+  assert.equal(mix.opts.processorOptions.channels, 2); assert.equal(stem.opts.processorOptions.channels, 1);
+  const r = rt.app.getRec();
+  assert.ok(r.src.connected.includes(stem.node ?? stem), "the solo stem hears the input");
+  assert.ok(!(r.bed.outs ?? []).includes(stem), "and never the backing");
+  sameShape(mix.sent[0], { start: 0 }); sameShape(stem.sent[0], { start: 0 });
+  mix.feed(48000); stem.feed(48000, 0.4);
+  await settle();
+  assert.equal([...rt.idb.stores.get("takes").rows.values()].length, 2, "both are stored as they play");
+  rt.document.getElementById("recbtn").click();
+  await settle(); await settle();
+  const rows = [...rt.idb.stores.get("takes").rows.values()].map(x => x.v);
+  const main = rows.find(m => !m.stem), solo = rows.find(m => m.stem);
+  assert.equal(main.channels, 2); assert.equal(solo.channels, 1);
+  assert.equal(solo.of, main.id, "the stem knows its take");
+  assert.match(solo.name, /-solo\.wav$/); assert.equal(main.frames, solo.frames, "the same length: same frames on the same clock");
+  assert.equal(rt.document.getElementById("recdls").hidden, false);
+  assert.match(rt.document.getElementById("recdls").textContent, /^Download solo only \(WAV, 94 KB\)$/);
+  assert.equal(rt.document.getElementById("recsaved").innerHTML, "", "not listed as a leftover while its take is on screen");
+  const [kept] = await rt.app.libList();
+  assert.equal(kept.stemId, solo.id, "the library links the solo to the take");
+  // download it: a mono WAV of just the guitar, then it leaves storage
+  await rt.document.getElementById("recdls").onclick();
+  await settle();
+  const link = rt.document.body.children.at(-1);
+  assert.match(link.download, /-solo\.wav$/);
+  const wav = new DataView(await rt.rec.urls.find(x => x.u === link.href).b.arrayBuffer());
+  assert.equal(wav.getUint16(22, true), 1, "mono"); assert.equal(wav.getInt16(44, true), Math.trunc(0.4 * 0x7FFF), "the guitar's own level, not the mix");
+  assert.equal([...rt.idb.stores.get("takes").rows.values()].some(x => x.v.stem), false);
+  assert.equal(rt.document.getElementById("recdls").hidden, true);
+});
+
+test("a guitar-only take has no stem, and cancelling or ending a drill reaches the stem too", async () => {
+  const solo = makeRuntime({ media: true, capture: true });
+  solo.document.getElementById("recmix").value = "guitar";
+  solo.document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(solo.worklets.length, 1, "guitar only is already the solo");
+  assert.equal(solo.app.getRec().stem, null);
+
+  const cancel = makeRuntime({ media: true, capture: true });
+  cancel.document.getElementById("recmix").value = "backing";
+  cancel.document.getElementById("recarm").checked = true;
+  cancel.document.getElementById("recbtn").click();
+  await settle();
+  cancel.document.getElementById("recbtn").click();     // cancel while armed
+  await settle();
+  assert.equal(cancel.idb.stores.get("takes").rows.size, 0, "nothing left of either");
+
+  const drill = makeRuntime({ media: true, capture: true });
+  drill.app.setBpm(120);
+  drill.document.getElementById("recmix").value = "backing";
+  drill.document.getElementById("recmode").value = "drill4";
+  drill.document.getElementById("recarm").checked = true;
+  drill.document.getElementById("recbtn").click();
+  await settle();
+  drill.app.toggleTrainer();
+  for (let i = 0; i < 4 + 16 + 1; i++) drill.advance(0.5);
+  await settle();
+  const [mix, stem] = drill.worklets;
+  const ends = [mix, stem].map(w => w.sent.find(m => "stopAt" in m)?.stopAt);
+  assert.ok(ends[0] && ends[0] === ends[1], "both end on the same frame");
+  assert.equal(ends[0] - mix.sent.find(m => "start" in m).start, 4 * 96000, "four bars");
+  drill.app.toggleTrainer();
+});
