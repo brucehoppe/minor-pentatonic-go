@@ -52,14 +52,17 @@ function chordAt(song,t){
   const bar=(t-base)/(4*60/song.bpm),chords=bars[Math.floor(bar)%bars.length];
   return chords[Math.min(chords.length-1,Math.floor((bar%1)*chords.length))];
 }
-// Called as the song plays: lights the chord tones of the current chord (Follow backing).
-function songFollow(t){
-  const s=songs.selected,c=s?chordAt(s,t):null,key=c?c.pc+":"+c.name:"";
+// Lights the chord tones of a chord (or none), redrawing only when the chord changes.
+// Shared by songs and the looper: whatever is playing, the overlay follows it.
+function applyLiveChord(c){
+  const key=c?c.pc+":"+c.name:"";
   if(key===songs.chordKey)return;
   songs.chordKey=key;state.liveChord=c?{pc:c.pc,intervals:c.intervals}:null;
   // the Songs view has no fretboard to light, and redrawing it would reset its own fields
   if(state.chord==="band"&&state.view!=="songs")render();
 }
+// Called as the song plays (Follow backing).
+function songFollow(t){const s=songs.selected;applyLiveChord(s?chordAt(s,t):null);}
 function songSay(message){document.getElementById("songstatus").textContent=message;}
 // Only sounding backing identifies a new take. Merely browsing the library must
 // not rename a drill or override the trainer's key and tempo.
@@ -320,5 +323,6 @@ function renderSongs(){
   el("songsetdownbeat").onclick=()=>{if(songs.player)el("songdownbeat").value=songs.player.currentTime.toFixed(3);};
   el("songplay").onclick=()=>songPlay();el("songstop").onclick=()=>{songStop();songSay("Stopped.");};
   if(typeof renderLibrary==="function")renderLibrary();
+  if(typeof renderLooper==="function")renderLooper();
   if(!songs.loaded)songList().catch(e=>songSay(`Song storage is unavailable${e&&e.name?` (${e.name})`:""}. Allow local storage for this page, then reload.`));
 }

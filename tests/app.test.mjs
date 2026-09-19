@@ -24,6 +24,7 @@ const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-
 const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
 const songsScript = readFileSync(new URL("../web/songs.js", import.meta.url), "utf8");
 const libraryScript = readFileSync(new URL("../web/library.js", import.meta.url), "utf8");
+const looperScript = readFileSync(new URL("../web/looper.js", import.meta.url), "utf8");
 
 class Element {
   constructor(id = "", tagName = "div") {
@@ -146,9 +147,12 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       outs: [], connect(n) { l.outs.push(n); } }; (audio.limiters ??= []).push(l); return l; }
     createBiquadFilter() { return { type: "lowpass", frequency: new AudioParam(), Q: new AudioParam(), connect() {} }; }
     // noise for the drums: a buffer, and sources that play it (logged with when they start)
-    createBuffer(ch, len) { return { getChannelData: () => new Float32Array(len) }; }
-    createBufferSource() { return { buffer: null, connect() {},
-      start(t) { audio.starts++; audio.startTimes.push(t); (audio.noise ??= []).push(t); }, stop() {} }; }
+    createBuffer(ch, len, sr) { const data = new Float32Array(len); return { length: len, sampleRate: sr, duration: len / sr, numberOfChannels: ch,
+      getChannelData: () => data, copyToChannel(arr) { data.set(arr); } }; }
+    // sources are logged: a looping one records where it was told to start and from what offset
+    createBufferSource() { const src = { buffer: null, loop: false, connected: [], connect(n) { src.connected.push(n); }, disconnect() {},
+      start(t, off) { src.startedAt = t; src.offset = off; audio.starts++; audio.startTimes.push(t); (audio.noise ??= []).push(t); },
+      stop() { src.stopped = true; } }; (audio.sources ??= []).push(src); return src; }
   }
   const docListeners = {};
   const document = {
@@ -344,8 +348,9 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   if (explorers) for (const f of explorerScripts) vm.runInContext(f, context);
   if (band) vm.runInContext(bandScript, context);   // band:false is the page without web/band.js
   vm.runInContext(libraryScript, context);
+  vm.runInContext(looperScript, context);
   vm.runInContext(songsScript, context);
-  vm.runInContext(script + `\n;globalThis.appTest={parseChord,parseChords,chordAt,songFollow,songAddSection,songBuildSections,songSaveSections,songRecordSection,songLoopSection,validSection,FORMS,lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libLoopTick,libPeaks,libSeek,
+  vm.runInContext(script + `\n;globalThis.appTest={looper,looperRecord,looperStop,looperPlay,looperClear,looperTick,parseChord,parseChords,chordAt,songFollow,songAddSection,songBuildSections,songSaveSections,songRecordSection,songLoopSection,validSection,FORMS,lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libLoopTick,libPeaks,libSeek,
     zipStore,crc32,validTake,cleanTake,cleanRatings,RERATE_AFTER_MS,songs,validSong,songList,songImport,songSelect,songSave,songPlay,songStop,songBounds,songNow,songTap,render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
     modeOrigins,renderNotes,neckNames,OCTAVES,NATURALS,
     renderTriads,TRIAD_KINDS,TRIAD_SETS,triadShapes,triadVoicing,midiAt,allTriadVoicings,
@@ -3758,7 +3763,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {
@@ -5047,4 +5052,149 @@ test("layers are for takes with a kept solo; a missing rhythm take leaves the so
   rt.document.getElementById("laystop").onclick();
   rt.document.getElementById("laydlrhythm").onclick();
   assert.match(rt.document.getElementById("takemsg").textContent, /isn't available/);
+});
+
+// ---------- the looper ----------
+const finishLoop = (rt, frames, level = 0.3) => {
+  const node = rt.worklets.at(-1);
+  node.feedRaw(new Float32Array(frames).fill(level));
+  node.port.onmessage({ data: { done: frames } });
+  return node;
+};
+const loopSetup = (rt, { bars = "2", count = true, bpm = 120 } = {}) => {
+  rt.app.setBpm(bpm);
+  rt.document.getElementById("loopbars").value = bars;
+  rt.document.getElementById("loopcount").checked = count;
+  navButton(rt.document, "songs").click();
+};
+
+test("the looper records N bars on exact frames after a count-in, then loops them from where they ended", async () => {
+  const rt = makeRuntime({ media: true, capture: true, stored: { "practice-desk-calibration": '{"ms":40,"how":"tap"}' } });
+  loopSetup(rt);                                        // 120 bpm: a bar is 2 s; two bars 4 s; count-in 2 s
+  const osc = rt.audio.oscillators;
+  await rt.document.getElementById("looprec").onclick();
+  await settle();
+  const node = rt.worklets.at(-1), sent = node.sent;
+  const start = sent.find(m => "start" in m).start, stopAt = sent.find(m => "stopAt" in m).stopAt;
+  assert.equal(start, Math.round((0 + 0.35 + 2) * 48000), "0.35 s to settle, then a four-beat count-in");
+  assert.equal(stopAt - start, 4 * 48000, "exactly two bars of frames");
+  assert.equal(rt.audio.oscillators - osc, 4, "four count-in clicks");
+  assert.match(rt.document.getElementById("loopmsg").textContent, /^Counting in, then 2 bars/);
+  assert.equal(rt.app.looper.state, "recording");
+  assert.equal(rt.document.getElementById("looprec").disabled, true, "one at a time");
+  finishLoop(rt, 4 * 48000);
+  const l = rt.app.looper, src = l.src;
+  assert.equal(l.state, "looping"); assert.equal(l.buf.length, 192000); assert.equal(l.buf.duration, 4);
+  assert.equal(src.loop, true); assert.equal(src.loopStart, 0); assert.equal(src.loopEnd, 4, "the whole buffer, so it repeats with no gap");
+  assert.equal(src.startedAt, 2.35 + 4, "it begins on the audio clock at the bar the recording ended on");
+  assert.equal(src.offset, 0.04, "and is put back on the beat by the latency calibration");
+  assert.equal(src.connected[0], l.gain); assert.equal(l.gain.outs.length, 1, "into the engine's bus, so a take with backing records it");
+  assert.equal(l.buf.getChannelData(0)[100000], Math.fround(0.3), "the audio that was played");
+  assert.match(rt.document.getElementById("loopmsg").textContent, /^Looping\. Solo over it/);
+  assert.match(rt.document.getElementById("loopstate").textContent, /^Looping 2 bars at 120 bpm$/);
+  assert.equal(rt.document.getElementById("looprec").disabled, true);
+  rt.app.looperStop();
+  assert.equal(src.stopped, true); assert.equal(l.state, "idle"); assert.ok(l.buf, "the loop is kept for Play loop");
+  assert.equal(rt.document.getElementById("loopplay").disabled, false);
+});
+
+test("a loop restarted later joins at the right point in the bars, not from its start", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  loopSetup(rt, { bars: "1", count: false });           // one bar: 2 s, no count-in: starts at 0.35
+  await rt.document.getElementById("looprec").onclick();
+  await settle();
+  assert.equal(rt.worklets.at(-1).sent.find(m => "start" in m).start, Math.round(0.35 * 48000));
+  finishLoop(rt, 96000);
+  const first = rt.app.looper.src;
+  assert.equal(first.startedAt, 0.35 + 2);
+  rt.app.looperStop();
+  rt.clock.t = 9.25;                                    // some time later
+  rt.app.looperPlay(9.25 - 0.5);                        // the loop's bar 1 was 0.5 s ago
+  const again = rt.app.looper.src;
+  assert.notEqual(again, first, "a fresh source: a stopped one can't be restarted");
+  assert.equal(again.startedAt, 0, "already past: starts now"); assert.equal(again.offset, 0.5, "half a second into the loop");
+});
+
+test("the loop's bar readout and chords follow the audio clock, and light the chord tones", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  loopSetup(rt, { bars: "2", count: false });
+  await rt.document.getElementById("looprec").onclick(); await settle();
+  finishLoop(rt, 4 * 48000);
+  rt.document.getElementById("loopchords").value = "Am | Dm";
+  rt.document.getElementById("loopchords").oninput();
+  assert.match(rt.document.getElementById("loopchordnote").textContent, /^2 bars, repeating$/);
+  navButton(rt.document, "boxes").click();
+  rt.document.getElementById("chords").children.find(b => b.dataset.c === "band").click();
+  const start = rt.app.looper.startAt;                  // 0.35 + 4
+  rt.clock.t = start + 0.5; rt.app.looperTick();
+  assert.equal(rt.document.getElementById("loopreadout").textContent, "bar 1 of 2");
+  assert.equal(rt.app.isChordTone(9), true, "A is in Am"); assert.equal(rt.app.isChordTone(2), false);
+  rt.clock.t = start + 2.5; rt.app.looperTick();
+  assert.equal(rt.document.getElementById("loopreadout").textContent, "bar 2 of 2");
+  assert.equal(rt.app.isChordTone(2), true, "the overlay moved to Dm"); assert.equal(rt.app.isChordTone(4), false);
+  rt.clock.t = start + 4.5; rt.app.looperTick();        // the loop came round again
+  assert.equal(rt.document.getElementById("loopreadout").textContent, "bar 1 of 2");
+  assert.equal(rt.app.isChordTone(9), true);
+  rt.app.looperStop();
+  assert.equal(rt.app.getLive().chord, null, "stopping clears the overlay");
+  rt.document.getElementById("loopchords").value = "Am | Zz";
+  rt.document.getElementById("loopchords").oninput();
+  assert.match(rt.document.getElementById("loopchordnote").textContent, /^Can't read: Zz$/);
+});
+
+test("the looper says why it can't record, and never keeps a bad or unfinished loop", async () => {
+  const noWorklet = makeRuntime({ media: true });
+  loopSetup(noWorklet);
+  await noWorklet.document.getElementById("looprec").onclick();
+  assert.match(noWorklet.document.getElementById("loopmsg").textContent, /needs Web Audio and audio worklets/);
+  assert.equal(noWorklet.app.looper.state, "idle");
+
+  const short = makeRuntime({ media: true, capture: true });
+  loopSetup(short);
+  await short.document.getElementById("looprec").onclick(); await settle();
+  finishLoop(short, 40000);                             // under half of the four seconds
+  assert.match(short.document.getElementById("loopmsg").textContent, /^Not enough was recorded\. Try again\.$/);
+  assert.equal(short.app.looper.buf, null);
+
+  const hung = makeRuntime({ media: true, capture: true });
+  loopSetup(hung, { bars: "1", count: false });
+  await hung.document.getElementById("looprec").onclick(); await settle();
+  hung.advance(10);                                     // the capture never reports back
+  assert.match(hung.document.getElementById("loopmsg").textContent, /^The recording didn't finish\. Try again\.$/);
+  assert.equal(hung.app.looper.state, "idle");
+
+  const stopped = makeRuntime({ media: true, capture: true });
+  loopSetup(stopped);
+  await stopped.document.getElementById("looprec").onclick(); await settle();
+  stopped.app.looperStop();
+  assert.match(stopped.document.getElementById("loopmsg").textContent, /nothing was kept/);
+  assert.equal(stopped.app.looper.buf, null);
+
+  const busy = makeRuntime({ media: true, capture: true });
+  loopSetup(busy);
+  busy.document.getElementById("recbtn").click(); await settle();
+  await busy.document.getElementById("looprec").onclick();
+  assert.match(busy.document.getElementById("loopmsg").textContent, /Finish the take first/);
+});
+
+test("a solo can be recorded over the loop, the level is adjustable, and Clear and Quit let it go", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  loopSetup(rt, { bars: "1", count: false });
+  await rt.document.getElementById("looprec").onclick(); await settle();
+  finishLoop(rt, 96000);
+  const l = rt.app.looper;
+  const vol = rt.document.getElementById("loopvol");
+  vol.value = "40"; vol.oninput({ target: vol });
+  assert.equal(l.gain.gain.value, 0.4);
+  const { taps } = spyTaps(rt.app);
+  rt.document.getElementById("recmix").value = "backing";
+  rt.document.getElementById("recbtn").click(); await settle();
+  assert.equal(taps.length, 1, "the take taps the engine's bus, where the loop plays");
+  assert.equal(rt.app.getRec().backing, true);
+  rt.document.getElementById("recbtn").click(); await settle(); await settle();
+  assert.equal(l.state, "looping", "recording a solo does not stop the loop");
+  rt.app.silenceEverything();
+  assert.equal(l.state, "idle", "Quit stops it");
+  rt.app.looperClear();
+  assert.equal(l.buf, null); assert.equal(rt.document.getElementById("loopclear").disabled, true);
 });

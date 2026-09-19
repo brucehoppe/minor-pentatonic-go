@@ -812,6 +812,20 @@
       </div>
       <p id="songstatus" role="status" aria-live="polite">Import an MP3, M4A or WAV to begin.</p>
     </div>
+    <div class="card" id="loopcard">
+      <h2>Looper<em>record a loop, solo over it</em></h2>
+      <p class="tip">Play a chord part for 1, 2, 4, 8 or 12 bars at the tempo in the Play along bar. It repeats on the audio clock with no gap, so you can solo over your own playing. Press <b>Record</b> in the Play along bar (Guitar + backing) to record your solo with the loop, or just practise over it. Your latency calibration puts the loop back on the beat you played to.</p>
+      <div class="row">
+        <label>Bars <select id="loopbars"><option>1</option><option>2</option><option selected>4</option><option>8</option><option>12</option></select></label>
+        <label><input type="checkbox" id="loopcount" checked> Four-beat count-in</label>
+        <button id="looprec">Record loop</button><button id="loopstop">Stop</button><button id="loopplay">Play loop</button><button id="loopclear">Clear</button>
+        <label>Level <input type="range" id="loopvol" min="0" max="100" value="90" aria-label="Loop volume"></label>
+        <span id="loopstate" class="bandnote"></span><span id="loopreadout" class="bandnote"></span>
+      </div>
+      <div class="row"><label>Chords <input id="loopchords" maxlength="400" placeholder="Am | Dm | E7  (one bar each; repeats)" size="34"></label><span id="loopchordnote" class="bandnote"></span></div>
+      <p class="tip">Enter the loop's chords and, with Chord tones on <b>Follow backing</b> in any view, the notes of each chord light up as the loop plays.</p>
+      <p id="loopmsg" role="status" aria-live="polite" class="tip"></p>
+    </div>
     <div class="card" id="takecard">
       <h2>Your takes<em>kept on this device</em></h2>
       <p class="tip">Every take you record is kept here with its rating. Rate it against your one focus, come back two days later, listen with fresh ears and rate it again: the two ratings sit side by side.</p>
@@ -944,6 +958,7 @@
 <script src="inversions-explorer.js" defer></script>
 <script src="band.js" defer></script>
 <script src="library.js" defer></script>
+<script src="looper.js" defer></script>
 <script src="songs.js" defer></script>
 <script src="app.js" defer></script>
 </body>

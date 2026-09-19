@@ -5,6 +5,12 @@ a second release on the same day.
 
 ## Unreleased
 
+- Looper: record 1, 2, 4, 8 or 12 bars at the set tempo, with a count-in, on
+  exact audio-clock frames, and hear it repeat with no gap; solo over it with
+  or without recording (the loop plays into the recording bus). Chords can be
+  entered for the loop and the chord-tone overlay follows them; the latency
+  calibration puts it back on the beat. Checked in Chrome: two bars at
+  120 bpm recorded as exactly 4.000 s and looped through bar 1, bar 2, bar 1.
 - Layers: a solo recorded over a rhythm take can be heard as two layers with a
   volume and mute each, plus a click on the recording's beat; the solo is kept
   compressed on its own for this, from a second recorder beside the main one.

@@ -4303,6 +4303,7 @@ document.getElementById("majorarrows").onclick=function(){state.majorArrows=!sta
 function silenceEverything(){
   stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();stopRecording();stopMonitor();releaseInput();
   if(typeof songStop==="function")songStop();
+  if(typeof looperStop==="function")looperStop();
   if(state.clickTimer){clearInterval(state.clickTimer);state.clickTimer=null;}
 }
 function farewellPage(){
