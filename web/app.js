@@ -1459,6 +1459,24 @@ function streakOf(days,today=new Date()){
   let n=0;while(set.has(dayKey(d))){n++;d.setDate(d.getDate()-1);}
   return n;
 }
+// Best run of consecutive days in the record.
+function bestStreak(days){
+  const s=[...new Set(days)].sort();let best=0,run=0,prev=null;
+  for(const k of s){const [y,m,d]=k.split("-").map(Number),t=Date.UTC(y,m-1,d);
+    run=prev!==null&&t-prev===864e5?run+1:1;prev=t;if(run>best)best=run;}
+  return best;
+}
+// Encouraging, never guilt: celebrate what you did, and treat a gap as a fresh start.
+function streakMessage(days,today=new Date()){
+  const n=streakOf(days,today),done=days.includes(dayKey(today)),best=bestStreak(days);
+  if(!days.length)return "Every player starts with one day. Play a little today and your streak begins.";
+  if(!n)return best>1?`Welcome back! Your best run is ${best} days, and you already know you can do it. Play today to start a new one.`
+    :"Welcome back! A short session today starts a fresh streak.";
+  const milestone={3:"Three days: a habit is forming.",7:"A full week! Your fingers are learning.",14:"Two weeks. This is real progress.",30:"A month of playing. Remarkable."}[n];
+  const head=`<b>${n}</b> day${n===1?"":"s"} in a row`;
+  const tail=milestone||(done?"Nice work today.":"Play today to keep it going.");
+  return `${head}. ${tail}${n>=best&&n>1&&!milestone?" That's your best yet!":n<best?` Your best is ${best}.`:""}`;
+}
 // The degree to ask next: unseen or weak ones weigh more.
 function earPick(stats,rnd=Math.random){
   const w=EAR_DEGREES.map(([d])=>{const [r,t]=stats[d];return t<3?3:1+4*(1-r/t);});
@@ -1510,8 +1528,7 @@ function todayAdvice(){
   return items;
 }
 function renderToday(){
-  const n=streakOf(readDays());
-  document.getElementById("todaystreak").innerHTML=n?`<b>${n}</b> day${n===1?"":"s"} in a row.`:"No streak yet. Start today.";
+  document.getElementById("todaystreak").innerHTML=streakMessage(readDays());
   document.getElementById("todaylist").innerHTML=todayAdvice().map(x=>`<li><span>${x}</span></li>`).join("");
 }
 

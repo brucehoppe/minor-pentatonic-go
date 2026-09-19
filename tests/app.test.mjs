@@ -383,7 +383,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
-    completeSession,clearLog,readLog,streakOf,earPick,earNew,earAnswer,readEar,readDays,todayAdvice,EAR_DEGREES,dayKey,getEar:()=>state.ear,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
+    completeSession,clearLog,readLog,streakOf,streakMessage,bestStreak,earPick,earNew,earAnswer,readEar,readDays,todayAdvice,EAR_DEGREES,dayKey,getEar:()=>state.ear,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
     getState:()=>({key:state.key,view:state.view,labelMode:state.labelMode,chord:state.chord,reg:state.reg,chartOpen:state.chartOpen,boxLock:state.boxLock,droneNodes:state.droneHandle,clickTimer:state.clickTimer,bpm:state.bpm,timerSeconds:state.timerSeconds,timerInitial:state.timerInitial,timerHandle:state.timerHandle,ladderRound:state.ladderRound,
       trainerTimer:state.trainerTimer,trainerBar:state.trainerBar,trainerBeat:state.trainerBeat,trainerCount:state.trainerCount,rhythmTimer:state.rhythmTimer,rhythmStep:state.rhythmStep,rhythm:[...state.rhythm],showB5:state.showB5,blueLock:state.blueLock,
       soloBoxes:[...state.soloBoxes],soloRun:[...state.soloRun],soloTimer:state.soloTimer,soloStep:state.soloStep,storage:window.localStorage})};`, context);
@@ -5566,4 +5566,16 @@ test("ear drill scores answers, favours weak degrees, and feeds the streak", () 
   assert.equal(app.readEar()[q.degree][1], 1, "one answer per note");
   assert.equal(app.readDays().length, 1, "an answer marks today");
   assert.ok(app.todayAdvice().length >= 1);
+});
+
+test("the streak message encourages and never scolds", () => {
+  const { app } = makeRuntime(), today = new Date(2026, 8, 19);
+  assert.match(app.streakMessage([], today), /begins/);
+  assert.match(app.streakMessage(["2026-09-19"], today), /1<\/b> day in a row/);
+  assert.match(app.streakMessage(["2026-09-17", "2026-09-18", "2026-09-19"], today), /habit is forming/);
+  assert.match(app.streakMessage(["2026-09-18"], today), /keep it going/);
+  const back = app.streakMessage(["2026-09-01", "2026-09-02", "2026-09-03"], today);
+  assert.match(back, /Welcome back.*best run is 3/);
+  assert.doesNotMatch(back, /lost|broke|missed|failed/i);
+  assert.equal(app.bestStreak(["2026-09-01", "2026-09-02", "2026-09-05"]), 2);
 });
