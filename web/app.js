@@ -2001,6 +2001,21 @@ function restartClick() {
 // Past this much delay between playing a note and the page recording it, a take
 // sounds late against the backing — typically Bluetooth headphones.
 const REC_LATE_MS=60;
+// A backing take mixes guitar and band before they are recorded. Two full-level
+// parts add up to more than full level, so the backing goes in 3 dB down and a
+// limiter sits after the mix: a loud chorus is held just under the top instead of
+// clipping. Guitar-only takes skip both, so their master is exactly your input.
+const REC_BACKING_LEVEL=Math.pow(10,-3/20);
+// Web Audio's compressor always adds make-up gain (about 1.7 dB at these settings)
+// and has no switch for it, so a trim after it takes that back: loud passages land
+// near -3 dB, with room for a pick attack the limiter is a moment late for.
+const REC_LIMIT_TRIM=Math.pow(10,-2/20);
+function recLimiter(ac){
+  if(typeof ac.createDynamicsCompressor!=="function")return null;
+  const l=ac.createDynamicsCompressor(),trim=ac.createGain();
+  l.threshold.value=-3;l.knee.value=0;l.ratio.value=20;l.attack.value=.002;l.release.value=.15;
+  trim.gain.value=REC_LIMIT_TRIM;l.connect(trim);
+  return {input:l,output:trim};}
 const REC_TYPES=["audio/webm;codecs=opus","audio/webm","audio/mp4;codecs=mp4a.40.2","audio/mp4"];
 const REC_ROW=`<div class="row" id="recrow">
   <span class="lbl">Record</span>
@@ -2168,17 +2183,24 @@ function openTake(){
   return acquireInput(mono&&!(ac&&ac.createMediaStreamDestination))
   .then(i=>{input=i;return ac&&ac.createMediaStreamDestination?openCapture(ac,channels):null;})
   .then(capture=>{
-    let stream=input,src=null,dest=null,chanNote="";
+    let stream=input,src=null,dest=null,chanNote="",bus=null,bed=null;
     // Through Web Audio when there is one: that is where backing is mixed in, and a
     // one-channel destination downmixes a stereo interface to a true mono take.
     if(ac&&ac.createMediaStreamDestination){
       dest=ac.createMediaStreamDestination();
       dest.channelCount=mono?1:2;dest.channelCountMode="explicit";dest.channelInterpretation="speakers";
       const n=inputNode(ac,input,chan);
-      src=n.src;chanNote=n.note;n.link(dest);
-      if(backing)a.tap(dest);
+      src=n.src;chanNote=n.note;
       // the raw capture hears exactly what the compressed recording does
-      if(capture){n.link(capture.node);if(backing)a.tap(capture.node);}
+      const outs=capture?[dest,capture.node]:[dest];
+      if(backing){
+        bus=ac.createGain();bus.channelCount=2;bus.channelCountMode="explicit";bus.channelInterpretation="speakers";
+        bed=ac.createGain();bed.gain.value=REC_BACKING_LEVEL;
+        a.tap(bed);bed.connect(bus);n.link(bus);
+        const lim=recLimiter(ac),last=lim?lim.output:bus;
+        if(lim)bus.connect(lim.input);
+        outs.forEach(o=>last.connect(o));
+      }else outs.forEach(o=>n.link(o));
       stream=dest.stream;}
     else if(chan>=0)chanNote="Picking one input needs Web Audio, which this browser withholds, so both inputs are recorded.";
     const mime=recMime(),opts={audioBitsPerSecond:96000};
@@ -2187,7 +2209,7 @@ function openTake(){
     const late=recLatencyMs(ac,input);
     const warn=late>REC_LATE_MS?`Your audio adds about ${late} ms of delay, so the take will sound late against the backing. `
       +"Bluetooth headphones are the usual cause: use wired ones, or your interface's outputs.":"";
-    const take={phase:"ready",input,src,dest,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,capture,
+    const take={phase:"ready",input,src,dest,bus,bed,recorder,chunks:[],mime:recorder.mimeType||mime,mono,backing,capture,
       note:[note,chanNote,warn].filter(Boolean).join(" ")};
     // Storage full: stop cleanly, keeping everything written so far.
     if(capture)capture.onFail=()=>{if(state.rec===take)stopRecording();};
@@ -2199,9 +2221,7 @@ function openTake(){
 // when it is released.
 function closeTake(t){
   if(t.src)try{t.src.disconnect();}catch(e){/* already gone */}
-  if(t.backing&&state.engine&&state.engine.untap){
-    state.engine.untap(t.dest);
-    if(t.capture)state.engine.untap(t.capture.node);}}
+  if(t.bed&&state.engine&&state.engine.untap)state.engine.untap(t.bed);}
 function inputError(e){
   const n=e&&e.name;
   if(n==="NotAllowedError"||n==="SecurityError")return "Microphone access was refused. Allow it for this page in the browser's site settings, then press Record again.";

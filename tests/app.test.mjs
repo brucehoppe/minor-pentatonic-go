@@ -115,8 +115,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       this.baseLatency = 0.005; this.outputLatency = audio.outputLatency ?? 0.01; }
     get currentTime() { return clock.t; }
     resume() { return Promise.resolve(); }
-    createGain() { audio.gains++; const g = { gain: new AudioParam(), inputs: [],
-      connect(node) { if (node && node.stream) audio.taps.push(node); if (node && node.speakers) audio.toSpeakers.push(g); },
+    createGain() { audio.gains++; const g = { gain: new AudioParam(), inputs: [], outs: [],
+      connect(node) { g.outs.push(node); if (node && node.stream) audio.taps.push(node); if (node && node.speakers) audio.toSpeakers.push(g); },
       disconnect(node) { audio.untaps.push(node); if (!node) g.disconnected = true; } }; return g; }
     createMediaStreamDestination() { return { stream: { destination: true }, channelCount: 2, connect() {} }; }
     // An analyser reads audio.levels[channel] (a peak, 0..1) for whichever splitter
@@ -133,6 +133,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       getChannelData: () => new Float32Array(48000).fill(0.25) }); }
     createOscillator() { audio.oscillators++; return { type: "sine", frequency: new AudioParam(), connect() {},
       start(t) { audio.starts++; audio.startTimes.push(t); }, stop() { audio.stops++; } }; }
+    createDynamicsCompressor() { const p = () => ({ value: 0 }), l = { threshold: p(), knee: p(), ratio: p(), attack: p(), release: p(),
+      outs: [], connect(n) { l.outs.push(n); } }; (audio.limiters ??= []).push(l); return l; }
     createBiquadFilter() { return { type: "lowpass", frequency: new AudioParam(), connect() {} }; }
   }
   const document = {
@@ -2555,6 +2557,9 @@ test("the static live demo shows no Quit control, because there is no app to sto
 // Recording is promise-driven (getUserMedia, decodeAudioData, blob.arrayBuffer), so
 // the tests let those settle before looking.
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(r => setImmediate(r)); };
+// Watches what the engine's master bus is tapped into, and untapped from.
+const spyTaps = app => { const e = app.audio(), taps = [], untaps = [], t = e.tap, u = e.untap;
+  e.tap = n => { taps.push(n); return t(n); }; e.untap = n => { untaps.push(n); return u(n); }; return { taps, untaps }; };
 
 test("without microphone access the Record row is switched off and says why", () => {
   const { document } = makeRuntime({ secure: false });
@@ -2578,7 +2583,8 @@ test("a guitar-only take asks for an unprocessed mono input and records it at 96
   assert.equal(r.opts.mimeType, "audio/webm;codecs=opus");
   assert.equal(r.stream.destination, true, "recorded through Web Audio");
   assert.equal(app.getRec().dest.channelCount, 1, "downmixed to one channel");
-  assert.equal(audio.taps.length, 0, "no backing in the take");
+  assert.equal(audio.limiters, undefined, "guitar only: nothing between the input and the master");
+  assert.ok(app.getRec().src.connected.includes(app.getRec().dest), "the input goes straight in");
   assert.equal(r.state, "recording");
   assert.equal(document.getElementById("recbtn").textContent, "Stop");
   assert.match(document.getElementById("recmsg").textContent, /Recording guitar only/);
@@ -2621,18 +2627,28 @@ test("the container falls back to MP4/AAC, then to the browser's own choice", ()
   assert.equal(app.fileSize(4.2 * 1048576), "4.2 MB");
 });
 
-test("guitar + backing taps the Web Audio mix into the take and records stereo", async () => {
+test("guitar + backing mixes both through a limiter, with the backing 3 dB down, in stereo", async () => {
   const { app, document, rec, audio } = makeRuntime({ media: true });
+  const { taps, untaps } = spyTaps(app);
   document.getElementById("recmix").value = "backing";
   document.getElementById("recbtn").click();
   await settle();
+  const r = app.getRec();
   assert.equal(rec.asked[0].audio.channelCount.ideal, 2);
-  assert.equal(app.getRec().dest.channelCount, 2);
-  assert.equal(audio.taps.length, 1, "the engine's master bus feeds the take");
-  assert.equal(audio.taps[0], app.getRec().dest);
+  assert.equal(r.dest.channelCount, 2);
+  sameShape(taps, [r.bed], "the engine's master bus feeds the take, through its own level");
+  assert.ok(Math.abs(r.bed.gain.value - Math.pow(10, -3 / 20)) < 1e-9, "backing 3 dB under the guitar");
+  assert.ok(r.src.connected.includes(r.bus), "guitar and backing meet in one bus");
+  const [lim] = audio.limiters;
+  assert.equal(lim.threshold.value, -3); assert.equal(lim.ratio.value, 20); assert.equal(lim.knee.value, 0);
+  assert.ok(lim.attack.value <= 0.003, "fast enough to catch a pick attack");
+  assert.equal(lim.outs.length, 1, "the limiter feeds one trim");
+  const trim = lim.outs[0];
+  assert.ok(Math.abs(trim.gain.value - Math.pow(10, -2 / 20)) < 1e-9, "which takes back the compressor's make-up gain");
+  sameShape(trim.outs, [r.dest], "and feeds the recording");
   document.getElementById("recbtn").click();
   await settle();
-  assert.equal(audio.untaps.at(-1), audio.taps[0], "untapped when the take ends");
+  sameShape(untaps, [r.bed], "untapped when the take ends");
   const header = new DataView(await app.getTake().wav.blob.arrayBuffer());
   assert.equal(header.getUint16(22, true), 2, "stereo WAV");
 });
@@ -2771,9 +2787,10 @@ test("picking one input of an interface centres that channel, in mono or stereo 
     assert.equal(rec.asked[0].audio.channelCount.ideal, 2, `${mix}: the input is asked for in stereo`);
     const r = app.getRec();
     assert.equal(r.dest.channelCount, mix === "guitar" ? 1 : 2);
-    const sp = audio.splitters.find(x => x.links.some(l => l.d === r.dest));
+    const into = mix === "guitar" ? r.dest : r.bus;   // with backing, it goes through the mix bus
+    const sp = audio.splitters.find(x => x.links.some(l => l.d === into));
     sameShape(sp.links.map(l => [l.out, l.inp]), [[1, 0]], `${mix}: input 2 alone feeds the take`);
-    assert.equal(sp.links[0].d, r.dest);
+    assert.equal(sp.links[0].d, into);
     assert.equal(r.src.connected.length, 1, "the raw input is not also mixed in");
     assert.equal(r.src.connected[0], sp);
     assert.equal(document.getElementById("recchan").disabled, true, "fixed while the take is open");
@@ -2819,10 +2836,11 @@ test("Monitor input sends the unprocessed input straight to the speakers, never 
   assert.match(document.getElementById("recmsg").textContent, /Monitoring your input, heard about 25 ms.*headphones/);
 
   // a backing take while monitoring: the take taps the master bus, which the monitor bypasses
+  const { taps } = spyTaps(app);
   document.getElementById("recmix").value = "backing";
   document.getElementById("recbtn").click();
   await settle();
-  assert.equal(audio.taps.length, 1);
+  assert.equal(taps.length, 1);
   assert.notEqual(m.src.connected[0], app.getRec().dest, "the monitored input is not the take's input");
   document.getElementById("recbtn").click();
   await settle();
@@ -3660,4 +3678,23 @@ test("a standalone explorer still offers its own key menu and reports changes", 
     sel.value = "5"; sel.dispatch("change");
     sameShape(seen, [5]);
   }
+});
+
+test("with a raw capture, the limited mix feeds both the compressed recording and the master", async () => {
+  const { app, document, audio, worklets } = makeRuntime({ media: true, capture: true });
+  document.getElementById("recmix").value = "backing";
+  document.getElementById("recbtn").click();
+  await settle();
+  sameShape(audio.limiters[0].outs[0].outs, [app.getRec().dest, worklets[0]]);
+});
+
+test("a browser without a compressor still records backing, straight from the mix bus", async () => {
+  const { app, document } = makeRuntime({ media: true });
+  app.audio().context.createDynamicsCompressor = undefined;
+  document.getElementById("recmix").value = "backing";
+  document.getElementById("recbtn").click();
+  await settle();
+  const r = app.getRec();
+  assert.ok(r.bus && r.bed, "still mixed, with the backing 3 dB down");
+  assert.equal(app.getRec().recorder.state, "recording");
 });

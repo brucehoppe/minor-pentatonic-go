@@ -14,6 +14,10 @@ a second release on the same day.
   through the app's audio (so they
   work in Lockdown Mode), and colour notes by job with the root as a square.
   In these two views chords are spelt as on a chart: E♭, A♭, B♭, C♯, F♯.
+- A take with backing can no longer clip: the backing is mixed in 3 dB under
+  the guitar, with a limiter after both and a trim for the compressor's
+  built-in make-up gain. A take that peaked at 0 dB now peaks near -3 dB.
+  Guitar-only takes are untouched. What you hear doesn't change.
 - WAV masters can be 24-bit, and MP3 quality is a choice: standard (128 kbps mono,
   192 stereo), high (192/256) or best (320). Both are remembered on the device;
   changing the MP3 quality re-encodes on the next download. Masters stored before
