@@ -1,0 +1,70 @@
+/* Same paper, inks and embedded fonts; fewer competing surfaces. */
+body{padding:0 28px 24px;background-image:radial-gradient(#15161a14 .45px,transparent .45px);background-size:5px 5px}
+.wrap{max-width:1240px}
+.prototype-note{max-width:1240px;margin:0 auto;padding:12px 0;display:flex;justify-content:space-between;gap:12px;font-size:11px;border-bottom:1px solid var(--rule);color:#55565a}
+.prototype-note a{color:var(--blue);text-underline-offset:3px}
+.masthead{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:26px 0 25px;border-bottom:2px solid var(--ink);margin-bottom:30px}
+.masthead h1{font-size:clamp(27px,4.2vw,47px);line-height:.96;letter-spacing:-.035em;text-shadow:1.5px 1.5px var(--pink)}
+.masthead .sub{font-size:11px;letter-spacing:.045em;text-transform:none;opacity:1;color:#525459;margin:12px 0 0}
+.masthead .hero{width:182px;margin:0;flex-shrink:0;max-width:25%;border:0;transform:rotate(-3deg);box-shadow:4px 4px 0 #ff48b02c}
+.desk-layout{display:grid;grid-template-columns:185px minmax(0,1fr);gap:42px;align-items:start}
+.lesson-index{position:sticky;top:18px}
+.browse>summary{font-family:'Bricolage Grotesque',sans-serif;font-size:18px;font-weight:800;margin-bottom:17px;cursor:pointer}
+#views{border:0;margin:0;padding:0}
+.nav-group{padding:13px 0;border-top:1px solid var(--rule)}
+.nav-group summary{font-size:12px;cursor:pointer;min-height:24px;color:#40434a}
+#views button{display:block;width:100%;text-align:left;border:0;font-size:14px;font-weight:600;letter-spacing:0;text-transform:none;padding:10px 12px;margin:3px 0}
+#views button[aria-pressed=true]{background:var(--blue);color:var(--card);box-shadow:3px 3px 0 #ff48b075}
+.lesson-main{min-width:0}
+.lesson-context{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.lesson-title{font-family:'Bricolage Grotesque',sans-serif;font-size:32px;letter-spacing:-.025em;line-height:1;margin:0}
+.key-select{font-size:12px;white-space:nowrap}
+.key-select select{font-family:inherit;font-size:13px;border:1px solid var(--rule);background:var(--card);padding:9px;color:var(--ink);margin-left:6px}
+.diagram-settings{border-bottom:1px solid var(--rule);padding:0 0 15px;margin-bottom:18px}
+.diagram-settings summary,.course-outline>summary,.course-intro>summary,.record-settings>summary{cursor:pointer;font-size:12px;padding:7px 0;color:#313840}
+.diagram-settings[open] summary{margin-bottom:15px}
+.diagram-settings .row{margin-bottom:12px}
+.diagram-settings .off{display:none}
+.legend{font-size:11px;gap:15px;margin:0 0 18px;opacity:1;color:#525459}
+.legend>div:nth-child(n+3){display:none}
+body:has(#chords button:not([data-c=off])[aria-pressed=true]) .legend>div:nth-child(4),body:has(#extras button[aria-pressed=true]) .legend>div:nth-child(6){display:block}
+.legend>div:nth-child(3){display:block}
+.tip{font-size:13px;line-height:1.7;opacity:1;color:#51545a}
+.card{border:0;border-top:2px solid var(--rule);padding:18px;background:var(--card)}
+.card h2{font-size:17px;text-transform:none;letter-spacing:0;flex-wrap:wrap}
+.card h2 em{opacity:1;color:#555b61;letter-spacing:0}
+.card:hover{border-color:var(--rule)}
+.grid{gap:22px}
+.map{padding:15px 0 22px;margin-top:18px;margin-bottom:24px}
+button{min-height:36px}
+button:focus-visible,summary:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+#path{display:block}
+#path>.card{margin-bottom:20px}
+#path .pathnow{border:0;border-left:4px solid var(--blue);padding:22px}
+#path .card.now{border:0;border-top:2px solid var(--pink);padding:22px}
+#path:has(.card.now) .pathnow .tip{display:none} /* Current stage directly below contains the same goal/test. */
+.course-outline{border-top:1px solid var(--rule);padding:12px 0}
+.course-outline .grid{margin-top:20px}
+.course-intro{margin-top:16px}
+.audio-dock{position:sticky;bottom:12px;z-index:5;border:1px solid var(--ink);border-bottom:4px solid var(--blue);background:var(--card);padding:12px 18px;margin-top:32px;box-shadow:5px 5px 0 #ff48b030}
+.audio-dock #play{margin:0;gap:9px}
+.audio-dock #play>.lbl{color:#41464e;opacity:1}
+.audio-dock #audiomsg:empty{display:none}
+.record-settings{margin-top:4px}
+.record-settings[open]{max-height:45vh;overflow:auto}
+.audio-dock #recrow{margin:10px 0 0}
+.credit{margin-top:25px;padding:15px 0;opacity:1;color:#56585d}
+@media(min-width:1100px){#boxes{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:740px){
+ body{padding:0 16px 15px}.prototype-note{font-size:10px;flex-wrap:wrap}.masthead{padding:22px 0;margin-bottom:20px;gap:12px}.masthead .hero{width:100px;max-width:27%}.masthead h1{font-size:29px}.masthead .sub{font-size:10px;max-width:23ch;line-height:1.5}
+ .desk-layout{display:block}.lesson-index{position:static;border-bottom:1px solid var(--rule);margin-bottom:24px}.browse>summary{font-size:15px;margin-bottom:14px}.lesson-title{font-size:25px}.lesson-context{align-items:center}.key-select{font-size:11px}.key-select select{max-width:116px;margin-left:0}.grid,.grid.wide{grid-template-columns:minmax(0,1fr)}.audio-dock{position:static;padding:12px;margin-top:24px}.audio-dock #play>.lbl{flex-basis:100%}.legend{gap:10px}.card h2 em{font-size:10px}.map{overflow-x:auto}.map svg{min-width:570px}#path>.card{padding:16px}
+}
+.legend.has-colour>div:nth-child(5){display:block}
+.trainer-options{border-block:1px solid var(--rule);padding:10px 0;margin:15px 0}
+.trainer-options>summary{cursor:pointer;font-size:12px;padding:6px 0}
+.trainer-options[open]>summary{margin-bottom:14px}
+#v-trainer .hero{max-width:155px;float:right;margin:0 0 20px 25px;transform:rotate(2deg)}
+#v-trainer .hero figcaption{font-size:9px;line-height:1.5;padding:5px}
+#v-trainer>.tip{min-height:145px;max-width:53ch!important}
+#v-trainer>.card{clear:both}
+@media(max-width:740px){#v-trainer .hero{max-width:105px;margin-left:14px}#v-trainer>.tip{min-height:110px}}
