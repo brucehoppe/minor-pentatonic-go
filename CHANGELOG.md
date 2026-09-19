@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- Latency calibration: a loopback beep measured to the sample, or tapping
+  along to a click for headphones, plus a manual trim. The offset is stored
+  with every take. Press M (or the big button) during a take to mark a
+  mistake; marks are saved as they happen and listed when the take is saved.
 - Record button moves into the Play along bar, usable from every view, and
   guitar + backing is the default. Each take picks its length (full run-through,
   a 12-bar chorus, or a drill of 8 or 4 bars), one focus, and cold attempt or

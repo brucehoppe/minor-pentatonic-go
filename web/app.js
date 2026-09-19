@@ -46,7 +46,7 @@ const state={
   // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
   // input device, and the last finished take with its blob URLs
   rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null, checking:false, meter:null, savedList:[],
-  takeDB:null, workletFor:null, wavBits:16, mp3Quality:"standard",
+  takeDB:null, workletFor:null, wavBits:16, mp3Quality:"standard", cal:null, calRun:null,
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
   triadKind:"maj", triadSet:"123",
@@ -2234,6 +2234,13 @@ const REC_ROW=`<div class="row" id="recrow">
   <select id="recmode" aria-label="Take length"><option value="full" selected>Full run-through (no limit)</option><option value="chorus">One 12-bar chorus</option><option value="drill8">Drill: 8 bars</option><option value="drill4">Drill: 4 bars</option><option value="section" disabled>One song section (add a song first)</option></select>
   <select id="recfocus" aria-label="Focus: pick one"><option value="timing" selected>Focus: timing</option><option value="clean">Focus: clean notes</option><option value="bends">Focus: bends in tune</option><option value="phrasing">Focus: phrasing and space</option><option value="vibrato">Focus: vibrato</option><option value="through">Focus: getting through without stopping</option></select>
   <select id="recattempt" aria-label="Attempt"><option value="cold" selected>Cold attempt</option><option value="retest">Retest</option></select>
+  <button id="recmark" class="bigmark" hidden>Mark a mistake (M)</button>
+  <span class="lbl" style="flex-basis:100%;margin-top:4px">Latency</span>
+  <button id="calloop">Calibrate: loopback beep</button>
+  <button id="caltap">Calibrate: tap along</button>
+  <button id="caltapbtn" class="bigmark" hidden>TAP on each click</button>
+  <label style="font-size:12px;display:flex;gap:5px;align-items:center">Trim <input type="number" id="calms" step="1" min="-500" max="1000" style="width:5.5em"> ms</label>
+  <span id="calmsg" style="font-size:11.5px;opacity:.75;flex-basis:100%;line-height:1.5"></span>
   <audio id="recplay" controls hidden style="height:32px;max-width:100%"></audio>
   <button id="recdlc" hidden>Download compressed</button>
   <button id="recdlw" hidden>Download WAV</button>
@@ -2464,7 +2471,11 @@ function toggleRecord(){
   }).catch(e=>{if(state.rec===pending){state.rec=null;recButtons();recSay(inputError(e));inputIdle();}});}
 function startTake(t,fromTrainer){
   t.phase="recording";t.fromTrainer=fromTrainer;t.date=t.date||new Date();t.t0=Date.now();
-  t.key=state.key;t.bpm=state.bpm;
+  t.key=state.key;t.bpm=state.bpm;t.markers=[];
+  // the audio clock at the take's first sample: the downbeat's frame when armed
+  {const ac=state.engine&&state.engine.context;
+   t.acStart=ac?(t.startFrame!==undefined?t.startFrame/ac.sampleRate:ac.currentTime):undefined;}
+  document.getElementById("recmark").hidden=false;document.getElementById("recmark").textContent="Mark a mistake (M)";
   if(!t.info)t.info={...takeSettings(),trainer:fromTrainer};
   const bars=TAKE_MODES[t.info.mode].bars;
   beginCapture(t.capture,0,takeMeta(t));   // unless bar 1 already booked it to the sample
@@ -2481,7 +2492,7 @@ function startTake(t,fromTrainer){
 function takeMeta(t){
   const info=t.info||{};
   return {name:takeName(t.date||new Date(),"wav",t.key,t.bpm,info),key:t.key,bpm:t.bpm,mono:t.mono,backing:t.backing,
-    mode:info.mode,focus:info.focus,attempt:info.attempt};}
+    mode:info.mode,focus:info.focus,attempt:info.attempt,calMs:state.cal?state.cal.ms:null,markers:[]};}
 // Called by trainerTick for every bar-1 downbeat, when seconds before it sounds. The
 // raw capture is told the downbeat's frame now, so the master starts on that exact
 // sample; the compressed recording starts when the beat sounds.
@@ -2522,6 +2533,7 @@ function cancelRecording(){
   if(r.clock)clearInterval(r.clock);
   if(r.recorder){r.recorder.onstop=null;if(r.recorder.state==="recording")r.recorder.stop();closeTake(r);}
   if(r.capture)endCapture(r.capture).then(meta=>meta&&dropTake(meta.id)).catch(()=>{});
+  document.getElementById("recmark").hidden=true;
   inputIdle();recButtons();recSay("Recording cancelled.");}
 function releaseTake(t){
   [t,t.wav,t.mp3].forEach(f=>{if(f&&f.url)try{URL.revokeObjectURL(f.url);}catch(e){/* already released */}});}
@@ -2707,13 +2719,17 @@ function fixTakeLength(kept,seconds){
     kept.url=URL.createObjectURL(kept.blob);}).catch(()=>{/* keep the file as recorded */});}
 function finishTake(t){
   closeTake(t);
+  document.getElementById("recmark").hidden=true;
+  if(t.capture&&t.capture.meta)t.capture.meta.markers=t.markers||[];
   const blob=new Blob(t.chunks,{type:t.mime||"audio/webm"});
   if(state.recTake)releaseTake(state.recTake);
-  const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm,t.info),wav:null,info:t.info};
+  const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm,t.info),wav:null,info:t.info,markers:t.markers||[],calMs:state.cal?state.cal.ms:null};
   state.rec=null;inputIdle();
   const secs=Math.round((Date.now()-t.t0)/1000);
+  const marks=(t.markers||[]).length;
   const what=(t.capture&&t.capture.failed?"Storage ran out, so the take stopped there. ":"")
-    +`Take saved: ${secs} s, ${t.mono?"mono":"stereo"}.`+(t.note?" "+t.note:"");
+    +`Take saved: ${secs} s, ${t.mono?"mono":"stereo"}.`
+    +(marks?` ${marks} mistake${marks===1?"":"s"} marked at ${t.markers.map(m=>mmss(m.t)).join(", ")}.`:"")+(t.note?" "+t.note:"");
   showTake();recButtons();recSay(what+" Making the WAV…");
   // The raw master, when there is one: its length is exact to the sample, and its WAV
   // is assembled from storage when you download it.
@@ -2911,6 +2927,124 @@ function pickChannel(i){
   document.getElementById("recchan").value=String(i);
   restartMonitor();
   if(state.meter)meterTick(state.meter);}
+
+// ---- latency calibration ----
+// Playing a note and hearing it recorded takes a moment: the output's delay, then the
+// input's. Against a backing take, your guitar lands that much late. Two ways to
+// measure it, and a manual trim; the result is stored with every take so timing
+// feedback and overdubs (later passes) can put layers back on the beat.
+//   loopback: a beep is played, and the raw capture hears it come back on the input —
+//   through speakers to a microphone, or an interface's output patched to its
+//   input. Sample-accurate: the beep's frame is known, and so is the frame it appears at.
+//   tap along: for headphones, where nothing can come back. You tap on each click
+//   of a steady beat; the median gap between click and tap is your offset.
+const CAL_KEY="practice-desk-calibration";
+function readCal(){
+  try{const v=JSON.parse(window.localStorage.getItem(CAL_KEY)||"null");
+    if(v&&Number.isFinite(v.ms)&&v.ms>=-500&&v.ms<=1000)
+      state.cal={ms:Math.round(v.ms),how:["loopback","tap","manual"].includes(v.how)?v.how:"manual",at:Number.isFinite(v.at)?v.at:0};}
+  catch(e){/* nothing stored, or unreadable: not calibrated */}}
+function writeCal(){try{window.localStorage.setItem(CAL_KEY,JSON.stringify(state.cal));}catch(e){/* this visit only */}}
+const CAL_HOW={loopback:"loopback beep",tap:"tap along",manual:"set by hand"};
+function calSay(text){document.getElementById("calmsg").textContent=text;}
+function calShow(){
+  const c=state.cal,ms=document.getElementById("calms");
+  ms.value=c?String(c.ms):"";
+  calSay(c?`Calibrated: guitar arrives ${c.ms} ms after the backing (${CAL_HOW[c.how]}). Stored with every take.`
+    :"Not calibrated yet. Overdubs and timing feedback line up better once this is done.");}
+function setCal(ms,how){
+  if(!Number.isFinite(ms))return;
+  state.cal={ms:Math.max(-500,Math.min(1000,Math.round(ms))),how,at:Date.now()};
+  writeCal();calShow();}
+function calBusy(on){
+  ["calloop","caltap"].forEach(id=>{document.getElementById(id).disabled=on;});
+  document.getElementById("recbtn").disabled=on;}
+// Waits for the audio clock to reach a time, then calls back. Polling a timer keeps it
+// on the same clock as everything else; a page timer alone would drift from it.
+function whenAudioTime(ac,t,fn){
+  const id=setInterval(()=>{if(ac.currentTime>=t){clearInterval(id);fn();}},25);
+  return id;}
+// The first sample that stands clear of the noise before the beep, or -1.
+function findOnset(samples,quietFrames){
+  let noise=0,n=Math.max(1,Math.min(quietFrames,samples.length));
+  for(let i=0;i<n;i++)noise+=samples[i]*samples[i];
+  noise=Math.sqrt(noise/n);
+  let peak=0;for(let i=0;i<samples.length;i++)peak=Math.max(peak,Math.abs(samples[i]));
+  const thr=Math.max(.02,noise*6);
+  if(peak<thr*1.5)return -1;
+  for(let i=Math.round(n);i<samples.length;i++)if(Math.abs(samples[i])>thr)return i;
+  return -1;}
+function calibrateLoopback(){
+  if(state.calRun)return;
+  const a=audio(),ac=a&&a.context;
+  if(!ac||!ac.audioWorklet||typeof AudioWorkletNode!=="function"||typeof a.blip!=="function"){
+    calSay("Loopback needs Web Audio and audio worklets, which this browser withholds. Try tapping along instead.");return;}
+  calBusy(true);calSay("Listening: a short beep is about to play. Keep the input's gain up, and the beep loud enough to reach it.");
+  const fail=msg=>{state.calRun=null;calBusy(false);calSay(msg);};
+  state.calRun={};
+  Promise.all([workletReady(ac),acquireInput(false)]).then(([ok,input])=>{
+    if(!ok){fail("The capture script couldn't load, so loopback isn't available here. Try tapping along instead.");return;}
+    const sr=ac.sampleRate,src=ac.createMediaStreamSource(input);
+    const node=new AudioWorkletNode(ac,"take-capture",{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],
+      channelCount:1,channelCountMode:"explicit",channelInterpretation:"speakers",processorOptions:{channels:1,block:2400}});
+    src.connect(node);node.connect(ac.destination);
+    const blocks=[],t0=ac.currentTime,startFrame=Math.round((t0+.2)*sr),beepFrame=Math.round((t0+.7)*sr);
+    node.port.onmessage=e=>{const m=e.data||{};if(Array.isArray(m.block)&&m.block[0])blocks.push(m.block[0]);};
+    node.port.postMessage({start:startFrame});
+    a.blip(1200,{when:.7,dur:.18,vol:.9});
+    whenAudioTime(ac,t0+1.9,()=>{
+      node.port.postMessage({stop:true});
+      try{src.disconnect();node.disconnect();}catch(e){/* already gone */}
+      inputIdle();
+      const n=blocks.reduce((k,b)=>k+b.length,0),all=new Float32Array(n);
+      let o=0;for(const b of blocks){all.set(b,o);o+=b.length;}
+      const at=findOnset(all,Math.round(.4*sr)),ms=at<0?NaN:(startFrame+at-beepFrame)/sr*1000;
+      if(!Number.isFinite(ms))fail("Didn't hear the beep. Loopback needs the input to hear the output: turn the speakers up near the microphone, or patch the interface's output back into its input, then try again. With headphones, use tap along.");
+      else if(ms<0||ms>500)fail(`Heard something ${Math.round(ms)} ms off, which isn't the beep coming back (a room's own noise, probably). Try again somewhere quieter.`);
+      else{state.calRun=null;calBusy(false);setCal(ms,"loopback");}});
+  }).catch(e=>{fail(inputError(e));});}
+function calibrateTap(){
+  if(state.calRun)return;
+  const a=audio(),ac=a&&a.context;
+  if(!ac||typeof a.blip!=="function"){calSay("Tap along needs Web Audio, which this browser withholds. Set the trim by hand instead.");return;}
+  const gap=.6,count=12,first=ac.currentTime+.8,clicks=[],taps=[];
+  for(let k=0;k<count;k++){clicks.push(first+k*gap);a.blip(k%4===0?1400:900,{when:first+k*gap-ac.currentTime,dur:.05,vol:.6});}
+  calBusy(true);
+  const btn=document.getElementById("caltapbtn");btn.hidden=false;
+  calSay("Tap the big button (or press Space) exactly on each click, the way you would play a note on it. Twelve clicks.");
+  state.calRun={taps};
+  const tap=()=>{if(state.calRun&&state.calRun.taps===taps)taps.push(ac.currentTime);};
+  state.calRun.tap=tap;
+  whenAudioTime(ac,first+(count-1)*gap+.5,()=>{
+    state.calRun=null;btn.hidden=true;calBusy(false);
+    // each tap against the nearest click; the first two clicks are for getting the feel
+    const diffs=[];
+    taps.forEach(t=>{const k=Math.round((t-first)/gap);if(k>=2&&k<count&&Math.abs(t-clicks[k])<gap/2)diffs.push(t-clicks[k]);});
+    if(diffs.length<5){calSay("Too few taps landed near the clicks. Try again, tapping on each click.");return;}
+    diffs.sort((x,y)=>x-y);
+    const med=diffs[diffs.length>>1],spread=diffs[Math.floor(diffs.length*.75)]-diffs[Math.floor(diffs.length*.25)];
+    setCal(med*1000,"tap");
+    calSay(`Calibrated: guitar arrives ${state.cal.ms} ms after the backing (tap along; your taps varied by about ${Math.round(spread*1000)} ms). Stored with every take.`);});}
+
+// ---- the mistake marker ----
+// M, or the big button, marks the moment in the take that you want to come back to.
+// Its time is on the audio clock, from the take's first sample.
+function markMistake(){
+  const r=state.rec;
+  if(!r||r.phase!=="recording")return false;
+  const ac=state.engine&&state.engine.context;
+  const t=ac&&r.acStart!==undefined?ac.currentTime-r.acStart:(Date.now()-r.t0)/1000;
+  (r.markers||(r.markers=[])).push({t:Math.max(0,Math.round(t*1000)/1000),kind:"mistake"});
+  if(r.capture&&r.capture.meta){r.capture.meta.markers=r.markers;
+    r.capture.writes=r.capture.writes.then(()=>dbDo("takes","readwrite",tx=>{tx.objectStore("takes").put(Object.assign({},r.capture.meta));})).catch(()=>{});}
+  const b=document.getElementById("recmark");b.textContent=`Mark a mistake (M) · ${r.markers.length} so far`;
+  return true;}
+const typingIn=el=>!!el&&(el.tagName==="INPUT"||el.tagName==="SELECT"||el.tagName==="TEXTAREA"||el.isContentEditable===true);
+document.addEventListener("keydown",e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey||typingIn(e.target))return;
+  if(state.calRun&&state.calRun.tap&&e.key===" "){e.preventDefault();state.calRun.tap();return;}
+  if(e.key==="m"||e.key==="M"){if(markMistake())e.preventDefault();}});
+const mmss=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
 
 // ---- monitor input ----
 // Sends the input to the speakers, for headphones that aren't on the interface — a
@@ -4168,7 +4302,7 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
 (()=>{const play=document.getElementById("play");
   if(play.insertAdjacentHTML)play.insertAdjacentHTML("afterend",REC_ROW);
   const why=recUnsupported();
-  if(why){["recinput","recchan","reccheck","recmon","recmix","recarm","recbtn","recmode","recfocus","recattempt"].forEach(id=>{document.getElementById(id).disabled=true;});
+  if(why){["recinput","recchan","reccheck","recmon","recmix","recarm","recbtn","recmode","recfocus","recattempt","calloop","caltap","calms"].forEach(id=>{document.getElementById(id).disabled=true;});
     document.getElementById("recrow").classList.add("off");recSay(why);return;}
   document.getElementById("recbtn").onclick=toggleRecord;
   document.getElementById("recinput").onchange=e=>{state.recDevice=e.target.value;restartMonitor();restartCheck();};
@@ -4181,6 +4315,13 @@ document.getElementById("togglerhythm").onclick=toggleRhythm;
   document.getElementById("recdlc").onclick=()=>saveFile(state.recTake);
   document.getElementById("recdlw").onclick=downloadWav;
   document.getElementById("recdlm").onclick=downloadMp3;
+  readCal();calShow();
+  document.getElementById("calloop").onclick=calibrateLoopback;
+  document.getElementById("caltap").onclick=calibrateTap;
+  document.getElementById("caltapbtn").onclick=()=>{if(state.calRun&&state.calRun.tap)state.calRun.tap();};
+  document.getElementById("recmark").onclick=markMistake;
+  document.getElementById("calms").onchange=e=>{const v=Math.round(+e.target.value);
+    if(e.target.value!==""&&Number.isFinite(v))setCal(v,"manual");else calShow();};
   readRecSettings();
   document.getElementById("recbits").value=String(state.wavBits);
   document.getElementById("recq").value=state.mp3Quality;

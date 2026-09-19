@@ -104,6 +104,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
         if (m && m.stop) queueMicrotask(() => node.port.onmessage && node.port.onmessage({ data: { done: node.fed } })); } };
     }
     connect() {} disconnect() {}
+    // hands the page one block of exactly these samples (channel 1)
+    feedRaw(samples) { this.fed += samples.length; this.port.onmessage({ data: { block: [samples] } }); }
     feed(frames, level = 0.5) {
       const ch = this.opts.processorOptions.channels;
       this.fed += frames;
@@ -142,8 +144,11 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     createBufferSource() { return { buffer: null, connect() {},
       start(t) { audio.starts++; audio.startTimes.push(t); (audio.noise ??= []).push(t); }, stop() {} }; }
   }
+  const docListeners = {};
   const document = {
-    addEventListener() {},
+    addEventListener(type, fn) { (docListeners[type] ??= []).push(fn); },
+    // what a browser does for a key pressed anywhere on the page
+    dispatch(type, ev = {}) { (docListeners[type] || []).forEach(fn => fn({ target: document.body, preventDefault() {}, ...ev })); },
     body: new Element("body"),
     title: "",
     getElementById(id) { if (!elements.has(id)) elements.set(id, new Element(id)); return elements.get(id); },
@@ -4168,4 +4173,134 @@ test("the capture stops by itself at the frame it was given", () => {
   const kept = scope.posted.filter(m => m.block).reduce((n, m) => n + m.block[0].length, 0);
   assert.equal(kept, 300, "frames 0..299");
   assert.equal(scope.posted.at(-1).done, 300);
+});
+
+// ---------- latency calibration and the mistake marker ----------
+const beepIn = (lead, total, at, len = 2400) => { const x = new Float32Array(total); for (let i = at; i < Math.min(total, at + len); i++) x[i] = 0.6 * Math.sin(i / 3); return x; };
+
+test("loopback calibration measures the beep's return to the sample, and stores it", async () => {
+  const { app, document, worklets, clock, advance } = makeRuntime({ media: true, capture: true });
+  const t0 = clock.t;
+  document.getElementById("calloop").click();
+  await settle();
+  const node = worklets.at(-1);
+  const startFrame = node.sent.find(m => "start" in m).start;
+  assert.equal(startFrame, Math.round((t0 + 0.2) * 48000), "capture begins a fraction before the beep");
+  // the beep was played at t0 + 0.7; it comes back 1,900 frames (39.58 ms) late
+  const lateFrames = 1900;
+  node.feedRaw(beepIn(0, 48000, Math.round(0.5 * 48000) + lateFrames));
+  advance(2);
+  await settle();
+  assert.equal(app.getState().storage.getItem("practice-desk-calibration").includes('"how":"loopback"'), true);
+  assert.equal(document.getElementById("calms").value, "40", "1900 frames at 48 kHz, rounded to a millisecond");
+  assert.match(document.getElementById("calmsg").textContent, /^Calibrated: guitar arrives 40 ms after the backing \(loopback beep\)/);
+  assert.equal(document.getElementById("recbtn").disabled, false, "the controls come back");
+  assert.equal(document.getElementById("calloop").disabled, false);
+});
+
+test("loopback says so when it hears nothing, or hears something that isn't the beep", async () => {
+  const silent = makeRuntime({ media: true, capture: true });
+  silent.document.getElementById("calloop").click();
+  await settle();
+  silent.worklets.at(-1).feedRaw(new Float32Array(48000));
+  silent.advance(2);
+  await settle();
+  assert.match(silent.document.getElementById("calmsg").textContent, /^Didn't hear the beep\./);
+  assert.equal(silent.app.getState().storage.getItem("practice-desk-calibration"), null, "nothing stored");
+  const noisy = makeRuntime({ media: true, capture: true });
+  noisy.document.getElementById("calloop").click();
+  await settle();
+  noisy.worklets.at(-1).feedRaw(beepIn(0, 96000, 60000));   // a bang 0.6 s after the beep: not it
+  noisy.advance(2);
+  await settle();
+  assert.match(noisy.document.getElementById("calmsg").textContent, /isn't the beep coming back/);
+  const none = makeRuntime({ audio: "wav", media: true });
+  none.document.getElementById("calloop").click();
+  assert.match(none.document.getElementById("calmsg").textContent, /needs Web Audio/);
+});
+
+test("tap along takes the median gap between clicks and taps, ignoring stray ones", async () => {
+  const { app, document, clock, advance } = makeRuntime({ media: true, capture: true });
+  const start = clock.t, first = start + 0.8, gap = 0.6;
+  document.getElementById("caltap").click();
+  const big = document.getElementById("caltapbtn");
+  assert.equal(big.hidden, false, "the big tap button appears");
+  assert.equal(document.getElementById("calloop").disabled, true, "the other measurement waits");
+  // twelve clicks; the player taps 30 ms late, give or take, and once taps far from any click
+  const jitter = [0, 0, 28, 35, 31, 27, 33, 30, 29, 36, 32, 30];
+  jitter.forEach((j, k) => { clock.t = first + k * gap + j / 1000; big.click(); });
+  clock.t = first + 0.1; big.click();                       // a stray tap between clicks
+  document.dispatch("keydown", { key: " " });               // and Space works too, but lands nowhere near
+  clock.t = first + 11 * gap + 0.6; advance(0);
+  await settle();
+  assert.match(document.getElementById("calmsg").textContent, /^Calibrated: guitar arrives 3[01] ms after the backing \(tap along; your taps varied by about \d+ ms\)/);
+  assert.ok(Math.abs(app.getState().storage.getItem("practice-desk-calibration").match(/"ms":(\d+)/)[1] - 31) <= 1);
+  assert.equal(big.hidden, true);
+  // too few taps: no calibration
+  const few = makeRuntime({ media: true, capture: true });
+  few.document.getElementById("caltap").click();
+  few.clock.t = few.clock.t + 0.8; few.document.getElementById("caltapbtn").click();
+  few.clock.t += 20; few.advance(0);
+  assert.match(few.document.getElementById("calmsg").textContent, /Too few taps/);
+});
+
+test("the trim is a number of milliseconds, kept, and read defensively next visit", () => {
+  const { app, document } = makeRuntime({ media: true });
+  assert.match(document.getElementById("calmsg").textContent, /^Not calibrated yet/);
+  const trim = document.getElementById("calms");
+  trim.value = "55"; trim.onchange({ target: trim });
+  assert.match(document.getElementById("calmsg").textContent, /55 ms after the backing \(set by hand\)/);
+  trim.value = "5000"; trim.onchange({ target: trim });
+  assert.equal(JSON.parse(app.getState().storage.getItem("practice-desk-calibration")).ms, 1000, "clamped");
+  for (const bad of ['{"ms":"fast"}', "{", '{"ms":99999}', "null"]) {
+    const r = makeRuntime({ media: true, stored: { "practice-desk-calibration": bad } });
+    assert.match(r.document.getElementById("calmsg").textContent, /^Not calibrated yet/, bad);
+  }
+  const ok = makeRuntime({ media: true, stored: { "practice-desk-calibration": '{"ms":42,"how":"loopback"}' } });
+  assert.equal(ok.document.getElementById("calms").value, "42");
+});
+
+test("the mistake marker: M or the big button marks the moment on the audio clock, in the take's record", async () => {
+  const { app, document, worklets, idb, clock } = makeRuntime({ media: true, capture: true });
+  const mark = document.getElementById("recmark");
+  assert.match(app.REC_ROW, /<button id="recmark" class="bigmark" hidden>/, "hidden until a take is recording");
+  document.dispatch("keydown", { key: "m" });               // nothing to mark yet
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(mark.hidden, false);
+  clock.t += 12.5; document.dispatch("keydown", { key: "m" });
+  clock.t += 18.5; mark.click();
+  clock.t += 5;    document.dispatch("keydown", { key: "M" });
+  document.dispatch("keydown", { key: "m", metaKey: true });        // a browser shortcut: not ours
+  document.dispatch("keydown", { key: "m", target: new Element("", "input") });   // typing in a field: not ours
+  assert.equal(mark.textContent, "Mark a mistake (M) · 3 so far");
+  await settle();
+  const meta = [...idb.stores.get("takes").rows.values()][0].v;
+  sameShape(meta.markers.map(m => m.t), [12.5, 31, 36], "saved as they happen, so a crash keeps them");
+  worklets[0].feed(4800);
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(mark.hidden, true);
+  sameShape(app.getTake().markers.map(m => m.t), [12.5, 31, 36]);
+  assert.match(document.getElementById("recmsg").textContent, /3 mistakes marked at 0:12, 0:31, 0:36\./);
+  assert.equal([...idb.stores.get("takes").rows.values()][0].v.markers.length, 3);
+});
+
+test("a take carries its calibration, and an armed take's marks count from bar 1", async () => {
+  const { app, document, worklets, advance, clock, idb } = makeRuntime({ media: true, capture: true,
+    stored: { "practice-desk-calibration": '{"ms":38,"how":"tap"}' } });
+  app.setBpm(120);
+  document.getElementById("recarm").checked = true;
+  document.getElementById("recbtn").click();
+  await settle();
+  app.toggleTrainer();
+  for (let i = 0; i < 4; i++) advance(0.5);
+  clock.t = 2.0 + 3.25; document.dispatch("keydown", { key: "m" });    // 3.25 s after bar 1's downbeat at 2.000 s
+  worklets[0].feed(4800);
+  await settle();
+  app.toggleTrainer();
+  await settle();
+  sameShape(app.getTake().markers.map(m => m.t), [3.25]);
+  assert.equal(app.getTake().calMs, 38);
+  assert.equal([...idb.stores.get("takes").rows.values()][0].v.calMs, 38);
 });
