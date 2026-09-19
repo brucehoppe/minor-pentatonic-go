@@ -1,0 +1,99 @@
+/* Chord explorers (Triads and Inversions views). The drafts' own palette is mapped
+   onto the desk's: the root is pink, the 3rd blue and the 5th gold, as elsewhere in
+   the app, and the root is always a square. Checked under simulated protan, deutan
+   and tritan vision: 3rd and 5th (both circles) stay far apart for all three; the
+   closest pair is root against 3rd for protan, which the square tells apart.
+   Labels are dark on pink and gold and light on blue, for contrast. The desk has
+   no dark theme, so neither do these. Buttons take the desk's own button style. */
+.cx {
+  --cx-root: var(--pink);
+  --cx-third: var(--blue);
+  --cx-fifth: var(--gold);
+  --cx-text: var(--ink);
+  --cx-muted: #5d5e63;
+  --cx-surface: var(--card);
+  --cx-band: var(--paper);
+  --cx-line: #15161A33;
+  --cx-line-strong: #15161A77;
+  color: var(--cx-text);
+  max-width: 44rem;
+  margin: 14px 0 6px;
+}
+
+.cx-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }
+.cx-key { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; }
+.cx-seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.cx-controls .cx-row { margin-bottom: 8px; }
+.cx-board:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.cx-check { font-size: 12px; color: var(--cx-muted); display: inline-flex; gap: 6px; align-items: center; }
+.cx-check.cx-disabled { opacity: .5; }
+
+.cx-legend { display: flex; gap: 16px; list-style: none; padding: 0; margin: 2px 0 6px; font-size: 12px; color: var(--cx-muted); }
+.cx-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.cx-swatch { width: 12px; height: 12px; border-radius: 50%; background: var(--cx-role); }
+.cx-swatch-square { border-radius: 3px; }
+
+.cx-figure { overflow-x: auto; }
+.cx-board, .cx-ruler { display: block; width: 100%; min-width: 320px; height: auto; font-family: inherit; }
+.cx-band { fill: var(--cx-band); }
+.cx-nut { stroke: var(--cx-muted); stroke-width: 3; }
+.cx-fret { stroke: var(--cx-line-strong); stroke-width: 1; }
+.cx-inlay { fill: var(--cx-line-strong); }
+.cx-string { stroke: var(--cx-line); stroke-width: 1; }
+.cx-string.cx-active { stroke: var(--cx-muted); stroke-width: 1.5; }
+.cx-string-name { font-size: 11px; fill: var(--cx-muted); }
+.cx-string-name.cx-active { fill: var(--cx-text); font-weight: 600; }
+.cx-small { font-size: 11px; fill: var(--cx-muted); }
+/* On the Build it ruler the fret counts sit on the string: a halo in the card's
+   colour keeps the line from striking them through. */
+.cx-ruler .cx-small { paint-order: stroke; stroke: var(--cx-surface); stroke-width: 5px; stroke-linejoin: round; }
+
+/* Role colour lives in one custom property per role, with a label colour to match. */
+.cx-root { --cx-role: var(--cx-root); --cx-on-role: var(--ink); }
+.cx-third { --cx-role: var(--cx-third); --cx-on-role: var(--paper); }
+.cx-fifth { --cx-role: var(--cx-fifth); --cx-on-role: var(--ink); }
+.cx-neutral { --cx-role: var(--cx-muted); }
+
+.cx-marker .cx-shape { stroke-width: 1.5; }
+.cx-marker-label { font-size: 11px; font-weight: 600; }
+.cx-current .cx-shape { fill: var(--cx-role); stroke: var(--cx-role); }
+.cx-current .cx-marker-label { fill: var(--cx-on-role); }
+.cx-ghost .cx-shape { fill: var(--cx-surface); stroke: var(--cx-role); }
+.cx-ghost .cx-marker-label { fill: var(--cx-text); }
+.cx-scale .cx-shape { fill: var(--cx-surface); stroke: var(--cx-line-strong); }
+.cx-scale .cx-marker-label { fill: var(--cx-muted); font-weight: 400; }
+.cx-was .cx-shape { fill: none; stroke: var(--cx-role); stroke-dasharray: 3 2; }
+.cx-bracket { stroke: var(--cx-role); stroke-width: 1.5; }
+.cx-bracket-label { font-size: 12px; font-weight: 600; fill: var(--cx-text); }
+
+.cx-readout { display: flex; gap: 16px; align-items: center; margin-top: 8px; }
+.cx-stack { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+.cx-chip { width: 7rem; height: 1.9rem; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  background: var(--cx-role); color: var(--cx-on-role); font-size: 12px; font-weight: 600; }
+.cx-chip-bottom { box-shadow: 0 0 0 2px var(--cx-surface), 0 0 0 3.5px var(--cx-role); }
+.cx-info p { margin: 0; line-height: 1.5; font-size: 12.5px; }
+.cx-info-title { font-weight: 600; }
+.cx-info-meta { color: var(--cx-muted); }
+
+.cx-pills { display: flex; gap: 6px; margin-top: 10px; }
+.cx-pill { width: 9px; height: 9px; border-radius: 50%; background: var(--cx-line); }
+.cx-pill-on { background: var(--cx-text); }
+.cx-transport { margin-top: 12px; }
+
+/* Stepping up the neck: the bottom card rises to the top of the stack. Only for
+   people who haven't asked their system for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .cx-chip-arrive { animation: cx-rise .45s ease-out; }
+  @keyframes cx-rise {
+    from { transform: translateY(calc(2 * (1.9rem + 4px))); opacity: .35; }
+    to { transform: none; opacity: 1; }
+  }
+}
+
+/* The explanation around each explorer, and the heading over the older, detailed
+   material below it. */
+.cx-intro h3, .cx-more { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; opacity: .6; margin: 18px 0 6px; font-weight: 500; }
+.cx-intro .tip { max-width: 64ch; margin: 8px 0; font-size: 12.5px; }
+.cx-intro ul, .cx-intro ol { max-width: 64ch; }
+.cx-intro li { font-size: 12.5px; line-height: 1.6; margin-bottom: 4px; }
+.cx-more { margin-top: 28px; }

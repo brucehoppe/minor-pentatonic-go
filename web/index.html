@@ -8,6 +8,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png">
 <title>Minor Pentatonic — practice desk</title>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="explorers.css">
 </head>
 <body>
 <div class="wrap">
@@ -253,6 +254,38 @@
   </section>
 
   <section id="v-triads" hidden>
+    <div class="card cx-intro">
+      <h2>Triads<em>three notes, one recipe</em></h2>
+      <p class="tip">A triad is a chord made of three different notes: a root, a 3rd and a 5th.
+      Almost every chord you already play is a triad with some notes doubled.</p>
+      <p class="tip">On guitar, one fret is one step, so you can count a triad's recipe in frets.
+      Start on the root, go up 3 or 4 frets to the 3rd, then 3 or 4 more to the 5th.
+      Those two gaps decide the chord's sound. The <b>Root</b> buttons at the top choose the chord.</p>
+      <div id="triads-explorer"></div>
+      <h3>What the three views show</h3>
+      <ul>
+        <li><b>Build it:</b> the recipe on one string. Major is 4 + 3 frets, minor is 3 + 4,
+        diminished is 3 + 3 and augmented is 4 + 4.</li>
+        <li><b>Change one note:</b> the same grip in all four qualities. Minor moves the 3rd
+        down one fret, diminished also moves the 5th down, augmented moves the 5th up.
+        The dashed outline shows where the note was.</li>
+        <li><b>Inside barre chords:</b> a six-string barre chord holds only three different
+        notes. Step across the strings to find the triads hiding in it. Where a group
+        of three strings has no 3rd, it's a power chord with an octave, not a triad.</li>
+      </ul>
+      <h3>Practice order</h3>
+      <ol>
+        <li>Build it: play each recipe on one string, counting the frets out loud.</li>
+        <li>Change one note: play a major grip, then lower one finger for minor. Listen
+        to how one fret turns bright into sad.</li>
+        <li>Inside barre chords: play your G barre chord, then only its top three
+        strings. Same chord, smaller and clearer.</li>
+        <li>Take one grip into the 12-bar trainer and play it on every chord change.</li>
+      </ol>
+      <p class="tip"><b>The test:</b> without looking, turn a major grip into minor, then back again, on
+      three different string sets.</p>
+    </div>
+    <h3 class="cx-more">Every triad shape, in detail</h3>
     <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
       A triad is a chord with nothing wasted: <b>three notes &mdash; a root, a 3rd and a 5th</b>. Every
       full chord you know is one of these with notes doubled. Strip those doublings away and a chord
@@ -306,6 +339,40 @@
   </section>
 
   <section id="v-inv" hidden>
+    <div class="card cx-intro">
+      <h2>Inversions<em>three grips of the same chord</em></h2>
+      <p class="tip">A triad has three notes. An inversion is just a different one of them on the
+      bottom. Picture three cards in a stack: take the bottom card, put it on top, and
+      you have the next inversion.</p>
+      <p class="tip">In a band, the bass player covers the lowest note, so you don't need to think
+      about bass notes yet. Think of inversions as three grips of the same chord,
+      stacked up the neck. The names come later. The <b>Root</b> buttons at the top choose the chord.</p>
+      <h3>How to read the explorer</h3>
+      <ul>
+        <li>Colour shows each note's job: root, 3rd or 5th. The root is also a square,
+        so you can spot it without colour.</li>
+        <li>The card stack shows the grip from top string to bottom string. The bottom
+        card is outlined. Step up the neck and watch the bottom card move to the top.</li>
+        <li>The outlined dots are the other grips of the same chord, so you can see the
+        whole cycle while you play one grip.</li>
+      </ul>
+      <div id="inversions-explorer"></div>
+      <h3>Practice order</h3>
+      <ol>
+        <li>Stay on G B e and switch between Major and Minor. Only the 3rd moves, down
+        one fret. That is the difference between major and minor in every grip.</li>
+        <li>Move down the string sets: D G B, then A D G, then E A D. Shapes change on
+        sets that include the B string, because the B string is tuned differently.
+        The colours still tell you which inversion you're on.</li>
+        <li>Turn on the pentatonic with A minor. Every minor grip sits inside the scale
+        you already know: these are the chord tones to land on when you solo.</li>
+        <li>Press Play all up the neck and play each grip along with it. Then try a new
+        key without looking at the screen.</li>
+      </ol>
+      <p class="tip"><b>The test:</b> play the three grips of G on the top strings with your eyes closed,
+      then find the same three for C.</p>
+    </div>
+    <h3 class="cx-more">Why it matters</h3>
     <p class="tip" style="max-width:64ch;margin:0 0 8px;font-size:12.5px">
       Forget the word. <b>An inversion is one action on a chord you already know:</b> take the bottom
       note and move it to the top. <b>Press the button below and watch it happen</b> &mdash; three
@@ -752,6 +819,9 @@
   </footer>
 </div>
 
+<script src="chord-explorer.js" defer></script>
+<script src="triads-explorer.js" defer></script>
+<script src="inversions-explorer.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>

@@ -5,6 +5,14 @@ a second release on the same day.
 
 ## Unreleased
 
+- Triads and Inversions each open with an interactive explorer (from the
+  drafts in `triads-explorer/` and `inversions-explorer/`), with the existing
+  material below. Triads: Build it, Change one note, Inside barre chords.
+  Inversions: every grip up the neck on four string sets, a card stack, the
+  pentatonic behind the grip, Play all. They share `web/chord-explorer.js`,
+  follow the toolbar's Root buttons, play through the app's audio (so they
+  work in Lockdown Mode), and colour notes by job with the root as a square.
+  In these two views chords are spelt as on a chart: E♭, A♭, B♭, C♯, F♯.
 - WAV masters can be 24-bit, and MP3 quality is a choice: standard (128 kbps mono,
   192 stereo), high (192/256) or best (320). Both are remembered on the device;
   changing the MP3 quality re-encodes on the next download. Masters stored before

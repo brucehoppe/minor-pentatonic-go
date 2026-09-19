@@ -11,5 +11,9 @@ brag-output*/
 *.wav
 
 # Local-only files that are not part of the project
+/triads-explorer/
+/inversions-explorer/
+/triads-explorer.zip
+/inversions-explorer.zip
 /iTermBrowserPlugin.app/
 /guitar-program.html

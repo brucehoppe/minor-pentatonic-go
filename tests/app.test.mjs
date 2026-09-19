@@ -19,11 +19,13 @@ const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8")
 const script = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
 const lesson = readFileSync(new URL("../web/seven-licks.html", import.meta.url), "utf8");
 const lessonScript = readFileSync(new URL("../web/seven-licks.js", import.meta.url), "utf8");
+const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-explorer.js"]
+  .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 
 class Element {
-  constructor(id = "") {
-    this.id = id; this.children = []; this.dataset = {}; this.style = {};
-    this.attributes = {}; this.hidden = false; this.disabled = false;
+  constructor(id = "", tagName = "div") {
+    this.id = id; this.tagName = tagName.toUpperCase(); this.children = []; this.dataset = {}; this.style = {};
+    this.attributes = {}; this.hidden = false; this.disabled = false; this.listeners = {};
     this.innerHTML = ""; this.textContent = ""; this.value = "90";
     const classes = new Set();
     this.classList = {
@@ -32,18 +34,41 @@ class Element {
         (on ?? !classes.has(c)) ? classes.add(c) : classes.delete(c),
     };
   }
+  // Setting textContent replaces the children, as in a browser: the explorers clear a
+  // container that way before drawing into it. Reading it gives the text of the
+  // children when the element has none of its own.
+  get textContent() { return this._text || this.children.map(c => c.textContent ?? "").join(""); }
+  set textContent(v) { this._text = String(v); this.children = []; }
   appendChild(child) { this.children.push(child); return child; }
-  setAttribute(name, value) { this.attributes[name] = String(value); }
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+    if (name.startsWith("data-")) this.dataset[name.slice(5).replace(/-(\w)/g, (_, c) => c.toUpperCase())] = String(value);
+  }
   getAttribute(name) { return this.attributes[name] ?? null; }
-  addEventListener() {}
+  addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
+  // what a browser does when the user acts: change on a select, keydown on the board
+  dispatch(type, extra = {}) {
+    const ev = { type, target: this, currentTarget: this, preventDefault() {}, ...extra };
+    (this.listeners[type] || []).forEach(fn => fn(ev));
+  }
   closest() { return null; }
   querySelector() { return new Element(); }
   querySelectorAll() { return []; }
   scrollIntoView() {}
   // A disabled button does nothing when clicked, here as in a browser — which is
   // what makes the toolbar-gating tests below mean anything.
-  click() { if (!this.disabled && this.onclick) this.onclick({ currentTarget: this, target: this }); }
+  click() {
+    if (this.disabled) return;
+    if (this.onclick) this.onclick({ currentTarget: this, target: this });
+    this.dispatch("click");
+  }
 }
+// Walks an element tree: every element under root (children first) matching pred.
+const findAll = (root, pred, out = []) => {
+  for (const c of root.children || []) { if (c instanceof Element && pred(c)) out.push(c); findAll(c, pred, out); }
+  return out;
+};
+const buttonNamed = (root, text) => findAll(root, e => e.tagName === "BUTTON" && e.textContent === text)[0];
 
 // audio: "web" (default) | "wav" (no AudioContext, only HTMLAudioElement) | false (neither)
 // media: false (default, no microphone API) | true | { types, devices, deny } — a stand-in
@@ -56,7 +81,7 @@ class Element {
 // { failAfter: n } to make storage fail after n writes, or { store } to start from
 // what an earlier page left in storage.
 function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = false, media = false,
-  userAgent = "", secure = true, capture = false, worker = false, stored: seed = {} } = {}) {
+  userAgent = "", secure = true, capture = false, worker = false, stored: seed = {}, explorers = true } = {}) {
   const MathForApp = deterministic
     ? new Proxy(Math, { get: (t, k) => (k === "random" ? () => 0.42 : t[k]) })
     : Math;
@@ -115,7 +140,9 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     body: new Element("body"),
     title: "",
     getElementById(id) { if (!elements.has(id)) elements.set(id, new Element(id)); return elements.get(id); },
-    createElement() { return new Element(); },
+    createElement(tag = "div") { return new Element("", tag); },
+    createElementNS(ns, tag) { return new Element("", tag); },
+    createTextNode(text) { return { nodeType: 3, textContent: String(text) }; },
     querySelector() { return null; },
     // SUPPORTED SELECTORS — the whole of it.
     //
@@ -275,6 +302,9 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     setInterval: fn => { const id = ++intervalID; intervals.set(id, fn); return id; },
     clearInterval: id => intervals.delete(id),
   });
+  // index.html loads the chord explorers before app.js; explorers:false is the page
+  // with those scripts missing.
+  if (explorers) for (const f of explorerScripts) vm.runInContext(f, context);
   vm.runInContext(script + `\n;globalThis.appTest={render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
     modeOrigins,renderNotes,neckNames,OCTAVES,NATURALS,
     renderTriads,TRIAD_KINDS,TRIAD_SETS,triadShapes,triadVoicing,midiAt,allTriadVoicings,
@@ -1272,7 +1302,7 @@ test("tempo ladder changes both practice tempo and round", () => {
   app.ladder(5);
   assert.equal(app.getState().bpm, 95);
   assert.equal(app.getState().ladderRound, 2);
-  assert.equal(document.getElementById("ladderbpm").textContent, 95);
+  assert.equal(document.getElementById("ladderbpm").textContent, "95", "text, as a browser keeps it");
   app.ladder(-5);
   assert.equal(app.getState().bpm, 90);
   app.resetLadder();
@@ -3390,4 +3420,234 @@ test("an MP3 of a 24-bit master comes out right, and damaged settings fall back 
     stored: { "practice-desk-rec-settings": '{"wavBits":24,"mp3Quality":"high"}' } });
   assert.equal(kept.document.getElementById("recbits").value, "24", "a good setting is restored");
   assert.equal(kept.document.getElementById("recq").value, "high");
+});
+
+// ---------- chord explorers: the pure parts (ported from the drafts) ----------
+// Loaded as index.html loads them: the shared helper, then each explorer.
+const explorerCtx = (() => { const ctx = vm.createContext({}); explorerScripts.forEach(f => vm.runInContext(f, ctx)); return ctx; })();
+const INV = explorerCtx.InversionsExplorer, TRI = explorerCtx.TriadsExplorer;
+const OPEN_LOW = [40, 45, 50, 55, 59, 64];
+const hasGrip = (grips, frets) => grips.some(g => g.frets.join() === frets.join());
+
+test("inversions: G major on G B e gives the lesson's grips", () => {
+  const g = INV.findGrips(7, "major", 0);
+  sameShape(g[0].frets, [4, 3, 3]);
+  assert.equal(g[0].inversion, 1);
+  for (const f of [[7, 8, 7], [12, 12, 10], [16, 15, 15]]) assert.ok(hasGrip(g, f), f.join("-"));
+});
+
+test("inversions: A minor grips sit in boxes 1, 2 and 4", () => {
+  const g = INV.findGrips(9, "minor", 0);
+  for (const f of [[5, 5, 5], [9, 10, 8], [14, 13, 12]]) assert.ok(hasGrip(g, f), f.join("-"));
+});
+
+test("inversions: every key, quality and string set gives all three inversions as valid close grips", () => {
+  for (let key = 0; key < 12; key++) for (const q of Object.keys(INV.QUALITIES)) for (let s = 0; s < INV.STRING_SETS.length; s++) {
+    const tones = INV.chordTones(key, q), grips = INV.findGrips(key, q, s);
+    assert.ok(grips.length >= 3, `${key} ${q} set ${s}`);
+    assert.equal(new Set(grips.map(g => g.inversion)).size, 3, `${key} ${q} set ${s}: every inversion`);
+    let last = -1;
+    for (const g of grips) {
+      assert.ok(g.frets.every(f => f >= 0 && f <= 16));
+      assert.ok(Math.max(...g.frets) - Math.min(...g.frets) <= 4);
+      g.frets.forEach((f, k) => { const m = OPEN_LOW[g.strings[k]] + f; assert.equal(m, g.midi[k]); assert.equal(m % 12, tones[g.roles[k]]); });
+      assert.ok(g.midi[0] < g.midi[1] && g.midi[1] < g.midi[2] && g.midi[2] - g.midi[0] < 12, "close voicing, rising");
+      assert.equal(g.roles[0], g.inversion);
+      const sum = g.frets[0] + g.frets[1] + g.frets[2];
+      assert.ok(sum >= last, "sorted up the neck"); last = sum;
+    }
+  }
+});
+
+test("triads: the recipes are stacked thirds", () => {
+  sameShape(TRI.chordTones(0, "major"), [0, 4, 7]);
+  sameShape(TRI.chordTones(9, "minor"), [9, 0, 4]);
+  sameShape(TRI.chordTones(11, "dim"), [11, 2, 5]);
+  sameShape(TRI.chordTones(0, "aug"), [0, 4, 8]);
+});
+
+test("triads: one fret changes the quality, in every key and string set", () => {
+  for (let key = 0; key < 12; key++) for (let s = 0; s < 4; s++) {
+    const grips = TRI.findMajorGrips(key, s);
+    assert.ok(grips.length >= 3, `key ${key} set ${s}`);
+    for (const g of grips) {
+      const minor = TRI.gripInQuality(g, "minor"), dim = TRI.gripInQuality(g, "dim"), aug = TRI.gripInQuality(g, "aug");
+      assert.equal(minor.moved.length, 1); assert.equal(minor.moved[0].delta, -1); assert.equal(g.roles[minor.moved[0].index], 1, "minor: the 3rd, down one");
+      assert.equal(dim.moved.length, 2); assert.ok(dim.moved.every(m => m.delta === -1), "dim: 3rd and 5th down");
+      assert.equal(aug.moved.length, 1); assert.equal(aug.moved[0].delta, 1); assert.equal(g.roles[aug.moved[0].index], 2, "aug: the 5th, up one");
+      for (const [q, v] of [["major", g], ["minor", minor], ["dim", dim], ["aug", aug]]) {
+        const tones = TRI.chordTones(key, q);
+        v.frets.forEach((f, k) => { assert.ok(f >= 0 && f <= 16); assert.equal((OPEN_LOW[v.strings[k]] + f) % 12, tones[v.roles[k]]); });
+      }
+    }
+  }
+});
+
+test("triads: barre chords are stacked triads with doubled notes", () => {
+  const g = TRI.barreChord(7, "major", "E");
+  sameShape(g.frets, [3, 5, 5, 4, 3, 3]);
+  const wins = TRI.barreWindows(g);
+  sameShape(wins.map(w => w.isTriad), [false, true, true, true]);
+  sameShape(wins[3].strings, [3, 4, 5]);
+  sameShape(TRI.barreChord(9, "minor", "E").frets, [5, 7, 7, 5, 5, 5]);
+  const c = TRI.barreChord(0, "major", "A");
+  sameShape(c.frets, [null, 3, 5, 5, 5, 3]);
+  sameShape(TRI.barreWindows(c).map(w => w.isTriad), [false, true, true]);
+  for (let key = 0; key < 12; key++) for (const q of ["major", "minor"]) for (const shape of ["E", "A"]) {
+    const ch = TRI.barreChord(key, q, shape);
+    ch.frets.forEach((f, s) => { if (f === null) return; assert.ok(f >= 1 && f <= 16); assert.ok(ch.roles[s] !== -1 && ch.roles[s] !== null); });
+    assert.ok(TRI.barreWindows(ch).some(w => w.isTriad));
+  }
+});
+
+test("the explorers share one helper, and don't carry a synth of their own", () => {
+  for (const f of explorerScripts) {
+    assert.doesNotMatch(f, /AudioContext|createOscillator/, "sound goes through the app");
+    assert.doesNotMatch(f, /style="|\son[a-z]+=/, "CSP-safe markup: no inline styles or handlers");
+  }
+  assert.equal(INV.findGrips, explorerCtx.ChordExplorer.findGrips, "one findGrips for both");
+  assert.equal(TRI.NOTE_NAMES, explorerCtx.ChordExplorer.NOTE_NAMES);
+});
+
+// ---------- chord explorers in the app ----------
+const explorerIn = (document, id) => document.getElementById(id);
+const infoText = root => findAll(root, e => (e.attributes.class || "").includes("cx-info-title")).map(e => e.textContent).join(" | ");
+
+test("the Inversions view mounts its explorer once, driven by the toolbar's Root", () => {
+  const { app, document } = makeRuntime();
+  navButton(document, "inv").click();
+  const el = explorerIn(document, "inversions-explorer");
+  assert.equal(findAll(el, e => (e.attributes.class || "") === "cx").length, 1, "mounted");
+  assert.equal(findAll(el, e => e.tagName === "SELECT").length, 0, "no key menu of its own: one Root control");
+  document.getElementById("keys").children[7].click();   // G
+  assert.match(infoText(el), /^G major, grip 1 of \d+/);
+  document.getElementById("keys").children[3].click();   // E♭, spelt as a chord root
+  assert.match(infoText(el), /^E♭ major/);
+  assert.equal(document.getElementById("keys").children[3].textContent, "E♭");
+  navButton(document, "boxes").click();
+  assert.equal(document.getElementById("keys").children[3].textContent, "D#m", "minor keys keep their spelling");
+  navButton(document, "inv").click();
+  assert.equal(findAll(el, e => (e.attributes.class || "") === "cx").length, 1, "not mounted twice");
+});
+
+test("inversions explorer: quality, strings, the pentatonic toggle and stepping keep their place", () => {
+  const { document } = makeRuntime();
+  navButton(document, "inv").click();
+  const el = explorerIn(document, "inversions-explorer");
+  document.getElementById("keys").children[9].click();   // A
+  buttonNamed(el, "Minor").click();
+  assert.match(infoText(el), /^A minor/);
+  const box = findAll(el, e => e.tagName === "INPUT")[0];
+  assert.equal(box.disabled, false, "major and minor have a pentatonic");
+  buttonNamed(el, "Dim").click();
+  assert.equal(box.disabled, true, "diminished has none");
+  buttonNamed(el, "Aug").click();
+  assert.equal(box.disabled, true);
+  assert.ok(findAll(el, e => e.textContent === "Every inversion is the same shape, 4 frets apart").length);
+  buttonNamed(el, "Minor").click();
+  buttonNamed(el, "D G B").click();
+  assert.equal(buttonNamed(el, "D G B").getAttribute("aria-pressed"), "true");
+  buttonNamed(el, "→").click();
+  assert.match(infoText(el), /grip 2 of/);
+  const top = findAll(el, e => (e.attributes.class || "").includes("cx-chip"))[0];
+  assert.match(top.attributes.class, /cx-chip-arrive/, "the bottom card rises to the top");
+  document.getElementById("labels").children.find(b => b.dataset.l === "interval").click();   // redraws the view
+  assert.match(infoText(el), /grip 2 of/, "a redraw with the same key keeps your place");
+  box.checked = true; box.disabled = false; box.dispatch("change");
+  const board = findAll(el, e => e.tagName === "SVG")[0];
+  assert.match(board.innerHTML, /cx-scale/, "the pentatonic is drawn");
+});
+
+test("inversions explorer: Play and Play all sound through the app's audio", () => {
+  const { document, audio } = makeRuntime();
+  navButton(document, "inv").click();
+  const el = explorerIn(document, "inversions-explorer");
+  const before = audio.oscillators;
+  buttonNamed(el, "Play").click();
+  assert.equal(audio.oscillators - before, 6 * 3, "three notes up, then three strummed; three oscillators a voice");
+  const grips = infoText(el).match(/of (\d+)/)[1];
+  const mid = audio.oscillators;
+  buttonNamed(el, "Play all up the neck").click();   // the test clock runs its steps at once
+  assert.equal(audio.oscillators - mid, grips * 18, "every grip, up the neck");
+  assert.match(infoText(el), new RegExp(`grip ${grips} of ${grips}`));
+});
+
+test("inversions explorer plays on the compatibility engine too", () => {
+  const { document, audioElements } = makeRuntime({ audio: "wav" });
+  navButton(document, "inv").click();
+  buttonNamed(explorerIn(document, "inversions-explorer"), "Play").click();
+  assert.equal(audioElements.length, 6);
+});
+
+test("the Triads view mounts its explorer: three views, one note changing, barre chords", () => {
+  const { app, document, audio } = makeRuntime();
+  navButton(document, "triads").click();
+  const el = explorerIn(document, "triads-explorer");
+  document.getElementById("keys").children[7].click();   // G
+  assert.equal(findAll(el, e => e.tagName === "SELECT").length, 0);
+  assert.match(infoText(el), /^G major = major 3rd \+ minor 3rd/);
+  buttonNamed(el, "Minor").click();
+  assert.match(infoText(el), /^G minor = minor 3rd \+ major 3rd/);
+  const before = audio.oscillators;
+  buttonNamed(el, "Play").click();
+  assert.ok(audio.oscillators > before, "Build it plays its triad");
+
+  buttonNamed(el, "Change one note").click();
+  assert.match(infoText(el), /^G minor, position 1 of/);
+  assert.ok(findAll(el, e => /From major: 3rd down 1 fret/.test(e.textContent)).length);
+  assert.ok(findAll(el, e => /inversion|root position/.test(e.textContent) && e.tagName === "P").length, "names the inversion");
+  buttonNamed(el, "A D G").click();
+  assert.equal(buttonNamed(el, "A D G").getAttribute("aria-pressed"), "true");
+  buttonNamed(el, "See every grip of this chord in Inversions →").click();
+  assert.equal(app.getState().view, "inv", "the cross-link opens Inversions");
+
+  navButton(document, "triads").click();
+  buttonNamed(el, "Inside barre chords").click();
+  assert.match(infoText(el), /^Strings E A D: no 3rd, so not a triad/);
+  buttonNamed(el, "→").click();
+  assert.match(infoText(el), /^Strings A D G: a triad, /);
+  assert.ok(buttonNamed(el, "More on the root position in Inversions →") || buttonNamed(el, "More on the 1st inversion in Inversions →")
+    || buttonNamed(el, "More on the 2nd inversion in Inversions →"), "a triad window links to Inversions");
+  buttonNamed(el, "A shape").click();
+  assert.match(infoText(el), /^Strings A D G/, "the A shape starts on the A string");
+  const b = audio.oscillators;
+  buttonNamed(el, "Play full chord").click();
+  assert.equal(audio.oscillators - b, 5 * 2 * 3, "five strings: up, then strummed");
+});
+
+test("the existing Triads and Inversions content stays below the explorers, spelt as chord roots", () => {
+  const { document } = makeRuntime();
+  navButton(document, "triads").click();
+  document.getElementById("keys").children[10].click();   // B♭
+  const all = ["triadsummary", "triadshapes"].map(id => document.getElementById(id).innerHTML).join("");
+  assert.ok(all.length > 500, "the existing Triads content is drawn");
+  assert.match(all, /B\u266d/, "B♭ spelt as on a chord chart");
+  assert.doesNotMatch(all, /A#/, "and never as A#");
+  assert.match(html, /<h3 class="cx-more">Every triad shape, in detail<\/h3>/);
+  assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
+  assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
+  assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+});
+
+test("without the explorer scripts, both views still render their existing content", () => {
+  const { document } = makeRuntime({ explorers: false });
+  navButton(document, "triads").click();
+  navButton(document, "inv").click();
+  assert.equal(document.getElementById("inversions-explorer").children.length, 0);
+  assert.ok(document.getElementById("invdemo").innerHTML.length > 0);
+});
+
+test("a standalone explorer still offers its own key menu and reports changes", () => {
+  const ctx = vm.createContext({ document: { createElement: t => new Element("", t), createElementNS: (n, t) => new Element("", t),
+    createTextNode: t => ({ nodeType: 3, textContent: String(t) }) }, setTimeout, clearTimeout });
+  explorerScripts.forEach(f => vm.runInContext(f, ctx));
+  for (const name of ["InversionsExplorer", "TriadsExplorer"]) {
+    const host = new Element(), seen = [];
+    ctx[name].mount(host, { key: 0, onKeyChange: pc => seen.push(pc) });
+    const sel = findAll(host, e => e.tagName === "SELECT")[0];
+    assert.ok(sel, `${name} has a key menu when mounted on its own`);
+    sel.value = "5"; sel.dispatch("change");
+    sameShape(seen, [5]);
+  }
 });

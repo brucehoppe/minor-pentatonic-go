@@ -3,6 +3,11 @@
 // One script, one global scope, no build step: it is embedded in the Go binary
 // and served as-is. tests/app.test.mjs runs this file against a small DOM stand-in.
 const NOTES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+// The same twelve as chord roots, for the views where the key selector means a
+// chord's root (Triads, Inversions): the spelling on a chord chart.
+const ROOT_NAMES=["C","C\u266f","D","E\u266d","E","F","F\u266f","G","A\u266d","A","B\u266d","B"];
+// A pitch named the way the current view names it: as a chord root, or sharps only.
+function spelled(pc){return viewCfg(state.view).key==="root"?ROOT_NAMES[pc]:NOTES[pc];}
 const IV={0:"1",1:"♭2",2:"2",3:"♭3",4:"3",5:"4",6:"♭5",7:"5",8:"♭6",9:"6",10:"♭7",11:"7"};
 const OPEN=[4,11,7,2,9,4], SL=["e","B","G","D","A","E"];
 const BOXES=[
@@ -127,7 +132,7 @@ function fretboard(notes,{w=52,h=26,pad=30,quiz=false,plain=false,span=null}={})
   notes.forEach((n,i)=>{
     const x=xOf(n.f),y=pad+n.s*h,k=n.kind||kindOf(n),pc=noteAt(n.s,n.f);
     const fill=quiz?"var(--blue)":k==="root"?"var(--pink)":k==="pivot"?"var(--gold)":k==="ghost"?"var(--card)":"var(--blue)";
-    s+=`<g class="${quiz?"qn":"pn"}" ${quiz?`data-pc="${pc}" data-i="${i}" tabindex="0" role="button" aria-label="fret ${n.f} on ${SL[n.s]} string"`:`data-s="${n.s}" data-f="${n.f}" role="button" tabindex="0" aria-label="play ${NOTES[pc]}, fret ${n.f} on the ${SL[n.s]} string"`}>`;
+    s+=`<g class="${quiz?"qn":"pn"}" ${quiz?`data-pc="${pc}" data-i="${i}" tabindex="0" role="button" aria-label="fret ${n.f} on ${SL[n.s]} string"`:`data-s="${n.s}" data-f="${n.f}" role="button" tabindex="0" aria-label="play ${spelled(pc)}, fret ${n.f} on the ${SL[n.s]} string"`}>`;
     if(k!=="ghost"&&!quiz)s+=`<circle cx="${x+1.5}" cy="${y+1.5}" r="10.5" fill="${k==="root"?'var(--blue)':'var(--pink)'}" opacity=".2"/>`;
     // Chord-tone rings mean "this note is in the i, iv or v of the current minor
     // key", which is only true talk on a scale diagram. A plain board — an octave
@@ -2992,6 +2997,8 @@ function renderNotes(){
 }
 
 // ---------- triads ----------
+// Chords are spelled as a guitarist reads them on a chart — E♭, A♭, B♭ rather than
+// D#, G#, A# — here and in the explorers above these views (chord-explorer.js).
 // The rung missing between a power chord and a scale. Three notes, one per string,
 // covering three adjacent strings — small enough to grab anywhere on the neck, and
 // the shape the chord tones in every other view are actually making.
@@ -3069,11 +3076,38 @@ function triadShapes(kind,set,rootPc=state.key){
   return out.sort((a,b)=>a.inv-b.inv);
 }
 const INVERSION=["Root position","1st inversion","2nd inversion"];
+// ---- the explorers at the top of Triads and Inversions ----
+// Mounted the first time their view opens (web/triads-explorer.js and
+// web/inversions-explorer.js, on web/chord-explorer.js). They have no key menu of
+// their own here: the toolbar's Root buttons drive them. Their sound goes through
+// the app's audio, so it works on the compatibility engine too.
+const explorers={};
+// The explorers' links into another view, as the Start here buttons do it.
+function goToView(v){
+  if(!VIEWS.some(([id])=>id===v))return;
+  state.view=v;render();
+  if(typeof window!=="undefined"&&typeof window.scrollTo==="function")window.scrollTo({top:0,behavior:"smooth"});}
+// A grip or chord: each note low to high, then all of them strummed together.
+function playChordNotes(midis){
+  const a=audio();if(!a||!Array.isArray(midis)||!midis.length)return;
+  const gap=.22,strum=midis.length*gap+.25;
+  midis.forEach((m,k)=>a.note(m,{when:k*gap,dur:1.3,vol:.45}));
+  midis.forEach((m,k)=>a.note(m,{when:strum+k*.025,dur:1.6,vol:.38}));}
+function mountExplorer(name,elId){
+  const Mod=typeof globalThis!=="undefined"?globalThis[name]:undefined;
+  if(explorers[name]){explorers[name].setKey(state.key);return;}
+  const el=document.getElementById(elId);
+  if(!Mod||typeof Mod.mount!=="function"||!el)return;   // its script didn't load: the rest of the view still works
+  try{
+    explorers[name]=Mod.mount(el,{key:state.key,showKey:false,playNotes:playChordNotes,playGrip:playChordNotes,
+      onKeyChange:pc=>{state.key=pc;render();},onNavigate:goToView});
+  }catch(e){explorers[name]=null;}}
 function renderTriads(){
-  const kind=triadKindById(state.triadKind),set=triadSetById(state.triadSet),root=NOTES[state.key];
+  mountExplorer("TriadsExplorer","triads-explorer");
+  const kind=triadKindById(state.triadKind),set=triadSetById(state.triadSet),root=ROOT_NAMES[state.key];
   document.querySelectorAll("#triadkinds button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.tk===state.triadKind));
   document.querySelectorAll("#triadsets button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.ts===state.triadSet));
-  const spelled=kind.iv.map((iv,i)=>`${kind.degs[i]} <b>${NOTES[(state.key+iv)%12]}</b>`).join(" · ");
+  const spelled=kind.iv.map((iv,i)=>`${kind.degs[i]} <b>${ROOT_NAMES[(state.key+iv)%12]}</b>`).join(" · ");
   document.getElementById("triadsummary").innerHTML=
     `<div class="card wide"><h2>${root}${kind.sym} on ${set.name.toLowerCase()}<em>${set.sub}</em></h2>
       <p class="tip" style="font-size:13px">${spelled}</p>
@@ -3086,7 +3120,7 @@ function renderTriads(){
   document.getElementById("triadshapes").innerHTML=shapes.map(sh=>{
     const notes=sh.notes.map(n=>{
       const d=(noteAt(n.s,n.f)-state.key+12)%12,i=kind.iv.indexOf(d);
-      return {...n,kind:d===0?"root":"tone",ord:state.labelMode==="none"?"":state.labelMode==="interval"?kind.degs[i]:NOTES[noteAt(n.s,n.f)]};});
+      return {...n,kind:d===0?"root":"tone",ord:state.labelMode==="none"?"":state.labelMode==="interval"?kind.degs[i]:ROOT_NAMES[noteAt(n.s,n.f)]};});
     const bass=notes[notes.length-1],lo=Math.min(...sh.notes.map(n=>n.f)),hi=Math.max(...sh.notes.map(n=>n.f));
     return `<div class="card"><h2>${INVERSION[sh.inv]}<em>fret ${lo}${hi>lo?"–"+hi:""}</em></h2>
       ${fretboard(notes,{plain:true,w:46})}
@@ -3094,8 +3128,8 @@ function renderTriads(){
       ${fingerBoard(sh.notes,{w:46})}
       ${fingerTable(sh.notes)}
       <p class="tip">${fingerHint(sh.notes)}</p>
-      <p class="tip"><b>${kind.degs[sh.inv]} on the bottom</b> (${NOTES[noteAt(bass.s,bass.f)]} on the ${SL[bass.s]} string).
-        Reading up: ${notes.map(n=>NOTES[noteAt(n.s,n.f)]).reverse().join(" – ")}.</p>
+      <p class="tip"><b>${kind.degs[sh.inv]} on the bottom</b> (${ROOT_NAMES[noteAt(bass.s,bass.f)]} on the ${SL[bass.s]} string).
+        Reading up: ${notes.map(n=>ROOT_NAMES[noteAt(n.s,n.f)]).reverse().join(" – ")}.</p>
       <p class="tip" style="opacity:.6">${["The root is lowest, so this is the shape that sounds most settled.",
         "The 3rd is lowest, which lightens the chord and makes it lead somewhere.",
         "The 5th is lowest — the most open and least rooted of the three."][sh.inv]}</p></div>`;}).join("");
@@ -3135,9 +3169,9 @@ const progById=id=>PROGRESSIONS.find(p=>p.id===id)||PROGRESSIONS[0];
 // C, C/E, C/G — the slash name says which note is in the bass, which is exactly what
 // an inversion is. Naming them this way is how they appear on real chord charts.
 function chordLabel(rootPc,kind,inv){
-  const name=NOTES[rootPc]+kind.sym;
+  const name=ROOT_NAMES[rootPc]+kind.sym;
   if(inv===0)return name;
-  return `${name}/${NOTES[(rootPc+kind.iv[inv])%12]}`;
+  return `${name}/${ROOT_NAMES[(rootPc+kind.iv[inv])%12]}`;
 }
 // Walk a progression, each chord taking the voicing whose hand position is nearest
 // to the chord before it. Root position everywhere is the same walk with the choice
@@ -3215,7 +3249,7 @@ function fingerTable(notes){
   const withF=fingering(notes).slice().sort((a,b)=>b.s-a.s);
   return `<table><tr><th>String</th><th>Fret</th><th>Finger</th><th>Note</th></tr>${
     withF.map(n=>`<tr><td>${SL[n.s]}</td><td>${n.f===0?"open":n.f}</td><td>${
-      n.finger===0?"—":n.finger+" "+FINGER[n.finger]}${n.barre?" (barre)":""}</td><td>${NOTES[noteAt(n.s,n.f)]}</td></tr>`).join("")}</table>`;
+      n.finger===0?"—":n.finger+" "+FINGER[n.finger]}${n.barre?" (barre)":""}</td><td>${ROOT_NAMES[noteAt(n.s,n.f)]}</td></tr>`).join("")}</table>`;
 }
 function fingerHint(notes){
   const withF=fingering(notes),fretted=withF.filter(n=>n.f>0);
@@ -3244,7 +3278,7 @@ function fingerBoard(notes,opt={}){
 // draws the chips where they have just landed; the CSS keyframes start them where
 // they were, so the page animates by being redrawn rather than by scripting frames.
 function bigStack(kind){
-  const names=kind.iv.map(iv=>NOTES[(state.key+iv)%12]);
+  const names=kind.iv.map(iv=>ROOT_NAMES[(state.key+iv)%12]);
   const order=[0,1,2].map(i=>(state.invStep+i)%3).reverse();   // top of the stack first
   const flier=(state.invStep+2)%3;                             // whichever note just came up
   const chips=order.map((ci,row)=>{
@@ -3267,11 +3301,11 @@ function positionsStrip(kind,set){
     const here=v.inv===state.invStep,pc=noteAt(n.s,n.f);
     notes.push({s:n.s,f:n.f,
       kind:here?(pc===state.key?"root":"tone"):"ghost",
-      ord:here?NOTES[pc]:String(v.inv+1)});}));
+      ord:here?ROOT_NAMES[pc]:String(v.inv+1)});}));
   return fretboard(notes,{plain:true,w:40,span});
 }
 function moveCaption(kind){
-  const names=kind.iv.map(iv=>NOTES[(state.key+iv)%12]),flier=(state.invStep+2)%3;
+  const names=kind.iv.map(iv=>ROOT_NAMES[(state.key+iv)%12]),flier=(state.invStep+2)%3;
   if(!state.invMoved&&state.invStep===0)
     return `<b>${names[0]}</b> is at the bottom, so this is root position. Press the button and watch what happens to it.`;
   return `<b>${names[flier]}</b> left the bottom and went over the top. Same three notes, nothing added —
@@ -3279,7 +3313,7 @@ function moveCaption(kind){
     state.invStep===0?", back where you started. Three moves and it comes full circle.":"."}`;
 }
 function rotationStrip(kind){
-  const names=kind.iv.map(iv=>NOTES[(state.key+iv)%12]);
+  const names=kind.iv.map(iv=>ROOT_NAMES[(state.key+iv)%12]);
   const cols=[0,1,2].map(inv=>{
     // reading order for a stack is top first; the chord sounds bottom to top
     const order=[0,1,2].map(i=>(inv+i)%3).reverse();
@@ -3293,12 +3327,13 @@ function rotationStrip(kind){
   return `<div class="rot">${cols.join("")}</div>`;
 }
 function renderInversions(){
+  mountExplorer("InversionsExplorer","inversions-explorer");
   const set=triadSetById(state.invSet),prog=progById(state.invProg),kind=triadKindById("maj");
   document.querySelectorAll("#invsets button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.ts===state.invSet));
   document.querySelectorAll("#invprogs button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.pg===state.invProg));
 
   // ---- the move, in letters ----
-  const root=NOTES[state.key],nm=kind.iv.map(iv=>NOTES[(state.key+iv)%12]);
+  const root=ROOT_NAMES[state.key],nm=kind.iv.map(iv=>ROOT_NAMES[(state.key+iv)%12]);
   const shapeNow=triadShapes(kind,set).find(v=>v.inv===state.invStep);
   document.getElementById("invdemo").innerHTML=
     `<div class="card wide"><h2>Watch the move<em>${["root position","first inversion","second inversion"][state.invStep]} · ${chordLabel(state.key,kind,state.invStep)}</em></h2>
@@ -3318,7 +3353,7 @@ function renderInversions(){
       ${positionsStrip(kind,set)}
       <p class="tip" style="text-align:center;opacity:.7">
         Step ${state.invStep+1} of 3 &middot; ${["root position","first inversion","second inversion"][state.invStep]}
-        &middot; lowest note <b>${shapeNow?NOTES[noteAt(shapeNow.notes[2].s,shapeNow.notes[2].f)]:""}</b>
+        &middot; lowest note <b>${shapeNow?ROOT_NAMES[noteAt(shapeNow.notes[2].s,shapeNow.notes[2].f)]:""}</b>
         on the ${shapeNow?SL[shapeNow.notes[2].s]:""} string</p>
       ${shapeNow?`<p class="tip" style="text-align:center;margin-top:14px"><b>How to hold this one.</b>
         ${fingerHint(shapeNow.notes)}</p>
@@ -3369,8 +3404,8 @@ function renderInversions(){
   document.getElementById("invwhat").innerHTML=shapes.map(sh=>{
     const notes=sh.notes.map(n=>{
       const d=(noteAt(n.s,n.f)-state.key+12)%12,i=kind.iv.indexOf(d);
-      return {...n,kind:d===0?"root":"tone",ord:state.labelMode==="interval"?kind.degs[i]:NOTES[noteAt(n.s,n.f)]};});
-    const stack=sh.notes.slice().reverse().map(n=>NOTES[noteAt(n.s,n.f)]);
+      return {...n,kind:d===0?"root":"tone",ord:state.labelMode==="interval"?kind.degs[i]:ROOT_NAMES[noteAt(n.s,n.f)]};});
+    const stack=sh.notes.slice().reverse().map(n=>ROOT_NAMES[noteAt(n.s,n.f)]);
     const degs=sh.notes.slice().reverse().map(n=>kind.degs[kind.iv.indexOf((noteAt(n.s,n.f)-state.key+12)%12)]);
     return `<div class="card"><h2>${INVERSION[sh.inv]}<em>${chordLabel(state.key,kind,sh.inv)}</em></h2>
       ${fretboard(notes,{plain:true,w:46})}
@@ -3408,14 +3443,14 @@ function renderInversions(){
                  Math.max(...[rootC,farF,nearF].flatMap(v=>v.notes.map(n=>n.f)))+1];
   const one=(v,label,note)=>`<div class="card"><h2>${label}<em>${chordLabel(v===rootC?state.key:four,kind,v.inv)}</em></h2>
     ${fretboard(v.notes.map(n=>({...n,kind:noteAt(n.s,n.f)===(v===rootC?state.key:four)?"root":"tone",
-      ord:NOTES[noteAt(n.s,n.f)]})),{plain:true,w:44,span:twoSpan})}
+      ord:ROOT_NAMES[noteAt(n.s,n.f)]})),{plain:true,w:44,span:twoSpan})}
     <p class="tip">${note}</p></div>`;
   document.getElementById("invtwo").innerHTML=
     one(rootC,"1. Start here",`<b>${root}${kind.sym}</b> in root position. Leave your hand exactly where it is.`)
-    +one(farF,`2. The obvious ${NOTES[four]}`,
-      `<b>${NOTES[four]}${kind.sym}</b> in root position — the shape you already know. Look how far your hand had to go: <b>${Math.abs(farF.centre-rootC.centre).toFixed(1)} frets</b>.`)
+    +one(farF,`2. The obvious ${ROOT_NAMES[four]}`,
+      `<b>${ROOT_NAMES[four]}${kind.sym}</b> in root position — the shape you already know. Look how far your hand had to go: <b>${Math.abs(farF.centre-rootC.centre).toFixed(1)} frets</b>.`)
     +one(nearF,"3. The near one",
-      `The same <b>${NOTES[four]}${kind.sym}</b>, ${INVERSION[nearF.inv].toLowerCase()}. <b>${Math.abs(nearF.centre-rootC.centre).toFixed(1)} frets</b> away. Play 1 and 3 back to back: your fingers barely move, and it still sounds like ${NOTES[four]}.`);
+      `The same <b>${ROOT_NAMES[four]}${kind.sym}</b>, ${INVERSION[nearF.inv].toLowerCase()}. <b>${Math.abs(nearF.centre-rootC.centre).toFixed(1)} frets</b> away. Play 1 and 3 back to back: your fingers barely move, and it still sounds like ${ROOT_NAMES[four]}.`);
 
   // ---- the measurement ----
   const rootOnly=voiceLead(prog,set,true),smooth=voiceLead(prog,set,false);
@@ -3701,9 +3736,9 @@ function applyKeyNames(){
   const asRoot=viewCfg(state.view).key==="root";
   document.getElementById("keylbl").textContent=asRoot?"Root":"Key";
   document.querySelectorAll("#keys button").forEach(b=>{
-    const n=NOTES[+b.dataset.k];
-    b.textContent=asRoot?n:n+"m";
-    b.setAttribute("aria-label",asRoot?n:n+" minor");});
+    const k=+b.dataset.k,n=NOTES[k];
+    b.textContent=asRoot?ROOT_NAMES[k]:n+"m";
+    b.setAttribute("aria-label",asRoot?ROOT_NAMES[k]:n+" minor");});
 }
 
 function render(){
