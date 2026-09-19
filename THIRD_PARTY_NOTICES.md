@@ -35,5 +35,5 @@ record Opus and AAC but cannot write MP3 themselves. lamejs is licensed under th
   LAME's own note on using it is `web/vendor/LAME-LICENSE.txt`.
 - The running app serves each at `/vendor/<file name>`.
 
-The artwork, including the kangaroo rat, is original to this project and is
+The artwork, including the kaiju guitarist, is original to this project and is
 covered by the MIT licence above.

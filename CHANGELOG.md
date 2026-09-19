@@ -5,7 +5,7 @@ a second release on the same day.
 
 ## Unreleased
 
-- The kaiju artwork is replaced by the Rats of Chaos of Grid Lock kangaroo-rat graphic, both on the front-page masthead and on the 12-bar trainer poster.
+- The 12-bar trainer poster is now the Rats of Chaos of Grid Lock kangaroo-rat graphic; the front-page kaiju stays.
 - README: the Rats of Chaos of Grid Lock banner sits on the front page, captioned "Your backing band: Rats of Chaos of Grid Lock" and saying they are your fictional band (a 1600 px JPEG of about 400 kB under `docs/`).
 - README: says that Rats of Chaos of Grid Lock, the 12-bar trainer's backing band, is your fictional band.
 - The two kaiju graphics are bigger so they no longer get lost: the masthead
