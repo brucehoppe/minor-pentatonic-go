@@ -83,9 +83,13 @@ function songDuration(file){
     p.preload="metadata";p.src=url;
   });
 }
+// A song is kept whole in browser storage and decoded to play, so a file that is
+// hundreds of megabytes is more likely a mistake than a song.
+const SONG_MAX_BYTES=300*1024*1024;
 async function songImport(file){
   if(state.rec)throw new Error("Finish the take before importing a song.");
   if(!file||!file.size||!(/\.(mp3|m4a|wav)$/i.test(file.name||"")))throw new Error("Choose an MP3, M4A or WAV audio file.");
+  if(file.size>SONG_MAX_BYTES)throw new Error("That file is over 300 MB, too large to keep in the browser. Use an MP3 or M4A copy.");
   const duration=await songDuration(file);
   const s={id:"song-"+Date.now()+"-"+Math.random().toString(36).slice(2),
     title:file.name.replace(/\.[^.]+$/,"").slice(0,200)||"Untitled song",key:state.key,

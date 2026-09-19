@@ -386,6 +386,9 @@ test("songs import once, survive reopening, and reject damaged metadata", async 
   for(const patch of [{bpm:NaN},{duration:Infinity},{downbeat:-1},{key:12},{title:""}])
     assert.equal(app.validSong({...s,...patch}),false);
   await assert.rejects(app.songImport(songFile("bad.txt")),/Choose an MP3/);
+  const huge = Object.assign(new Blob([new Uint8Array(10)], { type: "audio/wav" }), { name: "huge.wav" });
+  Object.defineProperty(huge, "size", { value: 301 * 1024 * 1024 });
+  await assert.rejects(app.songImport(huge), /over 300 MB/, "an oversized file is refused before it is read");
 });
 test("songs mix through the backing bus, preserve pitch and carry playback metadata into takes", async () => {
   const {app,document,audio,advance}=makeRuntime({capture:true,media:true});
