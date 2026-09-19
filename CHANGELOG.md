@@ -5,6 +5,15 @@ a second release on the same day.
 
 ## Unreleased
 
+- Timing feedback: onsets are read from the guitar-only signal (a 16 ms energy
+  window and energy flux, timed to the sample) and set against the beat with the
+  latency calibration taken off. The headline is consistency, the spread in ms,
+  apart from the lean ahead of or behind the beat, overall and by section; a dot
+  per note on the waveform. Compare two takes from the same section or first
+  bar, in sync, with Switch. Progress per song: ratings, timing spread,
+  mistakes, clean run-throughs, section ratings over time. Tested on synthetic
+  guitar with known note times: within 12 ms on E, A and high e strings and on
+  a quiet one. Checked in Chrome on real worklet audio.
 - Looper: record 1, 2, 4, 8 or 12 bars at the set tempo, with a count-in, on
   exact audio-clock frames, and hear it repeat with no gap; solo over it with
   or without recording (the loop plays into the recording bus). Chords can be

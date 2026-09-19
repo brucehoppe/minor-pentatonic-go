@@ -22,6 +22,7 @@ const lessonScript = readFileSync(new URL("../web/seven-licks.js", import.meta.u
 const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-explorer.js"]
   .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
+const analysisScript = readFileSync(new URL("../web/analysis.js", import.meta.url), "utf8");
 const songsScript = readFileSync(new URL("../web/songs.js", import.meta.url), "utf8");
 const libraryScript = readFileSync(new URL("../web/library.js", import.meta.url), "utf8");
 const looperScript = readFileSync(new URL("../web/looper.js", import.meta.url), "utf8");
@@ -347,10 +348,11 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // with those scripts missing.
   if (explorers) for (const f of explorerScripts) vm.runInContext(f, context);
   if (band) vm.runInContext(bandScript, context);   // band:false is the page without web/band.js
+  vm.runInContext(analysisScript, context);
   vm.runInContext(libraryScript, context);
   vm.runInContext(looperScript, context);
   vm.runInContext(songsScript, context);
-  vm.runInContext(script + `\n;globalThis.appTest={looper,looperRecord,looperStop,looperPlay,looperClear,looperTick,parseChord,parseChords,chordAt,songFollow,songAddSection,songBuildSections,songSaveSections,songRecordSection,songLoopSection,validSection,FORMS,lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libLoopTick,libPeaks,libSeek,
+  vm.runInContext(script + `\n;globalThis.appTest={detectOnsets,timingOffsets,timingStats,timingReport,timingWord,alignPoint,progressSeries,looper,looperRecord,looperStop,looperPlay,looperClear,looperTick,parseChord,parseChords,chordAt,songFollow,songAddSection,songBuildSections,songSaveSections,songRecordSection,songLoopSection,validSection,FORMS,lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libLoopTick,libPeaks,libSeek,
     zipStore,crc32,validTake,cleanTake,cleanRatings,RERATE_AFTER_MS,songs,validSong,songList,songImport,songSelect,songSave,songPlay,songStop,songBounds,songNow,songTap,render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
     modeOrigins,renderNotes,neckNames,OCTAVES,NATURALS,
     renderTriads,TRIAD_KINDS,TRIAD_SETS,triadShapes,triadVoicing,midiAt,allTriadVoicings,
@@ -3763,7 +3765,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {
@@ -5197,4 +5199,248 @@ test("a solo can be recorded over the loop, the level is adjustable, and Clear a
   assert.equal(l.state, "idle", "Quit stops it");
   rt.app.looperClear();
   assert.equal(l.buf, null); assert.equal(rt.document.getElementById("loopclear").disabled, true);
+});
+
+// ---------- timing analysis: signals with known answers ----------
+// Plucked strings: a decaying tone (with a second partial) starting at each given time,
+// over a little noise, from a seeded generator so the test is the same every run.
+function guitarSignal(times, { sr = 44100, seconds = 5, hz = 220, amp = 0.4, noise = 0.002, decay = 0.35 } = {}) {
+  const x = new Float32Array(Math.round(sr * seconds));
+  let seed = 12345; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 1073741823.5 - 1; };
+  for (let i = 0; i < x.length; i++) x[i] = rnd() * noise;
+  for (const t0 of times) {
+    const start = Math.round(t0 * sr);
+    for (let i = start; i < Math.min(x.length, start + Math.round(sr * 1.2)); i++) {
+      const t = (i - start) / sr, env = Math.exp(-t / decay) * Math.min(1, t / 0.002);
+      x[i] += amp * env * (Math.sin(2 * Math.PI * hz * t) + 0.4 * Math.sin(2 * Math.PI * 2 * hz * t + 1));
+    }
+  }
+  return x;
+}
+
+test("onsets are found within a few milliseconds of where the notes began, on any string", () => {
+  const { app } = makeRuntime();
+  const times = [0.5, 1.0, 1.5, 2.05, 2.5, 3.0, 3.6];
+  for (const [hz, amp] of [[82, 0.4], [220, 0.4], [660, 0.3], [110, 0.06]]) {     // low E, A, high e, and quiet
+    const found = app.detectOnsets(guitarSignal(times, { hz, amp }), 44100);
+    assert.equal(found.length, times.length, `${hz} Hz at ${amp}: every note, and nothing else (${found.map(f => f.toFixed(3))})`);
+    times.forEach((t, i) => assert.ok(Math.abs(found[i] - t) < 0.012, `${hz} Hz note ${i}: ${found[i]} vs ${t}`));
+  }
+});
+
+test("onsets ignore noise, hum and a note's own decay, and two notes inside 90 ms are one", () => {
+  const { app } = makeRuntime();
+  assert.equal(app.detectOnsets(guitarSignal([], { noise: 0.004 }), 44100).length, 0, "noise alone");
+  const hum = new Float32Array(44100 * 3).map((_, i) => 0.02 * Math.sin(2 * Math.PI * 50 * i / 44100));
+  assert.equal(app.detectOnsets(hum, 44100).length, 0, "a steady hum");
+  assert.equal(app.detectOnsets(guitarSignal([1.0], { decay: 1.5 }), 44100).length, 1, "a long ringing note is one onset, not one per wobble");
+  assert.equal(app.detectOnsets(guitarSignal([1.0, 1.05]), 44100).length, 1, "50 ms apart: the refractory period");
+  const restrike = app.detectOnsets(guitarSignal([1.0, 1.15]), 44100);
+  assert.equal(restrike.length, 2, "150 ms apart, the second over a note still ringing: two notes");
+  assert.ok(Math.abs(restrike[1] - 1.15) < 0.008, `and the second is timed to the attack: ${restrike[1]}`);
+  assert.equal(app.detectOnsets(new Float32Array(100), 44100).length, 0, "a take too short to analyse");
+  assert.equal(app.detectOnsets(guitarSignal([0.5, 1.0], { sr: 48000 }), 48000).length, 2, "at 48 kHz too");
+});
+
+test("offsets are measured from the beat, after the calibrated latency, and ambiguous ones are dropped", () => {
+  const { app } = makeRuntime();
+  const grid = { t0: 1, beat: 0.5 };                     // 120 bpm, eighths every 0.25 s from 1.0
+  const at = ms => 1 + 0.25 * 3 + ms / 1000;              // near the fourth eighth
+  const off = app.timingOffsets([at(0), at(+20), at(-15), at(+90), at(+110), 0.2], grid, 0, 2);
+  sameShape(off.map(o => Math.round(o.ms)), [0, 20, -15, 90], "+90 ms is 0.36 of a step: still readable; +110 ms is 0.44: dropped, and so is a note before the grid");
+  const late = app.timingOffsets([at(40)], grid, 40, 2);
+  assert.ok(Math.abs(late[0].ms) < 0.01, "40 ms of latency is taken off: this note was on the beat");
+  sameShape(app.timingOffsets([1], null), []); sameShape(app.timingOffsets([1], { t0: 0, beat: 0 }), []);
+});
+
+test("the headline is the spread, not the lean: a steady player who is early still scores steady", () => {
+  const { app } = makeRuntime();
+  const steadyEarly = [-22, -20, -25, -21, -23, -19, -24, -22].map(ms => ({ ms, t: 0 }));
+  const tight = [1, -2, 0, 2, -1, 1, 0, -1].map(ms => ({ ms, t: 0 }));
+  const loose = [-45, 30, 10, -40, 50, -20, 35, -30].map(ms => ({ ms, t: 0 }));
+  const a = app.timingStats(steadyEarly), b = app.timingStats(tight), c = app.timingStats(loose);
+  assert.ok(a.mean < -19 && a.std < 3, `early and steady: mean ${a.mean}, spread ${a.std}`);
+  assert.ok(b.std < 3 && Math.abs(b.mean) < 1);
+  assert.ok(c.std > 30);
+  assert.equal(app.timingWord(a.std), "tight"); assert.equal(app.timingWord(20), "steady"); assert.equal(app.timingWord(c.std), "loose");
+  assert.equal(app.timingWord(null), "");
+  sameShape(app.timingStats(steadyEarly.slice(0, 3)), { count: 3, mean: null, std: null }, "too few notes to say anything");
+});
+
+test("the report splits the spread by section", () => {
+  const { app } = makeRuntime();
+  const grid = { t0: 0, beat: 0.5 }, base = i => i * 0.25;
+  const onsets = [];
+  for (let i = 0; i < 16; i++) onsets.push(base(i) + (i % 2 ? 0.002 : -0.002));        // the first four seconds: tight
+  for (let i = 16; i < 32; i++) onsets.push(base(i) + [0.06, -0.05, 0.04, -0.06][i % 4] * 0.5);  // then loose
+  const r = app.timingReport(onsets, grid, 0, [{ name: "Verse", from: 0, to: 4 }, { name: "Chorus", from: 4, to: 8 }]);
+  assert.equal(r.count, 32);
+  const [v, c] = r.sections;
+  assert.equal(v.name, "Verse"); assert.ok(v.std < 4, `${v.std}`);
+  assert.equal(c.name, "Chorus"); assert.ok(c.std > 15, `${c.std}`);
+});
+
+test("takes line up at a section's start or at bar 1", () => {
+  const { app } = makeRuntime();
+  const sections = [{ name: "Verse", from: 7.5, to: 20 }, { name: "Chorus", from: 20, to: 30 }];
+  assert.equal(app.alignPoint({}, "Chorus", sections, { t0: 2 }), 20);
+  assert.equal(app.alignPoint({}, "", sections, { t0: 2 }), 2, "no section: the first bar");
+  assert.equal(app.alignPoint({}, "Bridge", sections, { t0: 2 }), 2, "a section this take doesn't have: the first bar");
+  assert.equal(app.alignPoint({}, "", [], null), 0);
+});
+
+// ---------- timing, progress and comparing takes, from recorded signals ----------
+// An armed trainer take at 120 bpm (bar 1 at 0 s in the take), the guitar playing a note on
+// every eighth (0.25 s), each `late` seconds behind the beat, with `wobble` seconds of
+// alternating spread on top.
+async function timedTake(rt, { late = 0.02, wobble = 0, notes = 16, hz = 220, extra = () => {} } = {}) {
+  rt.app.setBpm(120);
+  rt.document.getElementById("recmix").value = "guitar";
+  rt.document.getElementById("recarm").checked = true;
+  rt.document.getElementById("recbtn").click();
+  await settle();
+  rt.app.toggleTrainer();
+  for (let i = 0; i < 4; i++) rt.advance(0.5);
+  const times = Array.from({ length: notes }, (_, k) => 0.5 + k * 0.25 + late + (k % 2 ? wobble : -wobble));
+  rt.worklets.at(-1).feedRaw(guitarSignal(times, { sr: 48000, seconds: 6, hz }));
+  extra();
+  rt.app.toggleTrainer();
+  await settle(); await settle(); await settle();
+  return (await rt.app.libList())[0];
+}
+
+test("the guitar's notes are read from the stored master and set against the beat", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const t = await timedTake(rt, { late: 0.02 });
+  assert.ok(t.grid && t.grid.beat === 0.5 && t.grid.t0 === 0, "an armed trainer take has a beat: bar 1 at 0, 0.5 s a beat");
+  assert.equal(t.onsets.length, 16, "every note found");
+  t.onsets.forEach((o, k) => assert.ok(Math.abs(o - (0.5 + k * 0.25 + 0.02)) < 0.012, `note ${k} at ${o}`));
+  navButton(rt.document, "songs").click(); await settle();
+  await rt.app.libOpen(t.id);
+  const html = rt.document.getElementById("taketiming").innerHTML;
+  assert.match(html, /consistency ±[0-4](\.\d)? ms<\/b> \(tight\) over 16 notes against the beat; on average you play 2\d ms behind it/);
+  assert.match(html, /Not calibrated, so a steady offset here may be the gear, not you/);
+  const svg = rt.document.getElementById("takewave").innerHTML;
+  assert.equal((svg.match(/class="won[012]"/g) || []).length, 16, "a dot for each note");
+  assert.match(svg, /class="won1"/, "20 ms behind: within 30 but not within 15");
+});
+
+test("the calibrated latency is taken off, so a player who is on the beat reads as on it", async () => {
+  const rt = makeRuntime({ media: true, capture: true, stored: { "practice-desk-calibration": '{"ms":20,"how":"loopback"}' } });
+  const t = await timedTake(rt, { late: 0.02 });                   // 20 ms late: exactly the latency
+  navButton(rt.document, "songs").click(); await settle();
+  await rt.app.libOpen(t.id);
+  const html = rt.document.getElementById("taketiming").innerHTML;
+  assert.match(html, /on average you play (right on it|[12] ms (ahead of|behind) it)/);
+  assert.match(html, /Your 20 ms latency calibration is taken off/);
+  assert.match((rt.document.getElementById("takewave").innerHTML.match(/class="won\d"/g) || []).join(), /won0/, "all within 15 ms");
+});
+
+test("loose playing reads as loose, and its spread is what is reported", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const t = await timedTake(rt, { late: 0, wobble: 0.045 });       // alternately 45 ms ahead and behind
+  const r = rt.app.timingReport(t.onsets, t.grid, 0);
+  assert.ok(r.std > 35 && r.std < 55, `spread ${r.std}`); assert.ok(Math.abs(r.mean) < 8, `mean ${r.mean}`);
+  assert.equal(rt.app.timingWord(r.std), "loose");
+});
+
+test("a take with no beat to measure against says so, and a song take is measured against the song", async () => {
+  const plain = makeRuntime({ media: true, capture: true });
+  plain.document.getElementById("recmix").value = "guitar";
+  await recordTake(plain);
+  const [p] = await plain.app.libList();
+  assert.equal(p.grid, null);
+  navButton(plain.document, "songs").click(); await settle();
+  await plain.app.libOpen(p.id);
+  assert.match(plain.document.getElementById("taketiming").innerHTML, /No beat to measure your timing against/);
+
+  const rt = makeRuntime({ media: true, capture: true });
+  await rt.app.songImport(songFile());
+  rt.app.songs.selected.bpm = 120; rt.app.songs.selected.downbeat = 0;
+  await rt.app.songSaveSections(() => {});
+  rt.document.getElementById("songcount").checked = false; rt.document.getElementById("songspeed").value = "1";
+  await rt.app.songPlay(); await settle();
+  rt.document.getElementById("recmix").value = "guitar";
+  rt.document.getElementById("recbtn").click(); await settle();
+  rt.worklets.at(-1).feedRaw(guitarSignal(Array.from({ length: 12 }, (_, k) => 0.5 + k * 0.25), { sr: 48000, seconds: 5 }));
+  rt.document.getElementById("recbtn").click(); await settle(); await settle(); await settle();
+  const [s] = await rt.app.libList();
+  assert.deepEqual([s.grid.t0, s.grid.beat], [0, 0.5], "the song's bars: 120 bpm, downbeat 0, the take began at song time 0");
+  assert.equal(s.onsets.length, 12);
+  rt.app.songStop();
+});
+
+test("progress over a song's takes: a picture, the clean run-throughs, and the ratings by section", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const song = await rt.app.songImport(songFile());
+  for (let i = 0; i < 3; i++) {
+    rt.document.getElementById("recmix").value = "guitar";
+    rt.document.getElementById("songcount").checked = false; rt.document.getElementById("songspeed").value = "1";
+    await rt.app.songPlay(); await settle();
+    await recordTake(rt, { after: () => { if (i === 0) { rt.clock.t += 1; rt.document.dispatch("keydown", { key: "m" }); } } });
+    rt.app.songStop();
+  }
+  const takes = await rt.app.libList();
+  assert.equal(takes.length, 3); assert.ok(takes.every(t => t.songId === song.id));
+  takes.forEach((t, i) => { t.created = 1000 * (3 - i); t.ratings.whole = [4, 3, 2][i]; });   // oldest first: 2, 3, 4
+  navButton(rt.document, "songs").click(); await settle();
+  rt.document.getElementById("takefilter").value = song.id; rt.document.getElementById("takefilter").onchange();
+  const html = rt.document.getElementById("takeprogress").innerHTML;
+  assert.match(html, /<b>2<\/b> of 3 full run-throughs went all the way through with no mistake marked/);
+  assert.match(html, /<svg viewBox="0 0 600 150" role="img" aria-label="Progress across 3 takes of this song">/);
+  assert.equal((html.match(/class="pdot"/g) || []).length, 3, "a dot per rated take");
+  assert.match(html, /class="pmis"[^>]*>1<\/text>/, "the one mistake, marked");
+  const one = makeRuntime({ media: true, capture: true });
+  await one.app.songImport(songFile());
+  navButton(one.document, "songs").click(); await settle();
+  one.document.getElementById("takefilter").value = one.app.songs.list[0].id; one.document.getElementById("takefilter").onchange();
+  assert.match(one.document.getElementById("takeprogress").innerHTML, /appears once there are two takes/);
+});
+
+test("two takes are compared from the same place, and Switch swaps which is heard", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  rt.document.getElementById("recmix").value = "guitar";
+  await recordTake(rt); await recordTake(rt);
+  const [newer, older] = await rt.app.libList();
+  navButton(rt.document, "songs").click(); await settle();
+  rt.document.getElementById("aba").value = older.id; rt.document.getElementById("abb").value = newer.id;
+  const before = rt.audioElements.length;
+  rt.document.getElementById("abplay").onclick();
+  const [a, b] = rt.audioElements.slice(before);
+  assert.equal(rt.audioElements.length - before, 2);
+  assert.equal(a.playing, true); assert.equal(b.playing, true, "both run together, so switching never loses your place");
+  assert.equal(a.volume, 1); assert.equal(b.volume, 0);
+  assert.equal(rt.document.getElementById("abside").textContent, "Listening to A");
+  rt.document.getElementById("abswitch").onclick();
+  assert.equal(a.volume, 0); assert.equal(b.volume, 1); assert.equal(rt.document.getElementById("abside").textContent, "Listening to B");
+  rt.document.getElementById("abstop").onclick();
+  assert.equal(a.playing, false);
+  rt.document.getElementById("abb").value = older.id;
+  rt.document.getElementById("abplay").onclick();
+  assert.match(rt.document.getElementById("takemsg").textContent, /Choose two different takes/);
+});
+
+test("takes are aligned by section: each starts at its own copy of the section", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const s = await rt.app.songImport(songFile());
+  await rt.app.songSaveSections(secs => secs.push({ name: "Chorus", start: 30, end: 50 }));
+  rt.document.getElementById("songcount").checked = false; rt.document.getElementById("songspeed").value = "1";
+  rt.document.getElementById("recmix").value = "guitar";
+  for (const startAt of [10, 25]) {                     // two takes that began at different points of the song
+    await rt.app.songPlay(); await settle();
+    rt.app.songs.player.currentTime = startAt;
+    await recordTake(rt, { ms: 25 * 48000 });      // long enough to contain the Chorus
+    rt.app.songStop();
+  }
+  const [b, a] = await rt.app.libList();
+  navButton(rt.document, "songs").click(); await settle();
+  rt.document.getElementById("takefilter").value = s.id; rt.document.getElementById("takefilter").onchange();
+  rt.document.getElementById("aba").value = a.id; rt.document.getElementById("abb").value = b.id;
+  rt.document.getElementById("absection").value = "Chorus";
+  const before = rt.audioElements.length;
+  rt.document.getElementById("abplay").onclick();
+  const [ea, eb] = rt.audioElements.slice(before);
+  // take a began at song time 10, take b at 25: the Chorus (30 s) is 20 s into a and 5 s into b
+  assert.equal(ea.currentTime, 20); assert.equal(eb.currentTime, 5);
+  rt.document.getElementById("abstop").onclick();
 });

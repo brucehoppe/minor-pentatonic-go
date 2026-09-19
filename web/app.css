@@ -354,3 +354,6 @@
   .raterow>span:first-child{min-width:9em}
   .ratenote{opacity:.7;font-size:11.5px}
   #takenext{width:min(30em,90%)}
+  .won0{fill:var(--blue)}.won1{fill:var(--gold)}.won2{fill:var(--pink)}
+  .pgrid{stroke:var(--rule);stroke-width:.6}.pline{stroke:var(--blue);stroke-width:1.6;fill:none}.pdot{fill:var(--blue)}
+  .pbar{fill:var(--gold);opacity:.55}.pmis{font-size:10px;fill:var(--pink);font-weight:600}

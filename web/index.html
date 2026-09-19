@@ -836,6 +836,14 @@
       </div>
       <p id="rerate" class="tip" hidden></p>
       <div id="takelist"></div>
+      <div id="takeprogress"></div>
+      <h3 class="cx-more">Compare two takes</h3>
+      <div class="row">
+        <label>A <select id="aba"></select></label> <label>B <select id="abb"></select></label>
+        <label>From <select id="absection"><option value="">From the first bar</option></select></label>
+        <button id="abplay">Play A/B</button><button id="abswitch">Switch</button><button id="abstop">Stop</button>
+        <span id="abside" class="bandnote"></span>
+      </div>
       <div id="takedetail" hidden>
         <h3 id="taketitle"></h3>
         <audio id="takeplay" controls></audio>
@@ -860,6 +868,7 @@
         </div>
         <div id="takewave" class="wave"></div>
         <div id="takemarks" class="tip"></div>
+        <div id="taketiming"></div>
         <div id="takerate"></div>
         <label class="tip">What to fix next <input id="takenext" maxlength="200" placeholder="One line"></label>
       </div>
@@ -957,6 +966,7 @@
 <script src="triads-explorer.js" defer></script>
 <script src="inversions-explorer.js" defer></script>
 <script src="band.js" defer></script>
+<script src="analysis.js" defer></script>
 <script src="library.js" defer></script>
 <script src="looper.js" defer></script>
 <script src="songs.js" defer></script>

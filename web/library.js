@@ -32,7 +32,15 @@ const cleanTake = t => ({...t,
   next:typeof t.next==="string"?t.next.slice(0,200):"",
   songId:typeof t.songId==="string"?t.songId:null,
   backingTakeId:typeof t.backingTakeId==="string"?t.backingTakeId:null,
-  stemBlob:t.stemBlob instanceof Blob?t.stemBlob:null});
+  stemBlob:t.stemBlob instanceof Blob?t.stemBlob:null,
+  onsets:(Array.isArray(t.onsets)?t.onsets:[]).filter(v=>Number.isFinite(v)&&v>=0).slice(0,4000),
+  grid:t.grid&&Number.isFinite(t.grid.t0)&&t.grid.beat>0?{t0:t.grid.t0,beat:t.grid.beat}:null});
+// A take's timing against its beat grid, with the calibrated latency taken off; null when
+// there is nothing to measure against (no song, no backing, no armed trainer bar 1).
+function libTiming(t){
+  if(!t.grid||t.onsets.length<4)return null;
+  return timingReport(t.onsets,t.grid,t.calMs||0,libSections(t).map(x=>({name:x.name,from:x.from,to:x.to})));
+}
 
 // ---- storage ----
 async function libList(){
@@ -55,11 +63,38 @@ async function libKeep(kept, t, meta, stemMeta){
     key:t.key, bpm:t.bpm, mode:info.mode||"full", focus:info.focus||"timing", attempt:info.attempt||"cold",
     mono:!!t.mono, backing:!!t.backing, markers:(t.markers||[]).map(m=>({t:m.t,kind:"mistake"})), calMs:kept.calMs,
     songId:info.songId||null, backingTakeId:info.backingTakeId||t.backingTakeId||null, songPlay:t.songPlay||null, section:info.section||null, masterId:meta?meta.id:null, stemId:stemMeta?stemMeta.id:null, stemBlob:t.stemBlob instanceof Blob?t.stemBlob:null,
-    ratings:cleanRatings(null), rerate:null, next:"", onsets:t.onsets||[]};
+    ratings:cleanRatings(null), rerate:null, next:"", onsets:[], grid:null};
+  // a beat to measure against exists over a song or backing, or from an armed trainer's bar 1
+  const g = t.songPlay ? libGrid(rec) : (t.startFrame!==undefined ? {t0:0, bar:4*60/t.bpm} : null);
+  rec.grid = g ? {t0:g.t0, beat:g.bar/4} : null;
   kept.libId = rec.id;
   await libPut(rec);
+  // your guitar alone: the solo stem when there is backing in the take, else the master
+  const guitar = t.backing ? stemMeta : meta;
+  if(guitar && typeof masterPcm==="function") libAnalyse(rec.id, guitar).catch(()=>{});
   if(document.getElementById("takelist")) { await libList(); libDraw(); }
   return rec;
+}
+// Onsets from the stored guitar master, kept with the take so timing can be re-read later.
+async function libAnalyse(id, guitarMeta){
+  const chunks = await masterPcm(guitarMeta);
+  const bits = bitsOf(guitarMeta), ch = guitarMeta.channels||1;
+  let n = 0; const per = bits===24 ? 3*ch : ch;
+  for(const c of chunks) n += Math.floor(c.length/per);
+  const x = new Float32Array(n); let o = 0;
+  for(const c of chunks){
+    const frames = Math.floor(c.length/per);
+    for(let i=0;i<frames;i++){
+      if(bits===24){ const b=i*3*ch; let v=c[b]|c[b+1]<<8|c[b+2]<<16; if(v&0x800000) v-=0x1000000; x[o++]=v/8388608; }
+      else x[o++] = c[i*ch]/32768;       // one channel is enough to hear the notes
+    }
+  }
+  const onsets = detectOnsets(x, guitarMeta.sampleRate).slice(0,4000).map(v=>Math.round(v*1000)/1000);
+  await libList();
+  const rec = libFind(id); if(!rec) return;
+  rec.onsets = onsets;
+  await libPut(rec); await libList(); libDraw();
+  if(lib.selected && lib.selected.id===id) libTimingShow();
 }
 async function libDelete(id){
   // a take used as a backing goes with it: the backing's audio lives in this take
@@ -104,6 +139,7 @@ function libWhen(ms){ const d=new Date(ms), p=n=>String(n).padStart(2,"0"); retu
 function libDue(t, now=Date.now()){ return !t.rerate && now - t.created >= RERATE_AFTER_MS; }
 function libDraw(){
   const list = document.getElementById("takelist"); if(!list) return;
+  lib.takes.forEach(t=>{ const r=libTiming(t); t.timingStd = r ? r.std : null; });
   const sel = document.getElementById("takefilter");
   const songs_ = typeof songs!=="undefined" ? songs.list : [];
   sel.innerHTML = '<option value="">All takes</option>' + songs_.map(s=>`<option value="${escapeHTML(s.id)}">${escapeHTML(s.title)}</option>`).join("");
@@ -123,6 +159,7 @@ function libDraw(){
   box.innerHTML = due.length ? `<b>Two days on.</b> ${due.length===1?"A take is":due.length+" takes are"} ready to hear again with fresh ears, then rate again: `
     + due.slice(0,3).map(t=>`<button data-open="${escapeHTML(t.id)}">${escapeHTML(t.name)}</button>`).join(" ") : "";
   libStorage();
+  libProgress(); abFill();
 }
 function libStorage(){
   const el = document.getElementById("takestorage"), st = navigator.storage;
@@ -151,7 +188,7 @@ async function libOpen(id){
   document.getElementById("takenext").value = t.next;
   document.getElementById("takespeed").value = "1";
   document.getElementById("takeloop").checked = false;
-  libRate(); libMarks(); libLayersShow();
+  libRate(); libMarks(); libLayersShow(); libTimingShow();
   lib.peaks = null; libWave();
   const generation = lib.playGeneration;
   libPeaks(t.blob).then(peaks=>{ if(generation===lib.playGeneration){ lib.peaks=peaks; libWave(); } }, ()=>{});
@@ -203,6 +240,10 @@ function libWave(){
     let d=""; for(let i=0;i<lib.peaks.length;i++){ const h=Math.max(.5,lib.peaks[i]*H*.46), cx=i+.5; d+=`M${cx},${(H/2-h).toFixed(1)}V${(H/2+h).toFixed(1)}`; }
     svg += `<path class="wpeaks" d="${d}"/>`;
   } else svg += `<text class="wlbl" x="8" y="${H/2}">${typeof AudioContext==="undefined"&&typeof webkitAudioContext==="undefined"?"The waveform needs Web Audio, which this browser withholds.":"Drawing the waveform…"}</text>`;
+  // each note's attack, low on the picture, by how close to the beat it was
+  if(t.grid) timingOffsets(t.onsets, t.grid, t.calMs||0).forEach(o=>{
+    const cls = Math.abs(o.ms)<15 ? "won0" : Math.abs(o.ms)<30 ? "won1" : "won2";
+    svg += `<circle class="${cls}" cx="${x(o.t)}" cy="${H-6}" r="2.6"/>`; });
   t.markers.forEach(m=>{ svg += `<line class="wmark" x1="${x(m.t)}" y1="0" x2="${x(m.t)}" y2="${H}"/>`; });
   svg += `<line id="wplayhead" class="wplay" x1="0" y1="0" x2="0" y2="${H}"/></svg>`;
   el.innerHTML = svg;
@@ -230,6 +271,18 @@ function libLoopTick(){
     const a=Number(document.getElementById("takeloopa").value)||0, b=Number(document.getElementById("takeloopb").value)||t.seconds;
     if(b-a>=.1 && p.currentTime>=b) p.currentTime=a;
   }
+}
+
+// ---- timing ----
+function libTimingShow(){
+  const t=lib.selected, el=document.getElementById("taketiming"); if(!t||!el) return;
+  const r = libTiming(t), lean = m => Math.abs(m)<3 ? "right on it" : m<0 ? `${Math.round(-m)} ms ahead of it` : `${Math.round(m)} ms behind it`;
+  if(!t.grid) { el.innerHTML = "<p class=\"tip\">No beat to measure your timing against: record over a song, a backing or the 12-bar trainer (start on bar 1) and it can be read.</p>"; return; }
+  if(!r || r.std===null){ el.innerHTML = t.onsets.length ? "<p class=\"tip\">Too few notes to say anything about your timing.</p>" : "<p class=\"tip\">Timing is being read from the recording…</p>"; return; }
+  el.innerHTML = `<p class="tip">Timing: <b>consistency ±${r.std} ms</b> (${timingWord(r.std)}) over ${r.count} notes against the beat; on average you play ${lean(r.mean)}. `
+    + `The dots on the waveform show each note: blue within 15 ms of the beat, gold within 30, pink further off. `
+    + (t.calMs ? `Your ${t.calMs} ms latency calibration is taken off.` : `Not calibrated, so a steady offset here may be the gear, not you.`) + `</p>`
+    + (r.sections.some(s=>s.std!==null) ? `<p class="tip">By section: ` + r.sections.filter(s=>s.std!==null).map(s=>`${escapeHTML(s.name)} ±${s.std} ms (${timingWord(s.std)}, ${s.count} notes)`).join(" · ") + `</p>` : "");
 }
 
 // ---- ratings ----
@@ -267,6 +320,73 @@ async function libSaveNext(){
   t.next = document.getElementById("takenext").value.slice(0,200);
   await libPut(t); await libList(); libSay("Saved.");
 }
+
+// ---- progress on a song ----
+// The song chosen in the list, as a picture: your rating of each take in the order you made
+// them, how consistent your timing was, and how many mistakes you marked; plus how many
+// run-throughs went all the way through, and the ratings section by section.
+function libProgress(){
+  const el=document.getElementById("takeprogress"); if(!el) return;
+  const takes = lib.takes.filter(t=>lib.filter ? t.songId===lib.filter : false);
+  if(!lib.filter || takes.length<2){ el.innerHTML = lib.filter ? "<p class=\"tip\">Progress appears once there are two takes of this song.</p>" : ""; return; }
+  const p = progressSeries(takes), W=600, H=150, n=p.ordered.length, x = i => 30 + (n===1 ? 0 : i*(W-60)/(n-1));
+  const yr = r => H-24-(r-1)*(H-50)/4, ys = ms => H-24-Math.min(60,ms)/60*(H-50);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Progress across ${n} takes of this song">`;
+  for(let r=1;r<=5;r++) svg += `<line class="pgrid" x1="24" y1="${yr(r)}" x2="${W-10}" y2="${yr(r)}"/><text class="wlbl" x="8" y="${yr(r)+3}">${r}</text>`;
+  let d=""; p.whole.forEach((r,i)=>{ if(r) d += (d?"L":"M")+x(i)+","+yr(r); });
+  if(d) svg += `<path class="pline" d="${d}"/>`;
+  p.whole.forEach((r,i)=>{ if(r) svg += `<circle class="pdot" cx="${x(i)}" cy="${yr(r)}" r="3.5"/>`; });
+  p.consistency.forEach((s,i)=>{ if(s!==null) svg += `<rect class="pbar" x="${x(i)-5}" y="${ys(s)}" width="10" height="${H-24-ys(s)}"/>`; });
+  p.mistakes.forEach((m,i)=>{ if(m) svg += `<text class="pmis" x="${x(i)}" y="12" text-anchor="middle">${m}</text>`; });
+  svg += `<text class="wlbl" x="${W-4}" y="${H-6}" text-anchor="end">blue: your rating · gold bars: timing spread (shorter is steadier) · pink: mistakes marked</text></svg>`;
+  const sections = {};
+  p.ordered.forEach(t=>{ const r = t.rerate ? {...t.ratings.sections, ...t.rerate.ratings.sections} : t.ratings.sections;
+    Object.entries(r).forEach(([k,v])=>{ (sections[k] ||= []).push(v); }); });
+  el.innerHTML = `<h3 class="cx-more">Progress</h3><p class="tip"><b>${p.clean}</b> of ${p.runs} full run-throughs went all the way through with no mistake marked.</p>` + svg
+    + (Object.keys(sections).length ? `<p class="tip">Section ratings, oldest to newest: ` + Object.entries(sections).map(([k,v])=>`${escapeHTML(k)}: ${v.join(" → ")}`).join(" · ") + `</p>` : "");
+}
+
+// ---- compare two takes, A and B ----
+// Both are started at the same musical place (a section's start, or the first bar), so
+// you hear the same passage from each; the switch swaps which one you hear, without a gap.
+const ab = {a:null, b:null, urls:[], side:"a"};
+function abSection(t, name){ return alignPoint(t, name, libSections(t), t.grid ? {t0:t.grid.t0} : (t.songPlay ? libGrid(t) : null)); }
+function abFill(){
+  const A=document.getElementById("aba"), B=document.getElementById("abb"); if(!A||!B) return;
+  const shown = lib.takes.filter(t=>!lib.filter || t.songId===lib.filter);
+  const opts = shown.map(t=>`<option value="${escapeHTML(t.id)}">${escapeHTML(t.name)}</option>`).join("");
+  const keepA=A.value, keepB=B.value;
+  A.innerHTML = opts; B.innerHTML = opts;
+  A.value = shown.some(t=>t.id===keepA) ? keepA : (shown[1]||shown[0]||{}).id||"";
+  B.value = shown.some(t=>t.id===keepB) ? keepB : (shown[0]||{}).id||"";
+  const names = new Set(); shown.forEach(t=>libSections(t).forEach(s=>names.add(s.name)));
+  const sec=document.getElementById("absection"), keep=sec.value;
+  sec.innerHTML = `<option value="">From the first bar</option>` + [...names].map(n=>`<option value="${escapeHTML(n)}">${escapeHTML(n)}</option>`).join("");
+  sec.value = names.has(keep) ? keep : "";
+}
+function abStop(){
+  [ab.a, ab.b].forEach(el=>{ if(el){ el.pause(); el.removeAttribute("src"); } });
+  ab.a = ab.b = null;
+  ab.urls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(e){} }); ab.urls=[];
+  const s=document.getElementById("abside"); if(s) s.textContent="";
+}
+function abPlay(){
+  const ta=libFind(document.getElementById("aba").value), tb=libFind(document.getElementById("abb").value);
+  if(!ta||!tb){ libSay("Choose two takes to compare."); return; }
+  if(ta.id===tb.id){ libSay("Choose two different takes."); return; }
+  abStop();
+  const name=document.getElementById("absection").value;
+  const mk=(t)=>{ const url=URL.createObjectURL(t.blob); ab.urls.push(url); const el=new Audio(url); el.currentTime=abSection(t,name); return el; };
+  ab.a=mk(ta); ab.b=mk(tb); ab.side="a"; abApply();
+  [ab.a,ab.b].forEach(el=>{ const p=el.play(); if(p&&p.catch) p.catch(()=>{}); });
+  libSay(`Comparing from ${name?name:"the first bar"}: A is ${ta.name}, B is ${tb.name}. Press Switch to hear the other.`);
+}
+function abApply(){
+  if(!ab.a) return;
+  ab.a.volume = ab.side==="a" ? 1 : 0; ab.b.volume = ab.side==="b" ? 1 : 0;
+  document.getElementById("abside").textContent = `Listening to ${ab.side.toUpperCase()}`;
+}
+function abSwitch(){ if(!ab.a) return; ab.side = ab.side==="a" ? "b" : "a"; abApply(); }
 
 // ---- layers: the rhythm take, your solo, and a click, each with its own level ----
 // A solo recorded over a rhythm take is heard here as it was played: the rhythm take at the
@@ -423,6 +543,7 @@ function libInit(){
   el("takenext").onchange = ()=>libSaveNext().catch(()=>libSay("That note couldn't be saved."));
   el("takespeed").onchange = ()=>{ const r=Number(el("takespeed").value); if([.5,.75,.9,1].includes(r)) el("takeplay").playbackRate=r; };
   el("takeclose").onclick = libClose;
+  el("abplay").onclick = abPlay; el("abswitch").onclick = abSwitch; el("abstop").onclick = abStop;
   el("layplay").onclick = libLayersPlay; el("laystop").onclick = libLayersStop;
   ["layrhythm","laysolo","layclick","layrhythmv","laysolov","layclickv"].forEach(id=>{ el(id).onchange = el(id).oninput = libLayersApply; });
   el("laydlsolo").onclick = ()=>libLayerDownload("solo"); el("laydlrhythm").onclick = ()=>libLayerDownload("rhythm"); el("laydlboth").onclick = ()=>libLayerDownload("both");
