@@ -5784,3 +5784,19 @@ test("course shows the current goal once and keeps its outline open across progr
   assert.match(path.innerHTML, /Every stage passed/);
   assert.equal((path.innerHTML.match(/data-pass=/g) || []).length, app.PATH.length, "completed stages remain available to undo");
 });
+
+test("Blues boxes: every isolate button redraws the map and names what it isolated", () => {
+  const { app, document } = makeRuntime();
+  navButton(document, "blues").click();
+  const buttons = findAll(document.getElementById("bluesfocus"), e => e.tagName === "BUTTON");
+  assert.equal(buttons.length, 9);
+  for (const b of buttons) {
+    b.click();   // Box 1–5 used to throw ReferenceError: R is not defined
+    assert.match(document.getElementById("bluesmap").innerHTML, /whole neck blues map/);
+  }
+  buttons.find(b => b.textContent === "Box 1").click();
+  assert.equal(document.getElementById("bluesmaplabel").textContent, "Whole neck — Box 1 isolated");
+  assert.match(document.getElementById("bluestip").innerHTML, /<b>Box 1, fret 5–8<\/b>/, "A minor Box 1 sits at frets 5–8");
+  buttons.find(b => b.textContent === "Box 1").click();
+  assert.match(document.getElementById("bluesmaplabel").textContent, /all five boxes/, "a second press shows everything again");
+});
