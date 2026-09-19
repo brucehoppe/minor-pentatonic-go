@@ -5,6 +5,12 @@ a second release on the same day.
 
 ## Unreleased
 
+- Use as backing: a take of your own rhythm playing becomes a backing under
+  Your songs, with sections, loop, slow-down, count-in and chords like an
+  imported song. It is stored once (it points at the take), starts that many
+  milliseconds early by your latency calibration so a solo lines up, and warns
+  if you haven't calibrated. A solo recorded over it is linked back to it and
+  named for it; deleting the rhythm take removes the backing.
 - Chords and sections: a song can have chords (`Am | Dm | E7`, repeating) and
   named sections, each with chords of its own, added by hand or built from a Song
   structure form. Chord tones can Follow backing in every view, lighting the

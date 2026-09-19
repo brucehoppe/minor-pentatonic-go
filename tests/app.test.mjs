@@ -4849,3 +4849,108 @@ test("choosing a song sets the key, and 'find the home note' opens the Over a so
   document.getElementById("songfindkey").onclick();
   assert.equal(app.getState().view, "song");
 });
+
+// ---------- your own rhythm take as the backing, and a solo over it ----------
+async function rhythmTake(rt) {
+  rt.document.getElementById("recmix").value = "guitar";
+  await recordTake(rt, { ms: 96000 });
+  await rt.app.libList();
+  navButton(rt.document, "songs").click(); await settle();
+  await rt.app.libOpen(rt.app.lib.takes[0].id);
+  return rt.app.lib.selected;
+}
+
+test("a take becomes a backing without being copied, aligned by the calibrated latency", async () => {
+  const rt = makeRuntime({ media: true, capture: true, stored: { "practice-desk-calibration": '{"ms":40,"how":"loopback"}' } });
+  const take = await rhythmTake(rt);
+  const filesBefore = rt.idb.stores.get("songfiles").rows.size;
+  await rt.document.getElementById("takeasbacking").onclick();
+  await settle();
+  const s = rt.app.songs.selected;
+  assert.equal(s.kind, "take"); assert.equal(s.takeId, take.id);
+  assert.match(s.title, /^Rhythm: practice-A-full-90bpm-/);
+  assert.equal(s.offsetMs, 40, "the calibration is kept with it");
+  assert.equal(rt.idb.stores.get("songfiles").rows.size, filesBefore, "stored once: no audio file was copied");
+  assert.match(rt.document.getElementById("takemsg").textContent, /is now a backing.*Aligned by your 40 ms latency calibration/);
+  assert.equal(rt.app.songs.player.duration, 600, "the player is loaded from the take's own audio");
+  assert.match(rt.document.getElementById("songlist").innerHTML, /Rhythm: practice-A-full-90bpm/);
+  // playing it starts 40 ms in: that much early, so a solo over it lines up
+  rt.document.getElementById("songcount").checked = false; rt.document.getElementById("songspeed").value = "1";
+  await rt.app.songPlay(); await settle();
+  assert.equal(rt.app.songs.player.currentTime, 0.04);
+  assert.match(rt.document.getElementById("songstatus").textContent, /Rhythm: .* · 90 bpm · aligned by 40 ms/);
+  rt.app.songStop();
+  // asking again selects the one that exists
+  await rt.document.getElementById("takeasbacking").onclick();
+  assert.equal([...rt.idb.stores.get("songs").rows.values()].filter(r => r.v.kind === "take").length, 1);
+  assert.match(rt.document.getElementById("takemsg").textContent, /already a backing/);
+});
+
+test("without calibration the desk says a solo over a rhythm take may sit late", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  await rhythmTake(rt);
+  await rt.document.getElementById("takeasbacking").onclick();
+  await settle();
+  assert.match(rt.document.getElementById("takemsg").textContent, /Latency isn't calibrated yet, so layers may sit a little late/);
+  rt.document.getElementById("songcount").checked = false; rt.document.getElementById("songspeed").value = "1";
+  await rt.app.songPlay(); await settle();
+  assert.match(rt.document.getElementById("songstatus").textContent, /latency isn't calibrated, so a solo over this may sit a little late/);
+  assert.equal(rt.app.songs.player.currentTime, 0, "no offset to apply");
+  rt.app.songStop();
+});
+
+test("a solo recorded over the rhythm take is linked to it, and is the solo and the backing together", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const rhythm = await rhythmTake(rt);
+  await rt.document.getElementById("takeasbacking").onclick(); await settle();
+  rt.document.getElementById("songcount").checked = false; rt.document.getElementById("songspeed").value = "1";
+  await rt.app.songPlay(); await settle();
+  rt.document.getElementById("recmix").value = "backing";
+  rt.document.getElementById("recfocus").value = "phrasing";
+  rt.document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(rt.app.getRec().backing, true, "the backing is in the recording, as asked");
+  assert.ok(rt.app.getRec().stem, "and the solo is kept apart");
+  assert.equal(rt.app.getRec().info.backingTakeId, rhythm.id);
+  rt.worklets.at(-2).feed(4800); rt.worklets.at(-1).feed(4800);     // the mix, and the solo alone
+  rt.document.getElementById("recbtn").click();
+  await settle(); await settle();
+  const [solo] = await rt.app.libList();
+  assert.equal(solo.backingTakeId, rhythm.id, "linked to its rhythm take");
+  assert.equal(solo.stemId !== null, true);
+  assert.match(solo.name, /^Rhythm-practice-A-full-90bpm-.*-full-90bpm-\d{8}-\d{6}-cold\.webm$/, "named for the backing it is over");
+  assert.equal(solo.focus, "phrasing");
+  rt.app.songStop();
+});
+
+test("deleting a rhythm take takes its backing with it; a too-short take is refused", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const rhythm = await rhythmTake(rt);
+  await rt.document.getElementById("takeasbacking").onclick(); await settle();
+  assert.equal(rt.app.songs.list.length, 1);
+  await rt.app.libDelete(rhythm.id);
+  assert.equal(rt.app.songs.list.length, 0, "the backing pointed at a take that is gone");
+  assert.equal(rt.app.songs.selected, null);
+  assert.equal(rt.document.getElementById("songdetails").hidden, true);
+  const short = makeRuntime({ media: true, capture: true });
+  short.document.getElementById("recmix").value = "guitar";
+  await recordTake(short, { ms: 4800 });
+  await short.app.libList();
+  navButton(short.document, "songs").click(); await settle();
+  await short.app.libOpen(short.app.lib.takes[0].id);
+  short.app.lib.selected.seconds = 0.3;
+  await short.document.getElementById("takeasbacking").onclick();
+  assert.match(short.document.getElementById("takemsg").textContent, /too short/);
+  assert.equal(short.app.songs.list.length, 0);
+});
+
+test("a backing whose take has gone missing says so instead of failing silently", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  const rhythm = await rhythmTake(rt);
+  await rt.document.getElementById("takeasbacking").onclick(); await settle();
+  const id = rt.app.songs.selected.id;
+  rt.idb.stores.get("library").rows.clear();          // the take vanishes from storage some other way
+  await rt.app.songSelect(id);
+  assert.match(rt.document.getElementById("songstatus").textContent, /The rhythm take is missing\. Record it again\./);
+  assert.equal(rt.app.songs.selected, null);
+});

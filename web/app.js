@@ -2497,7 +2497,9 @@ function startTake(t,fromTrainer){
   {const ac=state.engine&&state.engine.context;
    t.acStart=ac?(t.startFrame!==undefined?t.startFrame/ac.sampleRate:ac.currentTime):undefined;}
   document.getElementById("recmark").hidden=false;document.getElementById("recmark").textContent="Mark a mistake (M)";
-  if(!t.info)t.info={...takeSettings(),trainer:fromTrainer,song:sg?sg.title:undefined,songId:sg?sg.id:undefined};
+  if(!t.info)t.info={...takeSettings(),trainer:fromTrainer,song:sg?sg.title:undefined,songId:sg?sg.id:undefined,
+    // a solo over your own rhythm take points back at it
+    backingTakeId:sg&&sg.kind==="take"?sg.takeId:undefined};
   const bars=TAKE_MODES[t.info.mode].bars;
   beginCapture(t.capture,0,takeMeta(t));   // unless bar 1 already booked it to the sample
   beginStem(t,0);
@@ -2803,7 +2805,7 @@ function finishTake(t){
         if(state.recTake!==kept)return;
         showTake();recSay(what+(note?" "+note:""));listSaved();
         return typeof libKeep==="function"?libKeep(kept,t,meta,stemMeta).catch(()=>{}):null;});}
-    return decodedWav(kept,t,blob,what).then(()=>typeof libKeep==="function"?libKeep(kept,t,null).catch(()=>{}):null);});}
+    return decodedWav(kept,t,blob,what).then(()=>typeof libKeep==="function"?libKeep(kept,t,null,stemMeta&&stemMeta.frames?stemMeta:null).catch(()=>{}):null);});}
 // Without a raw master, the WAV is decoded from the compressed file. The decoded
 // length is exact; without a decoder, the recorder's own clock will do.
 function decodedWav(kept,t,blob,what){

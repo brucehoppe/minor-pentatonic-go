@@ -30,7 +30,8 @@ const cleanTake = t => ({...t,
   ratings:cleanRatings(t.ratings),
   rerate:t.rerate&&Number.isFinite(t.rerate.at)?{at:t.rerate.at,ratings:cleanRatings(t.rerate.ratings)}:null,
   next:typeof t.next==="string"?t.next.slice(0,200):"",
-  songId:typeof t.songId==="string"?t.songId:null});
+  songId:typeof t.songId==="string"?t.songId:null,
+  backingTakeId:typeof t.backingTakeId==="string"?t.backingTakeId:null});
 
 // ---- storage ----
 async function libList(){
@@ -51,17 +52,47 @@ async function libKeep(kept, t, meta, stemMeta){
     name:kept.name, mime:kept.blob.type||"audio/webm", blob:kept.blob, seconds,
     key:t.key, bpm:t.bpm, mode:info.mode||"full", focus:info.focus||"timing", attempt:info.attempt||"cold",
     mono:!!t.mono, backing:!!t.backing, markers:(t.markers||[]).map(m=>({t:m.t,kind:"mistake"})), calMs:kept.calMs,
-    songId:info.songId||null, songPlay:t.songPlay||null, section:info.section||null, masterId:meta?meta.id:null, stemId:stemMeta?stemMeta.id:null,
-    ratings:cleanRatings(null), rerate:null, next:"", onsets:t.onsets||[], backingTakeId:t.backingTakeId||null};
+    songId:info.songId||null, backingTakeId:info.backingTakeId||t.backingTakeId||null, songPlay:t.songPlay||null, section:info.section||null, masterId:meta?meta.id:null, stemId:stemMeta?stemMeta.id:null,
+    ratings:cleanRatings(null), rerate:null, next:"", onsets:t.onsets||[]};
   kept.libId = rec.id;
   await libPut(rec);
   if(document.getElementById("takelist")) { await libList(); libDraw(); }
   return rec;
 }
 async function libDelete(id){
-  await dbDo("library","readwrite",tx=>{tx.objectStore("library").delete(id);});
+  // a take used as a backing goes with it: the backing's audio lives in this take
+  const used = typeof songs!=="undefined" ? songs.list.filter(s=>s.takeId===id) : [];
+  await dbDo(["library","songs"],"readwrite",tx=>{
+    tx.objectStore("library").delete(id);
+    used.forEach(s=>tx.objectStore("songs").delete(s.id));});
   if(lib.selected && lib.selected.id===id) libClose();
+  if(used.length && typeof songSelect==="function"){
+    const wasSelected = songs.selected && used.some(s=>s.id===songs.selected.id);
+    await songList(); if(wasSelected) await songSelect("");
+  }
   await libList(); libDraw();
+}
+// ---- a take as a backing ----
+// Your own rhythm part, recorded and kept, becomes a backing like an imported song: same
+// sections, loop and slow-down. Its audio is not copied: the backing points at the take.
+// Your latency calibration is stored with it, and applied when it plays, so a solo
+// recorded over it lines up with it.
+async function libUseAsBacking(){
+  const t = lib.selected; if(!t){ return; }
+  const have = songs.list.find(s=>s.takeId===t.id);
+  if(have){ await songSelect(have.id); libSay("That take is already a backing: it is selected under Your songs."); return; }
+  if(!(t.seconds>.5)){ libSay("That take is too short to use as a backing."); return; }
+  const g = libGrid(t), rate = (t.songPlay&&t.songPlay.rate)||1;
+  const s = {id:"song-"+Date.now()+"-"+Math.random().toString(36).slice(2), kind:"take", takeId:t.id,
+    title:("Rhythm: "+t.name.replace(/\.\w+$/,"")).slice(0,200), key:t.key,
+    bpm:Math.max(40,Math.min(200,Math.round(t.bpm||90))), downbeat:Math.min(g.t0, t.seconds-.1), duration:t.seconds, form:"",
+    offsetMs:Number.isFinite(t.calMs)?t.calMs:0,
+    sections:libSections(t).map(x=>({name:x.name,start:Math.round(x.from*1000)/1000,end:Math.round(x.to*1000)/1000})).filter(x=>x.end>x.start)};
+  if(!validSong(s)){ libSay("That take can't be used as a backing."); return; }
+  await dbDo("songs","readwrite",tx=>{tx.objectStore("songs").put(s);});
+  await songList(); await songSelect(s.id);
+  libSay(`${s.title} is now a backing: pick it under Your songs on this page, press Play song, and record your solo over it.`
+    + (state.cal ? ` Aligned by your ${state.cal.ms} ms latency calibration.` : " Latency isn't calibrated yet, so layers may sit a little late: use Calibrate in the Record row."));
 }
 
 // ---- the list ----
@@ -301,6 +332,7 @@ function libInit(){
   el("takenext").onchange = ()=>libSaveNext().catch(()=>libSay("That note couldn't be saved."));
   el("takespeed").onchange = ()=>{ const r=Number(el("takespeed").value); if([.5,.75,.9,1].includes(r)) el("takeplay").playbackRate=r; };
   el("takeclose").onclick = libClose;
+  el("takeasbacking").onclick = ()=>libUseAsBacking().catch(()=>libSay("That take couldn't be made a backing."));
   lib.timer = setInterval(libLoopTick, 50);
 }
 function libLoopSection(name){

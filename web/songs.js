@@ -122,10 +122,14 @@ async function songSelect(id){
   const s=songs.list.find(s=>s.id===id);
   if(!s)return;
   try{
-    const row=await dbDo("songfiles","readonly",tx=>tx.objectStore("songfiles").get(id));
+    // an imported song's audio is its own file; a take used as a backing plays the take
+    const row=s.kind==="take"
+      ?await dbDo("library","readonly",tx=>tx.objectStore("library").get(s.takeId))
+      :await dbDo("songfiles","readonly",tx=>tx.objectStore("songfiles").get(id));
     if(generation!==songs.generation)return;
-    if(!row||!(row.file instanceof Blob))throw new Error("The song file is missing. Import it again.");
-    songs.url=URL.createObjectURL(row.file);
+    const file=s.kind==="take"?(row&&row.blob):(row&&row.file);
+    if(!(file instanceof Blob))throw new Error(s.kind==="take"?"The rhythm take is missing. Record it again.":"The song file is missing. Import it again.");
+    songs.url=URL.createObjectURL(file);
     const p=songs.player=new Audio(songs.url);p.preload="metadata";
     songs.selected=s;songs.taps=[];
     p.addEventListener("ended",()=>{if(songs.player===p){songStop();songSay("Song finished.");}});
@@ -255,15 +259,19 @@ async function songPlay(win){
     const engine=audio();
     if(engine&&engine.context&&!songs.source){
       songs.source=engine.context.createMediaElementSource(p);songs.bus=engine.bus();songs.source.connect(songs.bus);}
-    p.preservesPitch=true;p.webkitPreservesPitch=true;p.playbackRate=rate;p.currentTime=a;
+    // A backing made from a take is played that much early: your guitar reached the
+    // recording late by the calibrated latency, and a solo over it will too.
+    const off=(s.offsetMs||0)/1000,from=Math.min(a+off,b-.05);
+    p.preservesPitch=true;p.webkitPreservesPitch=true;p.playbackRate=rate;p.currentTime=from;
     const start=()=>{
       if(generation!==songs.playGeneration)return;
       p.play().then(()=>{
         if(generation!==songs.playGeneration){p.pause();return;}
-        songSay(`${s.title} · ${Math.round(s.bpm*rate)} bpm${engine&&engine.context?"":" · compatibility playback; recordings are guitar only"}`);
+        songSay(`${s.title} · ${Math.round(s.bpm*rate)} bpm${engine&&engine.context?"":" · compatibility playback; recordings are guitar only"}`
+          +(s.kind==="take"?(state.cal?` · aligned by ${s.offsetMs||0} ms`:" · latency isn't calibrated, so a solo over this may sit a little late"):""));
         songs.loopTimer=setInterval(()=>{
           if(p.currentTime>=b){
-            if(loop)p.currentTime=a;
+            if(loop)p.currentTime=from;
             else{songStop();
               // one section recorded alone ends with its section
               if(state.rec&&state.rec.phase==="recording"&&state.rec.info&&state.rec.info.mode==="section")stopRecording();}}
