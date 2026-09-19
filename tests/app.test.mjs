@@ -4625,7 +4625,8 @@ test("Export all writes a zip of takes and a JSON of ratings, markers and stats,
   assert.ok(names.includes("practice-export.json"));
   assert.ok(names.some(n => n.startsWith("takes/") && n.endsWith(".webm")), "the take file");
   assert.doesNotMatch(text, /Secret Song\.wav|\.wav"/, "the imported song's file is never included");
-  const json = JSON.parse(text.slice(text.indexOf("{"), text.indexOf("\n}") + 2));
+  const from = text.indexOf('{\n  "app"');       // not the first "{": a CRC or timestamp byte can be 0x7B
+  const json = JSON.parse(text.slice(from, text.indexOf("\n}", from) + 2));
   assert.equal(json.songs.length, 1); assert.equal(json.songs[0].title, "Secret Song");
   assert.ok(!("file" in json.songs[0]) && !("blob" in json.songs[0]));
   assert.equal(json.takes[0].ratings.whole, 4); assert.equal(json.takes[0].next, "keep the pick close");
