@@ -5,6 +5,13 @@ a second release on the same day.
 
 ## Unreleased
 
+- Chords and sections: a song can have chords (`Am | Dm | E7`, repeating) and
+  named sections, each with chords of its own, added by hand or built from a Song
+  structure form. Chord tones can Follow backing in every view, lighting the
+  chord the song is on, and choosing a song sets the key for the pentatonic
+  box. Loop any section, or record one alone: the take is named and linked
+  for the song and ends with the section. Checked in Chrome: Am, Dm, E7 change
+  on each 2-second bar of a real WAV.
 - Solo and song together: a take with backing is the guitar and the backing in
   one recording, and your guitar is also kept on its own, on the same audio
   clock and the same length to the sample, as a mono stem: Download solo only

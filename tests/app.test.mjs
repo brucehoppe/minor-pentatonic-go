@@ -345,7 +345,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   if (band) vm.runInContext(bandScript, context);   // band:false is the page without web/band.js
   vm.runInContext(libraryScript, context);
   vm.runInContext(songsScript, context);
-  vm.runInContext(script + `\n;globalThis.appTest={lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libLoopTick,libPeaks,libSeek,
+  vm.runInContext(script + `\n;globalThis.appTest={parseChord,parseChords,chordAt,songFollow,songAddSection,songBuildSections,songSaveSections,songRecordSection,songLoopSection,validSection,FORMS,lib,libList,libKeep,libOpen,libClose,libDelete,libSetRating,libDue,libExport,libExportData,libWeakest,libGrid,libSections,libWave,libDraw,libLoopTick,libPeaks,libSeek,
     zipStore,crc32,validTake,cleanTake,cleanRatings,RERATE_AFTER_MS,songs,validSong,songList,songImport,songSelect,songSave,songPlay,songStop,songBounds,songNow,songTap,render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
     modeOrigins,renderNotes,neckNames,OCTAVES,NATURALS,
     renderTriads,TRIAD_KINDS,TRIAD_SETS,triadShapes,triadVoicing,midiAt,allTriadVoicings,
@@ -4714,4 +4714,138 @@ test("a guitar-only take has no stem, and cancelling or ending a drill reaches t
   assert.ok(ends[0] && ends[0] === ends[1], "both end on the same frame");
   assert.equal(ends[0] - mix.sent.find(m => "start" in m).start, 4 * 96000, "four bars");
   drill.app.toggleTrainer();
+});
+
+// ---------- song sections, chords, and the chord overlay following the backing ----------
+test("chords parse as a guitarist writes them", () => {
+  const { app } = makeRuntime();
+  const c = t => { const r = app.parseChord(t); return r && [r.pc, [...r.intervals].join(",")]; };
+  sameShape(c("Am"), [9, "0,3,7"]); sameShape(c("C#m7"), [1, "0,3,7,10"]); sameShape(c("Bb"), [10, "0,4,7"]);
+  sameShape(c("E7"), [4, "0,4,7,10"]); sameShape(c("F#dim"), [6, "0,3,6"]); sameShape(c("G5"), [7, "0,7"]);
+  sameShape(c("Ebmaj7"), [3, "0,4,7,11"]); sameShape(c("Cmaj"), [0, "0,4,7"]); sameShape(c("Dmin"), [2, "0,3,7"]);
+  sameShape(c("Am7b5"), [9, "0,3,6,10"]); sameShape(c("a"), [9, "0,4,7"], "lower case is fine");
+  for (const bad of ["H", "Am13x", "", "7", "Csus9"]) assert.equal(app.parseChord(bad), null, bad);
+  const bars = app.parseChords("Am | Dm  | E7 |  | Am Dm | X | ");
+  assert.equal(bars.bars.length, 4, "an empty bar is dropped; a bar of one bad token is too");
+  sameShape(bars.bars[3].map(x => x.name), ["Am", "Dm"], "two chords in a bar share it");
+  sameShape(bars.bad, ["X"]);
+});
+
+test("the chord at a moment in the song comes from its section's chords, or the song's", () => {
+  const { app } = makeRuntime();
+  const song = { bpm: 120, downbeat: 1, chords: "Am | Dm | E7 | Am Dm", sections: [{ name: "Solo", start: 20, end: 28, chords: "C | G" }] };
+  const at = t => app.chordAt(song, t)?.name;
+  assert.equal(at(0.5), undefined, "before the downbeat: nothing");
+  assert.equal(at(1.0), "Am"); assert.equal(at(2.9), "Am");
+  assert.equal(at(3.1), "Dm"); assert.equal(at(5.1), "E7");
+  assert.equal(at(7.1), "Am", "the first half of the two-chord bar"); assert.equal(at(8.1), "Dm", "and the second");
+  assert.equal(at(9.1), "Am", "the progression repeats");
+  assert.equal(at(20.5), "C", "a section's own chords, counted from its start"); assert.equal(at(22.5), "G"); assert.equal(at(24.5), "C");
+  assert.equal(at(28.5), "Dm", "and back to the song's own chords after it: bar 13 of a four-bar progression is its second");
+});
+
+test("Follow backing lights the chord's tones as the song plays, without redrawing the Songs view", async () => {
+  const rt = makeRuntime({ capture: true });
+  const { app, document } = rt;
+  await app.songImport(songFile());
+  app.songs.selected.chords = "Am | Dm"; app.songs.selected.bpm = 120; app.songs.selected.downbeat = 0;
+  navButton(document, "boxes").click();     // a view that answers to the chord row
+  document.getElementById("chords").children.find(b => b.dataset.c === "band").click();
+  assert.equal(document.getElementById("chords").children.find(b => b.dataset.c === "band").textContent, "Follow backing");
+  assert.equal(app.getState().chord, "band");
+  app.songFollow(0.5);
+  sameShape(app.getLive().chord, { pc: 9, intervals: [0, 3, 7] });
+  assert.equal(app.isChordTone(0), true, "C is in Am"); assert.equal(app.isChordTone(2), false, "D is not");
+  app.songFollow(2.5);
+  assert.equal(app.isChordTone(2), true, "the overlay moved to Dm: D is lit"); assert.equal(app.isChordTone(4), false, "E dropped out");
+  navButton(document, "songs").click();
+  let draws = 0; const was = document.getElementById("songtitle");
+  Object.defineProperty(was, "value", { get() { return "kept"; }, set() { draws++; } });
+  app.songFollow(0.5);   // a chord change while looking at the Songs view
+  assert.equal(draws, 0, "no redraw: the fields you are editing are left alone");
+  app.songFollow(0.6);   // same chord: nothing to do
+});
+
+test("sections are added by hand or built from a form, sorted, chorded, looped and removed", async () => {
+  const { app, document } = makeRuntime({ capture: true });
+  await app.songImport(songFile("Twelve.wav"));
+  navButton(document, "songs").click();     // attaches the section list's handlers
+  const set = (id, v) => { document.getElementById(id).value = String(v); };
+  set("secname", "Verse"); set("secstart", 20); set("secend", 40);
+  await app.songAddSection();
+  set("secname", "Intro"); set("secstart", 0); set("secend", 20);
+  await app.songAddSection();
+  sameShape(app.songs.selected.sections.map(s => s.name), ["Intro", "Verse"], "kept in order");
+  set("secstart", 50); set("secend", 40);
+  await assert.rejects(app.songAddSection(), /end must be after its start/);
+  set("secstart", 500); set("secend", 900);
+  await assert.rejects(app.songAddSection(), /inside the song/, "past the end of a 600 s song");
+  assert.equal(app.validSection({ name: "x".repeat(61), start: 0, end: 1 }), false);
+  assert.equal(app.validSection({ name: "ok", start: 5, end: 5 }), false);
+  // chords per section, from the list
+  document.getElementById("songsections").onchange({ target: { dataset: { chords: "1" }, value: "Am | Dm" } });
+  await settle();
+  assert.equal(app.songs.selected.sections[1].chords, "Am | Dm");
+  assert.match(document.getElementById("songsections").innerHTML, /value="Am \| Dm"/);
+  // loop one
+  document.getElementById("songsections").onclick({ target: { dataset: { loop: "1" } } });
+  assert.equal(document.getElementById("songloopa").value, "20"); assert.equal(document.getElementById("songloopb").value, "40");
+  assert.equal(document.getElementById("songloop").checked, true);
+  // build from a form: 120 bpm is a 2 s bar; the form's Intro is 4 bars, its Verse 8
+  await app.songSave();   // (the tempo field still says 90; set it first)
+  document.getElementById("songbpm").value = "120"; document.getElementById("songdownbeat").value = "0";
+  await app.songSave();
+  await app.songBuildSections(0);
+  const built = app.songs.selected.sections;
+  sameShape(built.slice(0, 3).map(s => [s.name, s.start, s.end]), [["Intro", 0, 8], ["Verse", 8, 24], ["Chorus", 24, 40]]);
+  assert.ok(built.at(-1).end <= 600, "never past the end of the song");
+  await assert.rejects(app.songBuildSections(999), /Choose a form/);
+  await app.songSaveSections(secs => secs.splice(0, secs.length - 1));
+  assert.equal(app.songs.selected.sections.length, 1, "removed");
+  // damaged sections make a song invalid
+  for (const bad of [{ sections: [{ name: "", start: 0, end: 1 }] }, { sections: "x" }, { chords: 5 }, { sections: Array(41).fill({ name: "a", start: 0, end: 1 }) }])
+    assert.equal(app.validSong({ ...app.songs.selected, ...bad }), false);
+});
+
+test("a section is recorded alone: the take is named for it and both stop at its end", async () => {
+  const rt = makeRuntime({ capture: true, media: true });
+  const { app, document } = rt;
+  await app.songImport(songFile());
+  await app.songSaveSections(secs => secs.push({ name: "Chorus", start: 10, end: 20 }));
+  document.getElementById("songcount").checked = false;
+  document.getElementById("songspeed").value = "1";
+  document.getElementById("recmix").value = "guitar";
+  await app.songRecordSection(0);
+  await settle();
+  const p = app.songs.player;
+  assert.equal(app.getRec().info.mode, "section"); assert.equal(app.getRec().info.section.name, "Chorus");
+  assert.equal(p.currentTime, 10, "the song starts at the section");
+  rt.worklets.at(-1).feed(4800);
+  p.currentTime = 20; rt.advance(0.05);          // the timer reaches the section's end
+  await settle(); await settle();
+  assert.equal(p.paused, true, "the song stopped");
+  assert.equal(app.getRec(), null, "and so did the take");
+  assert.match(app.getTake().name, /^My-song-Chorus-90bpm-\d{8}-\d{6}-cold\.webm$/, "named <song>-<section>-<bpm>bpm-<date>-<cold|retest>");
+  assert.equal(app.getTake().songId, (await app.libList())[0].songId, "linked to the song");
+  const rec = (await app.libList())[0];
+  assert.equal(rec.songPlay.offset, 10, "the song's position when the take began (no count-in here)");
+  assert.equal(rec.section.name, "Chorus");
+  assert.equal(app.getTake().info.section.end, 20);
+  // a section mode with nothing chosen is just a full take
+  document.getElementById("recmode").value = "section";
+  document.getElementById("recbtn").click();
+  await settle();
+  assert.equal(app.getRec().info.mode, "full");
+});
+
+test("choosing a song sets the key, and 'find the home note' opens the Over a song page", async () => {
+  const { app, document } = makeRuntime({ capture: true });
+  app.setKey(9);
+  const s = await app.songImport(songFile());
+  app.setKey(4);
+  await app.songSelect(s.id);
+  assert.equal(app.getState().key, 9, "the key selector follows the song, so the pentatonic box does too");
+  navButton(document, "songs").click();
+  document.getElementById("songfindkey").onclick();
+  assert.equal(app.getState().view, "song");
 });

@@ -39,7 +39,7 @@ const state={
   // the backing band (web/band.js): its settings, remembered, and the live rig of
   // gains its parts play into while the trainer runs
   band:{on:true, swing:2/3, bass:"walk", ride:false, mix:bandMixDefaults(), practice:bandPracticeDefaults()}, bandRig:null, taps:[],
-  trainerChorus:0, trainerEnding:false, dropBars:[], liveChord:null, liveChordKey:"", bandCompat:false, bandClip:null,
+  pendingSection:null, trainerChorus:0, trainerEnding:false, dropBars:[], liveChord:null, liveChordKey:"", bandCompat:false, bandClip:null,
   rhythm:[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0], rhythmTimer:null, rhythmStep:0,
   // audio - the chosen engine, why there is none, and what is sounding
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
@@ -2231,7 +2231,7 @@ const REC_ROW=`<div class="row" id="recrow">
   <select id="recmix" aria-label="What to record"><option value="backing" selected>Guitar + backing</option><option value="guitar">Guitar only</option></select>
   <label style="font-size:12px;display:flex;gap:5px;align-items:center"><input type="checkbox" id="recarm">Start on bar 1 of the 12-bar trainer</label>
   <span class="lbl" style="flex-basis:100%;margin-top:4px">This take</span>
-  <select id="recmode" aria-label="Take length"><option value="full" selected>Full run-through (no limit)</option><option value="chorus">One 12-bar chorus</option><option value="drill8">Drill: 8 bars</option><option value="drill4">Drill: 4 bars</option><option value="section" disabled>One song section (add a song first)</option></select>
+  <select id="recmode" aria-label="Take length"><option value="full" selected>Full run-through (no limit)</option><option value="chorus">One 12-bar chorus</option><option value="drill8">Drill: 8 bars</option><option value="drill4">Drill: 4 bars</option><option value="section" disabled>One song section (add sections to a song first)</option></select>
   <select id="recfocus" aria-label="Focus: pick one"><option value="timing" selected>Focus: timing</option><option value="clean">Focus: clean notes</option><option value="bends">Focus: bends in tune</option><option value="phrasing">Focus: phrasing and space</option><option value="vibrato">Focus: vibrato</option><option value="through">Focus: getting through without stopping</option></select>
   <select id="recattempt" aria-label="Attempt"><option value="cold" selected>Cold attempt</option><option value="retest">Retest</option></select>
   <button id="recmark" class="bigmark" hidden>Mark a mistake (M)</button>
@@ -2297,7 +2297,7 @@ const fileSize=n=>n<1024?n+" B":n<1048576?Math.round(n/1024)+" KB":(n/1048576).t
 // <song>-<section|full>-<bpm>bpm-<date>-<cold|retest>.<ext>. Until songs arrive the
 // song is "12bar" over the trainer or "practice", with the key; the section is the
 // drill's length. The sharp is spelt out because "#" in a file name breaks a link.
-const TAKE_MODES={full:{part:"full",bars:0},chorus:{part:"chorus",bars:12},drill8:{part:"8bars",bars:8},drill4:{part:"4bars",bars:4}};
+const TAKE_MODES={section:{part:"section",bars:0},full:{part:"full",bars:0},chorus:{part:"chorus",bars:12},drill8:{part:"8bars",bars:8},drill4:{part:"4bars",bars:4}};
 const TAKE_FOCUS={timing:"timing",clean:"clean notes",bends:"bends in tune",phrasing:"phrasing and space",vibrato:"vibrato",through:"getting through without stopping"};
 const slug=v=>String(v).replace(/#|\u266f/g,"sharp").replace(/\u266d/g,"flat").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"take";
 function takeName(date,ext,key=state.key,bpm=state.bpm,info={}){
@@ -2309,8 +2309,13 @@ function takeName(date,ext,key=state.key,bpm=state.bpm,info={}){
 // This take's settings, read when it starts.
 function takeSettings(){
   const pick=(id,ok,dflt)=>{const v=document.getElementById(id).value;return ok(v)?v:dflt;};
-  return {mode:pick("recmode",v=>v in TAKE_MODES,"full"),focus:pick("recfocus",v=>v in TAKE_FOCUS,"timing"),
-    attempt:pick("recattempt",v=>v==="retest"||v==="cold","cold")};}
+  let mode=pick("recmode",v=>v in TAKE_MODES,"full");
+  const sec=state.pendingSection;state.pendingSection=null;
+  // "one section" needs a section: chosen from the song, else it is a full run-through
+  if(mode==="section"&&!sec)mode="full";
+  const out={mode,focus:pick("recfocus",v=>v in TAKE_FOCUS,"timing"),attempt:pick("recattempt",v=>v==="retest"||v==="cold","cold")};
+  if(mode==="section")Object.assign(out,{part:sec.name,section:sec});
+  return out;}
 // What the browser reports for output plus input delay, in ms, or 0 when it can't
 // say. You play to what you hear, and the input then lags again, so both count.
 function recLatencyMs(ac,input){
@@ -2480,9 +2485,14 @@ function toggleRecord(){
 function startTake(t,fromTrainer){
   t.phase="recording";t.fromTrainer=fromTrainer;t.date=t.date||new Date();t.t0=Date.now();
   t.key=state.key;t.bpm=state.bpm;t.markers=[];
-  const sg=!fromTrainer&&typeof songNow==="function"?songNow():null;
-  if(sg){t.key=sg.key;t.bpm=Math.round(sg.bpm*songs.player.playbackRate);
-    t.songPlay={offset:songs.player.currentTime,rate:songs.player.playbackRate,downbeat:sg.downbeat};}
+  // What the take is over: the song playing now, or the one about to start after its count-in.
+  const live=!fromTrainer&&typeof songNow==="function"?songNow():null;
+  const pend=!fromTrainer&&!live&&typeof songs!=="undefined"?songs.pending:null;
+  if(typeof songs!=="undefined")songs.pending=null;
+  const sg=live||(pend?pend.song:null);
+  if(sg){const rate=live?songs.player.playbackRate:pend.rate;
+    t.key=sg.key;t.bpm=Math.round(sg.bpm*rate);
+    t.songPlay={offset:live?songs.player.currentTime:pend.offset,rate,downbeat:sg.downbeat};}
   // the audio clock at the take's first sample: the downbeat's frame when armed
   {const ac=state.engine&&state.engine.context;
    t.acStart=ac?(t.startFrame!==undefined?t.startFrame/ac.sampleRate:ac.currentTime):undefined;}
@@ -4251,7 +4261,7 @@ BANDS.forEach(band=>{
     mk(row,{v},label,()=>{state.view=v;render();}));});
 [["name","Note names"],["interval","Intervals"],["none","Blank"]]
   .forEach(([l,t])=>mk("labels",{l},t,()=>{state.labelMode=l;render()}));
-[["off","Off"],["i","i"],["iv","iv"],["v","v"],["band","Follow band"]]
+[["off","Off"],["i","i"],["iv","iv"],["v","v"],["band","Follow backing"]]
   .forEach(([c,t])=>mk("chords",{c},t,()=>{state.chord=c==="off"?null:c;render()}));
 REGS.forEach(([r,t])=>mk("regs",{r},t,()=>{state.reg=r;state.blueLock=null;render()}));
 mk("extras",{},"♭5 blue note: off",function(){state.showB5=!state.showB5;render();});

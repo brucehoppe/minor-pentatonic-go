@@ -793,6 +793,21 @@
           <button id="songplay">Play song</button><button id="songstop">Stop song</button>
           <span id="songposition"></span>
         </div>
+        <div class="row">
+          <label>Chords <input id="songchords" maxlength="400" placeholder="Am | Dm | E7  (one bar each; repeats)" size="34"></label>
+          <span id="songchordnote" class="bandnote"></span>
+          <button id="songfindkey" title="Not sure of the key? The Over a song page walks you to the home note.">Not sure of the key? Find the home note</button>
+        </div>
+        <p class="tip">Enter the chords, then in any view turn Chord tones to <b>Follow backing</b>: the notes of each chord light up as the song plays, and the key buttons choose the pentatonic box for your solo.</p>
+        <h3 class="cx-more">Sections</h3>
+        <div id="songsections"></div>
+        <div class="row">
+          <label>Name <select id="secname"><option>Intro</option><option>Verse</option><option>Chorus</option><option>Solo</option><option>Bridge</option><option>Outro</option><option>Other</option></select></label>
+          <label>Start (s) <input id="secstart" type="number" min="0" step="0.01"></label><button id="secstartnow">Start is here</button>
+          <label>End (s) <input id="secend" type="number" min="0" step="0.01"></label><button id="secendnow">End is here</button>
+          <button id="secadd">Add section</button>
+          <select id="secform" aria-label="Build sections from a form"></select><button id="secbuild">Build</button>
+        </div>
         <p class="tip">Speed changes keep the pitch. Save tempo and downbeat changes before playing. Start the song, then use Record in the Play along bar. A–B practice loops use the browser player and may have a small gap.</p>
       </div>
       <p id="songstatus" role="status" aria-live="polite">Import an MP3, M4A or WAV to begin.</p>
