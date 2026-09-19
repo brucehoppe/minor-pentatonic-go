@@ -40,6 +40,12 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Frontend suite
         run: node --test tests/app.test.mjs
+      - name: Build script (host build, and a Windows cross-compile)
+        run: |
+          ./scripts/build.sh --skip-tests --out "$RUNNER_TEMP/host"
+          "$RUNNER_TEMP/host/minor-pentatonic" -version
+          ./scripts/build.sh --skip-tests --target windows-x64 --out "$RUNNER_TEMP/win"
+          test -s "$RUNNER_TEMP/win/minor-pentatonic.exe"
 
   windows-installer:
     name: Windows installer (install, run, uninstall)

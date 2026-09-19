@@ -212,6 +212,16 @@ go build -o minor-pentatonic .
 ./minor-pentatonic
 ```
 
+Or use the build scripts, which run the tests first and can cross-compile:
+
+| | macOS / Linux | Windows (PowerShell) |
+|---|---|---|
+| Build for this computer | `./scripts/build.sh` | `.\scripts\build.ps1` |
+| Another platform | `./scripts/build.sh --target windows-x64` (also `windows-arm64`, `macos-arm64`, `macos-x64`, `linux-x64`) | `.\scripts\build.ps1 -Arch arm64` |
+| Options | `--version 2026.09.19 --out ./out --skip-tests` | `-Version 2026.09.19 -Out .\out -SkipTests` |
+
+Each makes the one program file, with the web pages embedded. Packaging for release (the macOS app and disk image, the Windows ZIPs and checksums) is `scripts/release.sh`, described below, and installing is `scripts/install.sh` (macOS) or `scripts/install.ps1` (Windows).
+
 ## Distribution packages
 
 One script builds every consumer package:

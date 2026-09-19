@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- Build scripts: `scripts/build.sh` (macOS and Linux) and `scripts/build.ps1`
+  (Windows) build the program from source, run the tests first, and
+  cross-compile (`--target windows-x64`, `-Arch arm64`, and so on). CI builds
+  with `build.sh` on both operating systems.
 - Fixed: `install.sh --zip` (and `install.ps1 -ZipPath`) checked a ZIP against
   the first `SHA256SUMS-*.txt` in its folder, so a folder holding several
   releases, such as `dist/`, refused a good download. They now use the file that
