@@ -877,12 +877,24 @@ function renderLicks(){
       else map.set(k,{s,f:o+LR,ord:String(i+1),kind:noteAt(s,o+LR)===state.key?"root":"tone"});});
     return `<div class="card${l.g?" fromguide":""}"><h2>${l.t}<em>${l.e}</em></h2>${
       l.g?`<p class="badge">Practice guide</p>`:""}${fretboard([...map.values()],{w:44})}<pre>${tab(l.n,LR)}</pre>
-      <p class="tip">${l.tip.replace(/\$\{K\}/g,k)}</p></div>`;}).join("");
+      <p class="tip">${l.tip.replace(/\$\{K\}/g,k)}</p>
+      <p class="tip"><button data-hear="${LICKS.indexOf(l)}">Hear the model</button> then press Record in the Play along bar and play it back to yourself.</p></div>`;}).join("");
+  document.getElementById("licks").onclick=e=>{const d=e.target&&e.target.dataset;if(d&&d.hear!==undefined)hearLick(+d.hear);};
   document.querySelectorAll(".guidekey").forEach(b=>b.onclick=()=>{
     state.key=+b.dataset.k;stopDrone();state.blueLock=null;
     render();});
 }
 
+
+// The app's version of a lick, played first: the notes as written, in the key and register on
+// screen, at eighth notes at the current tempo. Bends, slides and vibrato are marked in the tab
+// but not sounded: the model gives you the pitches and the rhythm to check yourself against.
+function hearLick(i){
+  const l=LICKS[i],a=audio();
+  if(!l||!a)return 0;
+  const LR=fitRoot(l.n.map(e=>e[1])),gap=60/state.bpm/2;
+  l.n.forEach(([s,o],k)=>a.note(midiAt(s,o+LR),{when:k*gap,dur:Math.max(.3,gap*1.6),vol:.5}));
+  return l.n.length*gap;}
 
 // ---------- learning path ----------
 const PATH=[
@@ -2230,6 +2242,7 @@ const REC_ROW=`<div class="row" id="recrow">
   <button id="recmon" aria-pressed="false">Monitor input</button>
   <select id="recmix" aria-label="What to record"><option value="backing" selected>Guitar + backing</option><option value="guitar">Guitar only</option></select>
   <label style="font-size:12px;display:flex;gap:5px;align-items:center"><input type="checkbox" id="recarm">Start on bar 1 of the 12-bar trainer</label>
+  <span id="recadvice" style="font-size:11.5px;opacity:.75;flex-basis:100%;line-height:1.5">With backing, wear headphones: through speakers the backing leaks into your guitar input, muddying the take and the timing reading. A wired pair, or the interface's headphone output, keeps the delay lowest.</span>
   <span class="lbl" style="flex-basis:100%;margin-top:4px">This take</span>
   <select id="recmode" aria-label="Take length"><option value="full" selected>Full run-through (no limit)</option><option value="chorus">One 12-bar chorus</option><option value="drill8">Drill: 8 bars</option><option value="drill4">Drill: 4 bars</option><option value="section" disabled>One song section (add sections to a song first)</option></select>
   <select id="recfocus" aria-label="Focus: pick one"><option value="timing" selected>Focus: timing</option><option value="clean">Focus: clean notes</option><option value="bends">Focus: bends in tune</option><option value="phrasing">Focus: phrasing and space</option><option value="vibrato">Focus: vibrato</option><option value="through">Focus: getting through without stopping</option></select>
@@ -2353,6 +2366,8 @@ function inputWanted(mono){
   // Stereo whenever Web Audio will handle it: the meter watches both inputs, and a
   // take picks its channel out of that. So the channel choice never reopens it.
   want.channelCount={ideal:mono?1:2};
+  // as little buffering as the browser will give: a guitar heard late is a guitar played late
+  want.latency={ideal:0};
   return want;}
 // ---- the shared input ----
 // The recorder and the monitor share one open input, and it stays open for a few

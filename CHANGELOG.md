@@ -5,6 +5,13 @@ a second release on the same day.
 
 ## Unreleased
 
+- Hear the model: every lick has a button that plays it first, as written, at
+  the current tempo. Practice theory gains a card and a reference for Hewitt
+  (2001, DOI 10.2307/3345614), stating what the study did and did not show (82
+  band students; a model helped only alongside self-evaluation; not intonation,
+  technique or tempo). The microphone is asked for `latency: 0`, the Record row
+  advises headphones with backing, and a test streams a ten-minute run-through
+  to storage in 600 chunks and gets a whole WAV back.
 - Timing feedback: onsets are read from the guitar-only signal (a 16 ms energy
   window and energy flux, timed to the sample) and set against the beat with the
   latency calibration taken off. The headline is consistency, the spread in ms,

@@ -2683,6 +2683,7 @@ test("a guitar-only take asks for an unprocessed mono input and records it at 96
   assert.equal(want.noiseSuppression, false);
   assert.equal(want.autoGainControl, false);
   assert.equal(want.channelCount.ideal, 2, "opened in stereo; Web Audio makes the take mono");
+  assert.equal(want.latency.ideal, 0, "as little buffering as the browser will give");
   const r = rec.recorders[0];
   assert.equal(r.opts.audioBitsPerSecond, 96000);
   assert.equal(r.opts.mimeType, "audio/webm;codecs=opus");
@@ -5443,4 +5444,64 @@ test("takes are aligned by section: each starts at its own copy of the section",
   // take a began at song time 10, take b at 25: the Chorus (30 s) is 20 s into a and 5 s into b
   assert.equal(ea.currentTime, 20); assert.equal(eb.currentTime, 5);
   rt.document.getElementById("abstop").onclick();
+});
+
+// ---------- the model, the evidence for it, and a very long take ----------
+test("Practice theory cites Hewitt (2001) for model + self-evaluation, and says what it did and did not show", () => {
+  assert.match(html, /Hewitt \(2001\)[\s\S]{0,60}junior-high band students/);
+  assert.match(html, /model on its own made no difference/);
+  assert.match(html, /intonation,\s+technique and tempo did not improve more/);
+  assert.match(html, /82 students on band instruments, so it is\s+indirect evidence for guitar/);
+  assert.match(html, /Journal of Research in Music Education<\/i> 49\(4\), 307–322 \(DOI 10\.2307\/3345614\)/);
+});
+
+test("every lick can be heard first, as written, at the current tempo", () => {
+  const { app, document, audio } = makeRuntime();
+  app.setBpm(120);
+  navButton(document, "licks").click();
+  const licks = document.getElementById("licks").innerHTML;
+  assert.equal((licks.match(/data-hear="\d+"/g) || []).length, app.LICKS.length, "a Hear the model button on every lick");
+  assert.match(licks, /Hear the model<\/button> then press Record in the Play along bar/);
+  const before = audio.oscillators;
+  document.getElementById("licks").onclick({ target: { dataset: { hear: "1" } } });     // Rolling triplets: 7 notes
+  assert.equal(audio.oscillators - before, 7 * 3, "a plucked note is three oscillators");
+  const times = audio.startTimes.slice(-21).filter((t, i) => i % 3 === 0);
+  assert.ok(times.every((t, i) => Math.abs(t - i * 0.25) < 1e-9), "eighth notes at 120 bpm: 0.25 s apart, on the audio clock");
+  assert.equal(document.getElementById("licks").onclick({ target: { dataset: {} } }), undefined, "other clicks do nothing");
+  const none = makeRuntime({ audio: false });
+  navButton(none.document, "licks").click();
+  none.document.getElementById("licks").onclick({ target: { dataset: { hear: "0" } } });   // no audio at all: no crash
+});
+
+test("the Record row advises headphones when there is backing", () => {
+  const { app } = makeRuntime();
+  assert.match(app.REC_ROW, /With backing, wear headphones: through speakers the backing leaks into your guitar input/);
+});
+
+test("a full song run-through has no length limit: ten minutes streams to storage in chunks and comes back whole", async () => {
+  const rt = makeRuntime({ media: true, capture: true });
+  rt.document.getElementById("recmix").value = "guitar";
+  rt.document.getElementById("recmode").value = "full";
+  rt.document.getElementById("recbtn").click();
+  await settle();
+  const node = rt.worklets.at(-1), block = new Float32Array(48000).fill(0.1);
+  for (let s = 0; s < 600; s++) node.feedRaw(block);        // ten minutes, a second at a time
+  await rt.app.getRec().capture.writes;                     // the storage queue drains as chunks arrive
+  assert.equal(rt.idb.stores.get("chunks").rows.size, 600, "written a second at a time as it goes, not held in memory");
+  const meta = [...rt.idb.stores.get("takes").rows.values()][0].v;
+  assert.equal(meta.frames, 600 * 48000); assert.equal(meta.status, "recording", "and a crash now would keep all of it");
+  assert.match(rt.document.getElementById("recmsg").textContent, /Recording guitar only · 0:0\d/, "no limit is announced: it just records");
+  rt.document.getElementById("recbtn").click();
+  await settle(); await settle(); await settle();
+  const take = rt.app.getTake();
+  assert.equal(take.wav.size, 44 + 600 * 48000 * 2, "a 55 MB WAV, assembled from the chunks");
+  assert.equal(rt.app.lib.takes.length + (await rt.app.libList()).length > 0, true);
+  const [kept] = await rt.app.libList();
+  assert.ok(Math.abs(kept.seconds - 600) < 0.01, `kept as ${kept.seconds} s`);
+  await rt.document.getElementById("recdlw").onclick();
+  await settle();
+  const wav = await rt.rec.urls.at(-1).b.arrayBuffer();
+  assert.equal(wav.byteLength, 44 + 600 * 48000 * 2);
+  assert.equal(new DataView(wav).getUint32(40, true), 600 * 48000 * 2, "the header says what the data is");
+  assert.equal(rt.idb.stores.get("chunks").rows.size, 0, "downloaded: the chunks are dropped");
 });
