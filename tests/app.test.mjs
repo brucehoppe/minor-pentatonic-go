@@ -338,7 +338,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,webmWithDuration,tapTempo,getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,webmWithDuration,tapTempo,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars]}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -3852,7 +3852,8 @@ test("band settings: the swing label, 12/8, and remembering them safely", () => 
   for (const bad of ['{"swing":2,"bass":"<b>","on":"yes"}', "{", "[]"]) {
     const r = makeRuntime({ stored: { "practice-desk-band": bad } });
     sameShape({ ...r.app.getBand() }, { on: true, swing: 2 / 3, bass: "walk", ride: false,
-      mix: { drums: { vol: 0.8, on: true }, bass: { vol: 0.8, on: true }, keys: { vol: 0.55, on: true }, guitar: { vol: 0.55, on: true } } }, `${bad}: defaults`);
+      mix: { drums: { vol: 0.8, on: true }, bass: { vol: 0.8, on: true }, keys: { vol: 0.55, on: true }, guitar: { vol: 0.55, on: true } },
+      practice: { choruses: 0, ladder: false, ladderTo: 140, keys: "", drill: "" } }, `${bad}: defaults`);
   }
 });
 
@@ -3908,4 +3909,115 @@ test("the mixer sets each part's level live, and muting leaves the band's timing
   assert.equal(odd.app.getBand().mix.bass.vol, 0.8, "an impossible volume is ignored");
   assert.equal(odd.app.getBand().mix.bass.on, true);
   assert.equal(odd.app.getBand().mix.keys.vol, 0.2, "a good one is kept");
+});
+
+// ---------- the backing band: practice modes ----------
+// Runs the trainer through its count-in and one chorus, noting which parts the band
+// booked in each of the twelve bars. The band books a bar's events while the trainer
+// is on that bar, so state.trainerBar says which bar each one belongs to.
+function runChorus(rt, setup = () => {}) {
+  const { app, document, advance } = rt;
+  setup(document);
+  const bars = Array.from({ length: 12 }, () => new Set());
+  app.toggleTrainer();
+  const rig = app.getBandRig(), play = rig.voices.play;
+  rig.voices.play = (e, t) => { const b = app.getState().trainerBar; if (b >= 0) bars[b].add(e.part); return play(e, t); };
+  for (let i = 0; i < 4 + 47; i++) advance(60 / app.getState().bpm);   // up to bar 12, beat 4
+  return bars;
+}
+
+test("practice: loop N choruses, then stop by itself", () => {
+  const rt = makeRuntime();
+  rt.document.getElementById("choruses").onchange({ target: { value: "2" } });
+  rt.app.toggleTrainer();
+  let steps = 0;
+  while (rt.app.getState().trainerTimer && steps++ < 400) rt.advance(60 / rt.app.getState().bpm);
+  assert.equal(rt.app.getState().trainerTimer, null, "it stopped");
+  assert.equal(steps, 4 + 2 * 48, "four beats' count-in, two choruses of 48 beats, stopping on the next downbeat");
+  assert.equal(rt.app.getBandRig(), null);
+});
+
+test("practice: the tempo ladder adds 5 bpm each chorus, up to the target, without a restart", () => {
+  const rt = makeRuntime();
+  rt.app.setBpm(100);
+  rt.document.getElementById("ladderto").onchange({ target: { value: "110" } });
+  rt.document.getElementById("ladderon").onchange({ target: { checked: true } });
+  const starts = [];
+  rt.app.toggleTrainer();
+  for (let i = 0; i < 4 + 48 * 3; i++) {
+    const s = rt.app.getState();
+    if (s.trainerBar === 0 && s.trainerBeat === 1) starts.push(s.bpm);
+    rt.advance(60 / s.bpm);
+  }
+  sameShape([...new Set(starts)], [100, 105, 110], "100, then 105, then 110 and no further");
+  assert.equal(rt.document.getElementById("bpmv").textContent, "110 bpm");
+  assert.equal(rt.app.getState().trainerCount, 0, "never counted in again");
+  rt.app.toggleTrainer();
+});
+
+test("practice: the key moves up a 4th each chorus, or to a different random key", () => {
+  const fourths = makeRuntime();
+  fourths.app.setKey(9);
+  fourths.document.getElementById("keycycle").onchange({ target: { value: "fourth" } });
+  const keys = [];
+  fourths.app.toggleTrainer();
+  for (let i = 0; i < 4 + 48 * 3; i++) { const s = fourths.app.getState(); if (s.trainerBar === 0 && s.trainerBeat === 1) keys.push(s.key); fourths.advance(60 / s.bpm); }
+  sameShape([...new Set(keys)], [9, 2, 7], "A, then D, then G");
+  fourths.app.toggleTrainer();
+  const rnd = makeRuntime({ deterministic: true });
+  rnd.app.setKey(9);
+  rnd.document.getElementById("keycycle").onchange({ target: { value: "random" } });
+  rnd.app.toggleTrainer();
+  const seen = [];
+  for (let i = 0; i < 4 + 48 * 3; i++) { const s = rnd.app.getState(); if (s.trainerBar === 0 && s.trainerBeat === 1) seen.push(s.key); rnd.advance(60 / s.bpm); }
+  const distinct = [...new Set(seen)];
+  assert.ok(distinct.every((k, i) => i === 0 || k !== distinct[i - 1]), "never the same key twice running");
+  assert.equal(distinct.length, 3);
+  rnd.app.toggleTrainer();
+});
+
+test("practice: drop-out silences the band for two bars somewhere after bar 1; trade fours leaves drums only in bars 5–8", () => {
+  const drop = makeRuntime({ deterministic: true });
+  const bars = runChorus(drop, d => d.getElementById("drill").onchange({ target: { value: "dropout" } }));
+  const silent = bars.map((b, i) => b.size ? null : i).filter(i => i !== null);
+  assert.equal(silent.length, 2, "exactly two bars");
+  assert.equal(silent[1], silent[0] + 1, "next to each other");
+  assert.ok(silent[0] >= 1, "never bar 1");
+  drop.app.toggleTrainer();
+
+  const fours = makeRuntime();
+  const fbars = runChorus(fours, d => d.getElementById("drill").onchange({ target: { value: "fours" } }));
+  fbars.forEach((parts, i) => {
+    if (i >= 4 && i <= 7) sameShape([...parts], ["drums"], `bar ${i + 1}: drums only, your four`);
+    else assert.ok(parts.has("bass") && parts.has("keys"), `bar ${i + 1}: the band`);
+  });
+  fours.app.toggleTrainer();
+});
+
+test("Follow band: the chord-tone overlay follows whatever chord the trainer is playing", () => {
+  const { app, document, advance } = makeRuntime();
+  app.setKey(9);   // A: the classic form is A7, D7, E7
+  navButton(document, "boxes").click();   // a view that shows chord tones
+  document.getElementById("chords").children.find(b => b.dataset.c === "band").click();
+  assert.equal(app.getState().chord, "band");
+  app.toggleTrainer();
+  for (let i = 0; i < 5; i++) advance(60 / app.getState().bpm);   // count-in and bar 1
+  sameShape(app.getLive().chord, { pc: 9, intervals: [0, 4, 7, 10] }, "A7 in bar 1");
+  assert.equal(app.isChordTone(1), true, "C#, the 3rd of A7, is lit");
+  assert.equal(app.isChordTone(0), false, "C is not");
+  for (let i = 0; i < 16; i++) advance(60 / app.getState().bpm);   // into bar 5
+  sameShape(app.getLive().chord, { pc: 2, intervals: [0, 4, 7, 10] }, "D7 in bar 5");
+  assert.equal(app.isChordTone(0), true, "C, D7's 7th, is lit now");
+  app.toggleTrainer();
+});
+
+test("practice settings are remembered, and odd stored values are ignored", () => {
+  const { app, document } = makeRuntime();
+  document.getElementById("choruses").onchange({ target: { value: "4" } });
+  document.getElementById("drill").onchange({ target: { value: "fours" } });
+  document.getElementById("keycycle").onchange({ target: { value: "<script>" } });
+  const saved = JSON.parse(app.getState().storage.getItem("practice-desk-band")).practice;
+  sameShape(saved, { choruses: 4, ladder: false, ladderTo: 140, keys: "", drill: "fours" });
+  const odd = makeRuntime({ stored: { "practice-desk-band": '{"practice":{"choruses":3,"ladderTo":999,"drill":"fours"}}' } });
+  sameShape({ ...odd.app.getBand().practice }, { choruses: 0, ladder: false, ladderTo: 140, keys: "", drill: "fours" });
 });

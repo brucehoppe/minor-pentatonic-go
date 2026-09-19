@@ -38,7 +38,8 @@ const state={
   trainerTimer:null, trainerBar:-1, trainerBeat:0, trainerCount:4,
   // the backing band (web/band.js): its settings, remembered, and the live rig of
   // gains its parts play into while the trainer runs
-  band:{on:true, swing:2/3, bass:"walk", ride:false, mix:bandMixDefaults()}, bandRig:null, taps:[],
+  band:{on:true, swing:2/3, bass:"walk", ride:false, mix:bandMixDefaults(), practice:bandPracticeDefaults()}, bandRig:null, taps:[],
+  trainerChorus:0, trainerEnding:false, dropBars:[], liveChord:null, liveChordKey:"",
   rhythm:[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0], rhythmTimer:null, rhythmStep:0,
   // audio - the chosen engine, why there is none, and what is sounding
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
@@ -101,7 +102,11 @@ function withB5(notes){if(!state.showB5||!notes.length)return notes;
   const strings=[...new Set(notes.map(n=>n.s))];
   return notes.concat(b5Notes(lo,hi,strings).filter(n=>!have.has(n.s+":"+n.f)));}
 const CHORDS={i:[0,3,7],iv:[5,8,0],v:[7,10,2]};
-const isChordTone=pc=>state.chord?CHORDS[state.chord].includes(deg(pc)):false;
+// "band" follows the chord the 12-bar trainer is playing, whatever it is (IIm7, VI7,
+// a diminished passing chord), rather than one of the key's i, iv and v.
+const isChordTone=pc=>{
+  if(state.chord==="band"){const c=state.liveChord;return !!c&&c.intervals.includes(((pc-c.pc)%12+12)%12);}
+  return state.chord?CHORDS[state.chord].includes(deg(pc)):false;};
 function boxNotes(b,R=boxRoot(b)){const o=[];b.off.forEach((p,s)=>p.forEach(x=>o.push({s,f:x+R})));return o;}
 const kindOf=n=>noteAt(n.s,n.f)===state.key?"root":"tone";
 function dotText(n){
@@ -1428,6 +1433,9 @@ function clearLog(){writeLog([]);renderLog();}
 const BAND_KEY="practice-desk-band";
 // The mixer: a volume and an on/off per part, so you can drop the bass or the rhythm
 // guitar and play that part yourself.
+// Practice modes for the trainer, applied each chorus: how many choruses (0: loop
+// forever), a tempo ladder, a key cycle, and a drill (drop-out bars or trade fours).
+function bandPracticeDefaults(){return {choruses:0,ladder:false,ladderTo:140,keys:"",drill:""};}
 function bandMixDefaults(){return {drums:{vol:.8,on:true},bass:{vol:.8,on:true},keys:{vol:.55,on:true},guitar:{vol:.55,on:true}};}
 // The band on its own peaked near full scale in Chrome; this sits it about 4 dB
 // down, under your guitar, with room for the rest of the desk's sounds.
@@ -1442,7 +1450,14 @@ function readBand(){
     if(v.mix&&typeof v.mix==="object")Object.keys(state.band.mix).forEach(p=>{
       const m=v.mix[p];if(!m||typeof m!=="object")return;
       if(typeof m.vol==="number"&&m.vol>=0&&m.vol<=1)state.band.mix[p].vol=m.vol;
-      if(typeof m.on==="boolean")state.band.mix[p].on=m.on;});}
+      if(typeof m.on==="boolean")state.band.mix[p].on=m.on;});
+    const pr=v.practice,P=state.band.practice;
+    if(pr&&typeof pr==="object"){
+      if([0,1,2,4,8].includes(pr.choruses))P.choruses=pr.choruses;
+      if(typeof pr.ladder==="boolean")P.ladder=pr.ladder;
+      if(Number.isInteger(pr.ladderTo)&&pr.ladderTo>=45&&pr.ladderTo<=220)P.ladderTo=pr.ladderTo;
+      if(["","fourth","random"].includes(pr.keys))P.keys=pr.keys;
+      if(["","dropout","fours"].includes(pr.drill))P.drill=pr.drill;}}
   catch(e){/* nothing stored, or unreadable: keep the defaults */}}
 function writeBand(){try{window.localStorage.setItem(BAND_KEY,JSON.stringify(state.band));}catch(e){/* this visit only */}}
 const bandReady=()=>typeof Band!=="undefined"&&Band&&typeof Band.beatEvents==="function";
@@ -1474,7 +1489,35 @@ function bandBeat(when,o){
   const r=state.bandRig;if(!r)return;
   const beatSec=60/state.bpm,t0=r.ac.currentTime+when;
   Band.beatEvents({feel:document.getElementById("groove").value,swing:state.band.swing,bass:state.band.bass,
-    ride:state.band.ride,beatSec,...o}).forEach(e=>r.voices.play(e,t0+e.at*beatSec));}
+    ride:state.band.ride,beatSec,...o}).forEach(e=>{if(!o.only||e.part===o.only)r.voices.play(e,t0+e.at*beatSec);});}
+// The tempo readout and slider, without restarting anything (the ladder changes tempo
+// mid-run; setBpm is for a person changing it).
+function showBpm(v){document.getElementById("bpm").value=v;document.getElementById("bpmv").textContent=v+" bpm";}
+// A new chorus is starting, when seconds from now. Applies the practice modes; false
+// means the last chorus has been played and nothing more should be booked.
+function startChorus(when,first){
+  const P=state.band.practice;
+  if(!first){
+    if(P.choruses&&state.trainerChorus>P.choruses){
+      state.trainerEnding=true;
+      atBeat(when,()=>{if(state.trainerTimer)stopTrainer();});
+      return false;}
+    if(P.ladder&&state.bpm<P.ladderTo){const v=Math.min(P.ladderTo,state.bpm+5);state.bpm=v;atBeat(when,()=>showBpm(v));}
+    if(P.keys==="fourth")state.key=(state.key+5)%12;
+    // a different key every time: one of the other eleven
+    else if(P.keys==="random")state.key=(state.key+1+Math.floor(Math.random()*11))%12;
+    if(P.keys)atBeat(when,render);}
+  // two bars alone, somewhere after bar 1 — a different place each chorus
+  state.dropBars=P.drill==="dropout"?(b=>[b,b+1])(1+Math.floor(Math.random()*10)):[];
+  return true;}
+// What the readout adds for a practice mode, in bar (0–11).
+function practiceNote(bar){
+  const P=state.band.practice,parts=[];
+  if(state.dropBars.includes(bar))parts.push("band out: keep time");
+  else if(P.drill==="fours"&&bar>=4&&bar<=7)parts.push("your four");
+  if(P.choruses)parts.push(`chorus ${Math.min(state.trainerChorus,P.choruses)} of ${P.choruses}`);
+  else if(state.trainerChorus>1)parts.push(`chorus ${state.trainerChorus}`);
+  return parts.length?" · "+parts.join(" · "):"";}
 // Tap tempo: the average of the last few taps, if they come steadily enough.
 function tapTempo(now=Date.now()){
   const taps=state.taps.filter(t=>now-t<2500);taps.push(now);state.taps=taps.slice(-6);
@@ -1497,6 +1540,12 @@ function renderBandControls(){
   document.getElementById("bandon").setAttribute("aria-pressed",state.band.on);
   document.getElementById("bandbass").value=state.band.bass;
   document.getElementById("bandride").checked=state.band.ride;
+  const P=state.band.practice;
+  document.getElementById("choruses").value=String(P.choruses);
+  document.getElementById("ladderon").checked=P.ladder;
+  document.getElementById("ladderto").value=String(P.ladderTo);
+  document.getElementById("keycycle").value=P.keys;
+  document.getElementById("drill").value=P.drill;
   Object.entries(state.band.mix).forEach(([p,m])=>{
     document.getElementById("mix"+p).setAttribute("aria-pressed",m.on);
     document.getElementById("mix"+p+"v").value=String(Math.round(m.vol*100));});}
@@ -1603,7 +1652,7 @@ function renderTrainer(bar=state.trainerBar,beat=state.trainerBeat){const form=c
   document.getElementById("trainertarget").innerHTML=`Target tones for <b>${chordName(symbol)}</b>: ${targets}`;
   document.getElementById("formtip").textContent=form.tip;
   document.getElementById("formheard").textContent=form.heard;
-  document.getElementById("trainerreadout").textContent=bar<0?"ready":`bar ${bar+1} · beat ${beat+1}`;}
+  document.getElementById("trainerreadout").textContent=bar<0?"ready":`bar ${bar+1} · beat ${beat+1}`+practiceNote(bar);}
 function trainerSound(symbol,beat,when=0){
   const a=audio();if(!a)return;
   const c=chordInfo(symbol),pc=(state.key+c.root)%12,groove=document.getElementById("groove").value;
@@ -1612,29 +1661,36 @@ function trainerSound(symbol,beat,when=0){
   a.chord(hzs,{when,dur:hold,vol:beat===0?.06:.032});
   if(groove==="shuffle")a.chord(hzs,{when:when+(60/state.bpm)*2/3,dur:hold,vol:.018});}
 function trainerTick(when=0){const form=currentForm();
+  if(state.trainerEnding)return;
   if(state.trainerCount>0){const text=`count in · ${5-state.trainerCount}`;
     if(state.bandRig)bandBeat(when,{countIn:true,beat:4-state.trainerCount});
     else trainerSound(symbolAt(form.chords[0],0),4-state.trainerCount,when);
     state.trainerCount--;
     atBeat(when,()=>{if(state.trainerTimer)document.getElementById("trainerreadout").textContent=text;});return;}
-  if(state.trainerBar<0)state.trainerBar=0;
+  if(state.trainerBar<0){state.trainerBar=0;state.trainerChorus=1;startChorus(when,true);}
+  else if(state.trainerBar===0&&state.trainerBeat===0){state.trainerChorus++;if(!startChorus(when,false))return;}
   const bar=state.trainerBar,beat=state.trainerBeat;
   if(bar===0&&beat===0)recOnBarOne(when);
-  if(state.bandRig){
-    // a split bar's second chord arrives on beat 3, and its line starts from the root there
-    const entry=form.chords[bar],split=barSymbols(entry).length>1,c=chordInfo(symbolAt(entry,beat));
-    bandBeat(when,{beat,step:split&&beat>=2?beat-2:beat,chord:{pc:(state.key+c.root)%12,intervals:c.intervals}});}
-  else trainerSound(symbolAt(form.chords[bar],beat),beat,when);
+  // a split bar's second chord arrives on beat 3, and its line starts from the root there
+  const entry=form.chords[bar],split=barSymbols(entry).length>1,c=chordInfo(symbolAt(entry,beat));
+  const chord={pc:(state.key+c.root)%12,intervals:c.intervals},chordKey=chord.pc+":"+c.kind;
+  if(chordKey!==state.liveChordKey){
+    state.liveChordKey=chordKey;
+    atBeat(when,()=>{state.liveChord=chord;if(state.chord==="band"&&state.view!=="trainer")render();});}
+  const drop=state.dropBars.includes(bar),fours=state.band.practice.drill==="fours"&&bar>=4&&bar<=7;
+  if(drop){/* the band is out: you keep time */}
+  else if(state.bandRig)bandBeat(when,{beat,step:split&&beat>=2?beat-2:beat,chord,only:fours?"drums":null});
+  else if(!fours)trainerSound(symbolAt(entry,beat),beat,when);
   atBeat(when,()=>{if(state.trainerTimer)renderTrainer(bar,beat);});
   state.trainerBeat++;if(state.trainerBeat===4){state.trainerBeat=0;state.trainerBar=(state.trainerBar+1)%12;}}
 function stopTrainer(){if(state.trainerTimer){clearInterval(state.trainerTimer);state.trainerTimer=null;}
-  bandStop();
+  bandStop();state.trainerEnding=false;state.liveChordKey="";
   if(state.rec&&state.rec.fromTrainer)stopRecording();const b=document.getElementById("toggletrainer");
   if(b){b.textContent="Start with count-in";b.setAttribute("aria-pressed",false);}}
 function toggleTrainer(){if(state.trainerTimer){stopTrainer();return;}state.trainerCount=4;state.trainerBar=-1;state.trainerBeat=0;
   const b=document.getElementById("toggletrainer");b.textContent="Stop";b.setAttribute("aria-pressed",true);
-  bandStart();
-  state.trainerTimer=beatLoop(60/state.bpm,trainerTick);}
+  bandStart();state.trainerEnding=false;state.trainerChorus=0;state.dropBars=[];state.liveChordKey="";
+  state.trainerTimer=beatLoop(()=>60/state.bpm,trainerTick);}
 function resetTrainer(){stopTrainer();state.trainerBar=-1;state.trainerBeat=0;state.trainerCount=4;renderTrainer();}
 
 // ---------- rhythm and phrasing generator ----------
@@ -2009,16 +2065,19 @@ function audioOff(dead) {
 //
 // Returns an interval id, so clearInterval stops it like any other loop. The
 // compatibility engine has no clock to book against, so it keeps one timer per beat.
+// stepSec may be a function, read again for every beat: the 12-bar trainer's tempo
+// ladder speeds up between choruses without restarting the loop.
 function beatLoop(stepSec, onBeat) {
+  const step = typeof stepSec === "function" ? stepSec : () => stepSec;
   const a = audio();
-  if (!a || !a.now) { onBeat(0); return setInterval(() => onBeat(0), stepSec * 1000); }
+  if (!a || !a.now) { onBeat(0); return setInterval(() => onBeat(0), step() * 1000); }
   let next = a.now();
   const pump = () => {
     const now = a.now();
     const ahead = typeof document !== "undefined" && document.hidden ? 1.5 : .12;
     // After a long stall, carry on from now rather than firing every missed beat at once.
-    if (next < now - stepSec) next = now;
-    while (next < now + ahead) { onBeat(Math.max(0, next - now)); next += stepSec; }
+    if (next < now - step()) next = now;
+    while (next < now + ahead) { onBeat(Math.max(0, next - now)); next += step(); }
   };
   pump();
   return setInterval(pump, 25);
@@ -3901,7 +3960,7 @@ BANDS.forEach(band=>{
     mk(row,{v},label,()=>{state.view=v;render();}));});
 [["name","Note names"],["interval","Intervals"],["none","Blank"]]
   .forEach(([l,t])=>mk("labels",{l},t,()=>{state.labelMode=l;render()}));
-[["off","Off"],["i","i"],["iv","iv"],["v","v"]]
+[["off","Off"],["i","i"],["iv","iv"],["v","v"],["band","Follow band"]]
   .forEach(([c,t])=>mk("chords",{c},t,()=>{state.chord=c==="off"?null:c;render()}));
 REGS.forEach(([r,t])=>mk("regs",{r},t,()=>{state.reg=r;state.blueLock=null;render()}));
 mk("extras",{},"♭5 blue note: off",function(){state.showB5=!state.showB5;render();});
@@ -3992,6 +4051,16 @@ Object.keys(state.band.mix).forEach(p=>{
   document.getElementById("mix"+p).onclick=()=>{state.band.mix[p].on=!state.band.mix[p].on;writeBand();applyBandMix();renderBandControls();};
   document.getElementById("mix"+p+"v").oninput=e=>{state.band.mix[p].vol=Math.min(1,Math.max(0,(+e.target.value)/100));
     writeBand();applyBandMix();};});
+const practiceSet=(k,v)=>{state.band.practice[k]=v;writeBand();renderBandControls();};
+document.getElementById("choruses").onchange=e=>practiceSet("choruses",[0,1,2,4,8].includes(+e.target.value)?+e.target.value:0);
+document.getElementById("ladderon").onchange=e=>{
+  const P=state.band.practice;
+  if(e.target.checked&&P.ladderTo<=state.bpm)P.ladderTo=Math.min(220,Math.ceil((state.bpm+20)/5)*5);
+  practiceSet("ladder",!!e.target.checked);};
+document.getElementById("ladderto").onchange=e=>{const v=Math.round(+e.target.value/5)*5;
+  practiceSet("ladderTo",Math.min(220,Math.max(45,Number.isFinite(v)?v:140)));};
+document.getElementById("keycycle").onchange=e=>practiceSet("keys",["fourth","random"].includes(e.target.value)?e.target.value:"");
+document.getElementById("drill").onchange=e=>practiceSet("drill",["dropout","fours"].includes(e.target.value)?e.target.value:"");
 renderBandControls();
 // The form menu is built from BLUES_FORMS, grouped by family, so adding a form up
 // there is the only edit needed to offer it here.

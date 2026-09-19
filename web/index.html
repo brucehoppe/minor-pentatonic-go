@@ -785,6 +785,14 @@
         <label class="bandctl"><input type="checkbox" id="bandride"> Ride cymbal</label>
         <button id="taptempo" title="Tap four times on the beat">Tap tempo</button>
       </div>
+      <div class="row" id="practicerow">
+        <span class="lbl">Practice</span>
+        <select id="choruses" aria-label="How many choruses"><option value="0">Loop forever</option><option value="1">1 chorus</option><option value="2">2 choruses</option><option value="4">4 choruses</option><option value="8">8 choruses</option></select>
+        <label class="bandctl"><input type="checkbox" id="ladderon"> Tempo ladder: +5 a chorus, up to</label>
+        <input type="number" id="ladderto" min="45" max="220" step="5" value="140" aria-label="Tempo ladder target, bpm"><span class="bandnote">bpm</span>
+        <select id="keycycle" aria-label="Key each chorus"><option value="">Same key</option><option value="fourth">Up a 4th each chorus</option><option value="random">Random key each chorus</option></select>
+        <select id="drill" aria-label="Drill"><option value="">Band all the way</option><option value="dropout">Drop-out: 2 bars alone</option><option value="fours">Trade fours</option></select>
+      </div>
       <div class="row" id="mixrow">
         <span class="lbl">Mix</span>
         <span class="mixpart"><button id="mixdrums" aria-pressed="true">Drums</button><input type="range" id="mixdrumsv" min="0" max="100" value="80" aria-label="Drums volume"></span>
