@@ -786,7 +786,7 @@ function renderBlues(){
       bt.innerHTML="Every pentatonic note on the neck, plus every <b>♭5</b> as a dashed dot. The blues boxes below are slices of this. Isolate one to see where it repeats — each shape comes back twelve frets away, so a lick learned once is available twice. <b>Tap any dot to hear it.</b>";}
     else{const z=ZONES[state.blueLock];
       if(z){ml.textContent=`Whole neck — ${z.t} isolated`;bt.innerHTML=z.tip;}
-      else{const n=+state.blueLock.slice(3),b=BOXES[n-1],fl=b.off.flat();
+      else{const n=+state.blueLock.slice(3),b=BOXES[n-1],fl=b.off.flat(),R=boxRoot(b);
         ml.textContent=`Whole neck — Box ${n} isolated`;
         bt.innerHTML=`<b>Box ${n}, fret ${Math.min(...fl)+R}–${Math.max(...fl)+R}</b> and again an octave either side. ${b.tip} The dashed ♭5s inside it are the blues notes available without leaving the shape.`;}}
     document.querySelectorAll("#bluesfocus button").forEach(b=>
