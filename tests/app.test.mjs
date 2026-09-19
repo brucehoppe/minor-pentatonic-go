@@ -22,6 +22,7 @@ const lessonScript = readFileSync(new URL("../web/seven-licks.js", import.meta.u
 const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-explorer.js"]
   .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
+const songsScript = readFileSync(new URL("../web/songs.js", import.meta.url), "utf8");
 
 class Element {
   constructor(id = "", tagName = "div") {
@@ -131,6 +132,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
       audio.splitters = [...(audio.splitters ?? []), sp]; return sp; }
     createMediaStreamSource(input) { const n = { input, connected: [], connect(d) { n.connected.push(d); },
       disconnect() { n.connected = []; } }; return n; }
+    createMediaElementSource(input) { const n=this.createMediaStreamSource(input); (audio.mediaSources??=[]).push(n);return n; }
     // decodes any take to one second of stereo 48 kHz
     decodeAudioData() { return Promise.resolve({ numberOfChannels: 2, sampleRate: 48000, duration: 1,
       getChannelData: () => new Float32Array(48000).fill(0.25) }); }
@@ -181,10 +183,15 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   const audioElements = [];
   class AudioEl {
     // firstSrc: what it was made to play (releasing an element clears its src)
-    constructor(src) { this.src = src; this.firstSrc = src; this.loop = false; this.volume = 1; audioElements.push(this); }
-    play() { this.playing = true; return Promise.resolve(); }
-    pause() { this.playing = false; }
-    addEventListener() {}
+    constructor(src) { this.listeners={}; this.src = src; this.firstSrc = src; this.loop = false; this.volume = 1;
+      this.paused=true;this.currentTime=0;this.duration=600;audioElements.push(this); }
+    set src(v) {this._src=v;if(v)queueMicrotask(()=>this.listeners.loadedmetadata?.());}
+    get src() {return this._src;}
+    play() { this.playing = true;this.paused=false; return Promise.resolve(); }
+    pause() { this.playing = false;this.paused=true; }
+    addEventListener(name,fn) {this.listeners[name]=fn;}
+    removeAttribute(name) {if(name==="src")this._src="";}
+    load() {}
   }
   let windowClosed = false;
   const window = audioMode === "web"
@@ -271,7 +278,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
           },
         };
         req.result = db;
-        if (!idb.stores.has("takes") && req.onupgradeneeded) req.onupgradeneeded();
+        if ((!idb.stores.has("takes")||!idb.stores.has("songs")) && req.onupgradeneeded) req.onupgradeneeded();
         req.onsuccess && req.onsuccess();
       });
       return req;
@@ -319,7 +326,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // with those scripts missing.
   if (explorers) for (const f of explorerScripts) vm.runInContext(f, context);
   if (band) vm.runInContext(bandScript, context);   // band:false is the page without web/band.js
-  vm.runInContext(script + `\n;globalThis.appTest={render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
+  vm.runInContext(songsScript, context);
+  vm.runInContext(script + `\n;globalThis.appTest={songs,validSong,songList,songImport,songSelect,songSave,songPlay,songStop,songBounds,songNow,songTap,render,renderLand,renderChart,renderMajor,renderModes,MODES,modeNotes,modeMap,currentMode,
     modeOrigins,renderNotes,neckNames,OCTAVES,NATURALS,
     renderTriads,TRIAD_KINDS,TRIAD_SETS,triadShapes,triadVoicing,midiAt,allTriadVoicings,
     renderInversions,PROGRESSIONS,voiceLead,travel,chordLabel,INVERSION,fretboard,
@@ -360,9 +368,65 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     closed: () => windowClosed };
 }
 
+const songFile = (name="My song.wav") => Object.assign(new Blob([new Uint8Array(100)],{type:"audio/wav"}),{name});
+test("songs import once, survive reopening, and reject damaged metadata", async () => {
+  const {app,idb,document}=makeRuntime({capture:true});
+  const s=await app.songImport(songFile());
+  assert.equal(app.songs.selected.title,"My song");
+  assert.equal(idb.stores.get("songfiles").rows.size,1);
+  assert.equal(app.songNow(),null,"selecting a song is not playing it");
+  document.getElementById("songtitle").value='<img src=x onerror=alert(1)>';
+  await app.songSave();
+  assert.match(document.getElementById("songlist").innerHTML,/&lt;img/);
+  assert.doesNotMatch(document.getElementById("songlist").innerHTML,/<img/);
+  const next=makeRuntime({capture:{store:idb.stores}});
+  await next.app.songList();await next.app.songSelect(s.id);
+  assert.equal(next.app.songs.selected.id,s.id);
+  assert.equal(next.app.songs.player.duration,600);
+  for(const patch of [{bpm:NaN},{duration:Infinity},{downbeat:-1},{key:12},{title:""}])
+    assert.equal(app.validSong({...s,...patch}),false);
+  await assert.rejects(app.songImport(songFile("bad.txt")),/Choose an MP3/);
+});
+test("songs mix through the backing bus, preserve pitch and carry playback metadata into takes", async () => {
+  const {app,document,audio,advance}=makeRuntime({capture:true,media:true});
+  const s=await app.songImport(songFile());
+  document.getElementById("songspeed").value="0.75";
+  document.getElementById("songcount").checked=false;
+  document.getElementById("songloop").checked=true;
+  document.getElementById("songloopa").value="10";
+  document.getElementById("songloopb").value="15";
+  await app.songPlay();await Promise.resolve();
+  const p=app.songs.player;
+  assert.equal(p.preservesPitch,true);assert.equal(p.playbackRate,.75);
+  assert.equal(audio.mediaSources.length,1);
+  assert.equal(audio.mediaSources[0].connected[0],app.songs.bus);
+  assert.equal(app.songNow().id,s.id);
+  await app.toggleRecord();
+  assert.equal(app.getRec().info.songId,s.id);
+  assert.equal(app.getRec().bpm,68);
+  assert.equal(app.getRec().songPlay.offset,10);
+  p.currentTime=15;advance(.1);assert.equal(p.currentTime,10,"loop returns to A");
+  app.stopRecording();app.silenceEverything();assert.equal(p.paused,true);
+  await app.songPlay();assert.equal(audio.mediaSources.length,1,"one source per audio element");
+  app.songStop();
+});
+test("song count-in can be cancelled and invalid loops never play", async () => {
+  const {app,document,advance}=makeRuntime({capture:true});
+  await app.songImport(songFile());
+  document.getElementById("songspeed").value="1";
+  document.getElementById("songcount").checked=true;
+  await app.songPlay();app.songStop();advance(10);
+  assert.equal(app.songs.player.paused,true);
+  document.getElementById("songloop").checked=true;
+  document.getElementById("songloopa").value="30";
+  document.getElementById("songloopb").value="20";
+  await app.songPlay();assert.equal(app.songs.player.paused,true);
+  assert.match(document.getElementById("songstatus").textContent,/Loop B/);
+});
+
 test("all revised navigation views render", () => {
   const { app, document } = makeRuntime();
-  const views = ["hijaz","open","path","song","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","theory","practice"];
+  const views = ["hijaz","open","path","song","songs","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","theory","practice"];
   for (const view of views) {
     navButton(document, view).click();
     assert.equal(app.getState().view, view);
@@ -3672,7 +3736,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {

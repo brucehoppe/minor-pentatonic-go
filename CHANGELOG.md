@@ -5,6 +5,11 @@ a second release on the same day.
 
 ## Unreleased
 
+- Songs view: import an MP3, M4A or WAV you own, kept in this browser and never
+  uploaded. Title, key, tempo (typed or tapped), first downbeat and form; play
+  at 100/90/75/50% with pitch kept, a four-beat count-in and an A–B loop. The
+  song plays through the audio graph so a take with backing records it, and a
+  take made over a song is named and linked to it, at the slowed tempo.
 - Latency calibration: a loopback beep measured to the sample, or tapping
   along to a click for headphones, plus a manual trim. The offset is stored
   with every take. Press M (or the big button) during a take to mark a

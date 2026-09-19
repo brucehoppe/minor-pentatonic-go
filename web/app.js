@@ -2472,11 +2472,14 @@ function toggleRecord(){
 function startTake(t,fromTrainer){
   t.phase="recording";t.fromTrainer=fromTrainer;t.date=t.date||new Date();t.t0=Date.now();
   t.key=state.key;t.bpm=state.bpm;t.markers=[];
+  const sg=!fromTrainer&&typeof songNow==="function"?songNow():null;
+  if(sg){t.key=sg.key;t.bpm=Math.round(sg.bpm*songs.player.playbackRate);
+    t.songPlay={offset:songs.player.currentTime,rate:songs.player.playbackRate,downbeat:sg.downbeat};}
   // the audio clock at the take's first sample: the downbeat's frame when armed
   {const ac=state.engine&&state.engine.context;
    t.acStart=ac?(t.startFrame!==undefined?t.startFrame/ac.sampleRate:ac.currentTime):undefined;}
   document.getElementById("recmark").hidden=false;document.getElementById("recmark").textContent="Mark a mistake (M)";
-  if(!t.info)t.info={...takeSettings(),trainer:fromTrainer};
+  if(!t.info)t.info={...takeSettings(),trainer:fromTrainer,song:sg?sg.title:undefined,songId:sg?sg.id:undefined};
   const bars=TAKE_MODES[t.info.mode].bars;
   beginCapture(t.capture,0,takeMeta(t));   // unless bar 1 already booked it to the sample
   t.recorder.start(1000);
@@ -2492,7 +2495,7 @@ function startTake(t,fromTrainer){
 function takeMeta(t){
   const info=t.info||{};
   return {name:takeName(t.date||new Date(),"wav",t.key,t.bpm,info),key:t.key,bpm:t.bpm,mono:t.mono,backing:t.backing,
-    mode:info.mode,focus:info.focus,attempt:info.attempt,calMs:state.cal?state.cal.ms:null,markers:[]};}
+    mode:info.mode,focus:info.focus,attempt:info.attempt,calMs:state.cal?state.cal.ms:null,markers:[],songId:info.songId||null};}
 // Called by trainerTick for every bar-1 downbeat, when seconds before it sounds. The
 // raw capture is told the downbeat's frame now, so the master starts on that exact
 // sample; the compressed recording starts when the beat sounds.
@@ -2561,10 +2564,14 @@ function takeDB(){
   if(state.takeDB)return state.takeDB;
   state.takeDB=new Promise((ok,fail)=>{
     if(typeof indexedDB==="undefined"||!indexedDB){fail(new Error("no IndexedDB"));return;}
-    const r=indexedDB.open(TAKE_DB,1);
+    // version 2 adds the song library: what is known about each song, and its audio
+    // file, kept apart so listing songs never loads a file
+    const r=indexedDB.open(TAKE_DB,2);
     r.onupgradeneeded=()=>{const db=r.result;
       if(!db.objectStoreNames.contains("takes"))db.createObjectStore("takes",{keyPath:"id"});
-      if(!db.objectStoreNames.contains("chunks"))db.createObjectStore("chunks",{keyPath:["take","seq"]});};
+      if(!db.objectStoreNames.contains("chunks"))db.createObjectStore("chunks",{keyPath:["take","seq"]});
+      if(!db.objectStoreNames.contains("songs"))db.createObjectStore("songs",{keyPath:"id"});
+      if(!db.objectStoreNames.contains("songfiles"))db.createObjectStore("songfiles",{keyPath:"id"});};
     r.onsuccess=()=>ok(r.result);
     r.onerror=()=>fail(r.error||new Error("storage unavailable"));});
   state.takeDB.catch(()=>{/* callers see the rejection */});
@@ -2720,10 +2727,10 @@ function fixTakeLength(kept,seconds){
 function finishTake(t){
   closeTake(t);
   document.getElementById("recmark").hidden=true;
-  if(t.capture&&t.capture.meta)t.capture.meta.markers=t.markers||[];
+  if(t.capture&&t.capture.meta){t.capture.meta.markers=t.markers||[];if(t.songPlay)t.capture.meta.songPlay=t.songPlay;}
   const blob=new Blob(t.chunks,{type:t.mime||"audio/webm"});
   if(state.recTake)releaseTake(state.recTake);
-  const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm,t.info),wav:null,info:t.info,markers:t.markers||[],calMs:state.cal?state.cal.ms:null};
+  const kept=state.recTake={blob,url:URL.createObjectURL(blob),name:takeName(t.date,recExt(t.mime),t.key,t.bpm,t.info),wav:null,info:t.info,markers:t.markers||[],calMs:state.cal?state.cal.ms:null,songId:(t.info&&t.info.songId)||null};
   state.rec=null;inputIdle();
   const secs=Math.round((Date.now()-t.t0)/1000);
   const marks=(t.markers||[]).length;
@@ -4101,6 +4108,7 @@ const VIEWS=[
   ["form",    "Song structure",   renderForm,       {band:"Playing"}],
   ["rhythm",  "Rhythm lab",       renderRhythm,     {band:"Playing"}],
 
+  ["songs",   "Songs",            renderSongs,      {band:"Practice"}],
   ["trainer", "12-bar trainer",   renderTrainer,    {band:"Practice",tools:"keys"}],
   ["theory",  "Practice theory",  renderTheory,     {band:"Practice"}],
   // The find-the-note board is deliberately blank — naming the dots would give the
@@ -4207,6 +4215,7 @@ document.getElementById("majorarrows").onclick=function(){state.majorArrows=!sta
 // live and answers no requests.
 function silenceEverything(){
   stopDrone();stopSolo();stopRhythm();stopTrainer();stopTimer();stopInvRun();stopRecording();stopMonitor();releaseInput();
+  if(typeof songStop==="function")songStop();
   if(state.clickTimer){clearInterval(state.clickTimer);state.clickTimer=null;}
 }
 function farewellPage(){

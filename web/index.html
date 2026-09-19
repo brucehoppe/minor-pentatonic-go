@@ -765,6 +765,40 @@
     </details>
   </section>
 
+  <section id="v-songs" hidden>
+    <div class="card">
+      <h2>Songs</h2>
+      <p class="tip">Learn the whole song, then spend time on the part that needs it. Import an audio file you own; it stays in this browser on this device.</p>
+      <div class="row">
+        <label>Import audio <input id="songfile" type="file" accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/wav"></label>
+        <label>Your songs <select id="songlist"><option value="">Choose a song</option></select></label>
+      </div>
+      <div id="songdetails" hidden>
+        <div class="row">
+          <label>Title <input id="songtitle" maxlength="200"></label>
+          <label>Key <select id="songkey"></select></label>
+          <label>BPM <input id="songbpm" type="number" min="40" max="200" value="90"></label>
+          <button id="songtap">Tap tempo</button>
+          <label>First downbeat (seconds) <input id="songdownbeat" type="number" min="0" step="0.001" value="0"></label>
+          <button id="songsetdownbeat">Downbeat is here</button>
+          <label>Form <input id="songform" maxlength="1000" placeholder="Intro, verse, chorus…"></label>
+          <button id="songsave">Save details</button>
+        </div>
+        <div class="row">
+          <label>Speed <select id="songspeed"><option value="1">100%</option><option value="0.9">90%</option><option value="0.75">75%</option><option value="0.5">50%</option></select></label>
+          <label><input id="songcount" type="checkbox" checked> Four-beat count-in</label>
+          <label><input id="songloop" type="checkbox"> A–B loop</label>
+          <label>A (seconds) <input id="songloopa" type="number" min="0" step="0.01"></label>
+          <label>B (seconds) <input id="songloopb" type="number" min="0" step="0.01"></label>
+          <button id="songplay">Play song</button><button id="songstop">Stop song</button>
+          <span id="songposition"></span>
+        </div>
+        <p class="tip">Speed changes keep the pitch. Save tempo and downbeat changes before playing. Start the song, then use Record in the Play along bar. A–B practice loops use the browser player and may have a small gap.</p>
+      </div>
+      <p id="songstatus" role="status" aria-live="polite">Import an MP3, M4A or WAV to begin.</p>
+    </div>
+  </section>
+
   <section id="v-trainer" hidden>
     <figure class="hero poster">
       <img src="assets/rats-of-chaos.jpg" width="720" height="580" loading="lazy"
@@ -855,6 +889,7 @@
 <script src="triads-explorer.js" defer></script>
 <script src="inversions-explorer.js" defer></script>
 <script src="band.js" defer></script>
+<script src="songs.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>
