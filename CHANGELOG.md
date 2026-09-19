@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- The two kaiju graphics are bigger so they no longer get lost: the masthead
+  guitarist is 320 px wide (was 182) and the Rats of Chaos poster on the 12-bar
+  trainer 300 px (was 155), with a larger caption; on phones 150 and 165 px. Both
+  images were already large enough to stay sharp.
 - The **Key** (or **Root**) label beside the key menu is larger, bold blue capitals
   with a pink underline, and the menu has a blue border, so it can't be missed:
   the key decides what every diagram shows.
