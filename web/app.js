@@ -1432,9 +1432,88 @@ function renderLog(){const log=readLog(),host=document.getElementById("loglist")
 // Log entries come back from localStorage, which anything on this origin can write.
 function escapeHTML(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);}
 function completeSession(){const log=readLog(),date=new Date().toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
-  log.unshift({date,key:NOTES[state.key],bpm:state.bpm});writeLog(log.slice(0,30));renderLog();
+  log.unshift({date,key:NOTES[state.key],bpm:state.bpm});writeLog(log.slice(0,30));markToday();renderLog();renderToday();
   document.getElementById("logsummary").innerHTML=`Logged today’s <b>${NOTES[state.key]} minor</b> session at ${state.bpm} bpm.`;}
 function clearLog(){writeLog([]);renderLog();}
+
+
+// ---------- ear drill and the day's plan ----------
+// Shapes are learned by eye; this ties them to sound. The root plays, then one note of the
+// minor pentatonic; you name its degree by ear. Misses are drawn more often. Everything
+// stays in this browser.
+const EAR_KEY="minor-pentatonic-ear-v1", DAYS_KEY="minor-pentatonic-days-v1";
+const EAR_DEGREES=[[0,"1","root"],[3,"♭3","minor third"],[5,"4","fourth"],[7,"5","fifth"],[10,"♭7","minor seventh"]];
+function readEar(){try{const v=JSON.parse(window.localStorage.getItem(EAR_KEY)||"{}");const o={};
+  for(const [d] of EAR_DEGREES){const x=v&&v[d];o[d]=Array.isArray(x)&&Number.isFinite(x[0])&&Number.isFinite(x[1])&&x[0]>=0&&x[1]>=x[0]?[x[0],x[1]]:[0,0];}
+  return o;}catch(e){const o={};for(const [d] of EAR_DEGREES)o[d]=[0,0];return o;}}
+function writeEar(v){try{window.localStorage.setItem(EAR_KEY,JSON.stringify(v));}catch(e){/* this visit only */}}
+const dayKey=d=>{const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;};
+function readDays(){try{const v=JSON.parse(window.localStorage.getItem(DAYS_KEY)||"[]");
+  return Array.isArray(v)?v.filter(x=>typeof x==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(x)):[];}catch(e){return [];}}
+function markToday(){const t=dayKey(new Date()),d=readDays();if(d.includes(t))return;
+  d.push(t);try{window.localStorage.setItem(DAYS_KEY,JSON.stringify(d.sort().slice(-400)));}catch(e){/* this visit only */}}
+// Days in a row ending today (or yesterday, so the streak survives until you've practised today).
+function streakOf(days,today=new Date()){
+  const set=new Set(days);let d=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  if(!set.has(dayKey(d)))d.setDate(d.getDate()-1);
+  let n=0;while(set.has(dayKey(d))){n++;d.setDate(d.getDate()-1);}
+  return n;
+}
+// The degree to ask next: unseen or weak ones weigh more.
+function earPick(stats,rnd=Math.random){
+  const w=EAR_DEGREES.map(([d])=>{const [r,t]=stats[d];return t<3?3:1+4*(1-r/t);});
+  let x=rnd()*w.reduce((a,b)=>a+b,0);
+  for(let i=0;i<w.length;i++){x-=w[i];if(x<0)return EAR_DEGREES[i][0];}
+  return EAR_DEGREES[EAR_DEGREES.length-1][0];
+}
+function earPlay(withRoot=true){
+  if(!state.ear)return;const root=48+state.key;
+  if(withRoot)pluck(root,0,.8,.5);
+  pluck(root+state.ear.degree+(state.ear.up?12:0),withRoot?.9:0,.8,.55);
+}
+function earNew(){
+  state.ear={degree:earPick(readEar()),up:Math.random()<.5,done:false};
+  document.getElementById("earstatus").textContent="Listen: which degree is it?";
+  earPlay(true);
+}
+function earAnswer(d){
+  if(!state.ear||state.ear.done)return;
+  const stats=readEar(),right=d===state.ear.degree;
+  stats[state.ear.degree][1]++;if(right)stats[state.ear.degree][0]++;
+  writeEar(stats);markToday();state.ear.done=true;
+  const name=EAR_DEGREES.find(x=>x[0]===state.ear.degree);
+  const note=NOTES[(state.key+state.ear.degree)%12];
+  document.getElementById("earstatus").innerHTML=right
+    ?`Yes: <b>${name[1]}</b>, ${note}. Now find it on your guitar.`
+    :`It was <b>${name[1]}</b> (${name[2]}), ${note}. Hear it again, then find it on your guitar.`;
+  renderEar();renderToday();
+}
+function renderEar(){
+  const s=readEar();
+  document.getElementById("earbtns").innerHTML=EAR_DEGREES.map(([d,l])=>`<button data-ear="${d}">${l}</button>`).join("");
+  document.querySelectorAll("#earbtns button[data-ear]").forEach(b=>b.onclick=()=>earAnswer(+b.dataset.ear));
+  document.getElementById("earstats").innerHTML=EAR_DEGREES.map(([d,l,n])=>{const [r,t]=s[d];
+    return `<li><span>${l} · ${n}</span><span>${t?Math.round(100*r/t)+"% of "+t:"not tried"}</span></li>`;}).join("");
+}
+// What to do next: keep the streak, work the weakest sound, and try a key not yet logged.
+function todayAdvice(){
+  const items=[],s=readEar(),log=readLog(),days=readDays();
+  const tried=EAR_DEGREES.filter(([d])=>s[d][1]>=5).sort((a,b)=>s[a[0]][0]/s[a[0]][1]-s[b[0]][0]/s[b[0]][1]);
+  const done=days.includes(dayKey(new Date()));
+  if(!done)items.push("Practise today: even five minutes keeps the habit.");
+  if(!EAR_DEGREES.some(([d])=>s[d][1]>0))items.push("Try the ear drill: ten notes, so the shapes have a sound.");
+  else if(tried.length&&s[tried[0][0]][0]/s[tried[0][0]][1]<.8)items.push(`Your weakest sound is <b>${tried[0][1]}</b> (${tried[0][2]}): hum it over the root drone, then play it.`);
+  const seen=new Set(log.map(x=>x.key));const unseen=NOTES.filter((n,i)=>!seen.has(n)&&i!==state.key);
+  if(log.length&&unseen.length)items.push(`Take your box shapes to a new key: <b>${unseen[0]}</b> minor.`);
+  else if(!log.length)items.push("Build a session below and log it when you finish.");
+  items.push("Record one take and listen back once: it shows what practice can't.");
+  return items;
+}
+function renderToday(){
+  const n=streakOf(readDays());
+  document.getElementById("todaystreak").innerHTML=n?`<b>${n}</b> day${n===1?"":"s"} in a row.`:"No streak yet. Start today.";
+  document.getElementById("todaylist").innerHTML=todayAdvice().map(x=>`<li><span>${x}</span></li>`).join("");
+}
 
 // ---------- the backing band ----------
 // The trainer's beats drive web/band.js: each beat the trainer books, the band
@@ -3992,7 +4071,7 @@ function renderInversions(){
 // Practice is the one view built from several pieces, so it gets a name of its own
 // and joins the table below like any other.
 function renderPractice(){
-  renderGuide();newQuiz();newSession();paintTimer();renderLog();
+  renderGuide();newQuiz();newSession();paintTimer();renderLog();renderEar();renderToday();
   document.getElementById("ladderbpm").textContent=state.bpm;
 }
 
@@ -4378,6 +4457,9 @@ document.getElementById("ladderclean").onclick=()=>ladder(5);
 document.getElementById("laddermiss").onclick=()=>ladder(-5);
 document.getElementById("ladderreset").onclick=resetLadder;
 document.getElementById("clearlog").onclick=clearLog;
+document.getElementById("earagain").onclick=()=>earPlay(true);
+document.getElementById("earroot").onclick=()=>pluck(48+state.key,0,.9,.5);
+document.getElementById("earnext").onclick=earNew;
 document.getElementById("toggletrainer").onclick=toggleTrainer;
 document.getElementById("resettrainer").onclick=resetTrainer;
 document.getElementById("groove").onchange=()=>{renderTrainer();renderBandControls();};

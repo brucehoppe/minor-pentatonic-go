@@ -202,3 +202,7 @@ First public release.
 - All five typefaces bundled; no network requests at all.
 - Smaller hero image (JPEG, about 100 kB); bounded audio cache; drones fade out.
 - Seven Licks diagrams describe each lick for screen readers.
+
+## Unreleased
+
+- Practice: a Today card (streak and what to do next) and an ear drill that ties each pentatonic degree to its sound, weighted toward the ones you miss.

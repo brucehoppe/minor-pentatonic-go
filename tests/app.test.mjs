@@ -383,7 +383,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
-    completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
+    completeSession,clearLog,readLog,streakOf,earPick,earNew,earAnswer,readEar,readDays,todayAdvice,EAR_DEGREES,dayKey,getEar:()=>state.ear,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
     getState:()=>({key:state.key,view:state.view,labelMode:state.labelMode,chord:state.chord,reg:state.reg,chartOpen:state.chartOpen,boxLock:state.boxLock,droneNodes:state.droneHandle,clickTimer:state.clickTimer,bpm:state.bpm,timerSeconds:state.timerSeconds,timerInitial:state.timerInitial,timerHandle:state.timerHandle,ladderRound:state.ladderRound,
       trainerTimer:state.trainerTimer,trainerBar:state.trainerBar,trainerBeat:state.trainerBeat,trainerCount:state.trainerCount,rhythmTimer:state.rhythmTimer,rhythmStep:state.rhythmStep,rhythm:[...state.rhythm],showB5:state.showB5,blueLock:state.blueLock,
       soloBoxes:[...state.soloBoxes],soloRun:[...state.soloRun],soloTimer:state.soloTimer,soloStep:state.soloStep,storage:window.localStorage})};`, context);
@@ -5537,4 +5537,33 @@ test("a take ready to hear again puts a dot on the Songs button from any view", 
   rt.app.libBadge();
   assert.equal(btn.classList.contains("due"), true);
   assert.match(btn.getAttribute("title"), /1 take is ready to hear again/);
+});
+
+test("streak counts consecutive days and survives until you have practised today", () => {
+  const { app } = makeRuntime();
+  const d = s => s, today = new Date(2026, 8, 19);
+  assert.equal(app.streakOf([], today), 0);
+  assert.equal(app.streakOf(["2026-09-19", "2026-09-18", "2026-09-17"], today), 3);
+  assert.equal(app.streakOf(["2026-09-18", "2026-09-17"], today), 2, "yesterday keeps it alive");
+  assert.equal(app.streakOf(["2026-09-17"], today), 0, "a missed day breaks it");
+  assert.equal(app.streakOf(["2026-09-19", "2026-09-17"], today), 1);
+});
+
+test("ear drill scores answers, favours weak degrees, and feeds the streak", () => {
+  const { app } = makeRuntime();
+  const stats = Object.fromEntries(app.EAR_DEGREES.map(([d]) => [d, [10, 10]]));
+  stats[7] = [1, 10];
+  let hits = 0;
+  for (let i = 0; i < 400; i++) if (app.earPick(stats, () => i / 400) === 7) hits++;
+  assert.ok(hits > 200, `weak fifth asked often (${hits}/400)`);
+  app.earNew();
+  const q = app.getEar();
+  const wrong = app.EAR_DEGREES.find(([d]) => d !== q.degree)[0];
+  app.earAnswer(wrong);
+  assert.equal(app.readEar()[q.degree][1], 1);
+  assert.equal(app.readEar()[q.degree][0], 0);
+  app.earAnswer(q.degree);
+  assert.equal(app.readEar()[q.degree][1], 1, "one answer per note");
+  assert.equal(app.readDays().length, 1, "an answer marks today");
+  assert.ok(app.todayAdvice().length >= 1);
 });

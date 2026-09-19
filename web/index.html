@@ -569,6 +569,19 @@
     <h2 style="font-family:'Bricolage Grotesque',system-ui,sans-serif;font-size:20px;margin:30px 0 14px;
       text-transform:uppercase;letter-spacing:.02em">Tools</h2>
     <div class="grid wide">
+      <div class="card" id="todaycard">
+        <h2>Today<em>what to do next</em></h2>
+        <div class="status" id="todaystreak"></div>
+        <ul class="loglist" id="todaylist"></ul>
+      </div>
+      <div class="card">
+        <h2>Ear drill<em>hear the degree, then find it</em></h2>
+        <p class="tip">The root plays, then one note of the scale. Name its degree by ear, then play it on your guitar.</p>
+        <div class="row" id="earbtns"></div>
+        <div class="row" style="margin-top:10px"><button id="earagain">Hear it again</button><button id="earroot">Hear the root</button><button id="earnext">New note</button></div>
+        <div class="status" id="earstatus" aria-live="polite"></div>
+        <ul class="loglist" id="earstats"></ul>
+      </div>
       <div class="card">
         <h2>Find the note<em>tap the dots</em></h2>
         <div id="quizboard"></div>
