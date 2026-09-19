@@ -39,7 +39,7 @@ const state={
   // the backing band (web/band.js): its settings, remembered, and the live rig of
   // gains its parts play into while the trainer runs
   band:{on:true, swing:2/3, bass:"walk", ride:false, mix:bandMixDefaults(), practice:bandPracticeDefaults()}, bandRig:null, taps:[],
-  trainerChorus:0, trainerEnding:false, dropBars:[], liveChord:null, liveChordKey:"",
+  trainerChorus:0, trainerEnding:false, dropBars:[], liveChord:null, liveChordKey:"", bandCompat:false, bandClip:null,
   rhythm:[1,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0], rhythmTimer:null, rhythmStep:0,
   // audio - the chosen engine, why there is none, and what is sounding
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
@@ -1464,6 +1464,11 @@ const bandReady=()=>typeof Band!=="undefined"&&Band&&typeof Band.beatEvents==="f
 function bandStart(){
   bandStop();
   const a=audio();
+  if(state.band.on&&a&&!a.bus&&typeof a.clip==="function"&&bandReady()&&typeof Band.renderChorus==="function"){
+    state.bandCompat=true;
+    document.getElementById("bandstatus").textContent="Compatibility sound: the band plays a chorus rendered in advance, "
+      +"so it keeps looser time than usual, and any change you make is heard from the next chorus.";
+    return;}
   if(!state.band.on||!a||!a.bus||!a.context||!bandReady())return;
   const out=a.bus(),parts={};
   out.gain.value=BAND_LEVEL;
@@ -1478,6 +1483,8 @@ function applyBandMix(){
 // Silence what is already booked with a quick fade on the band's own bus, then let
 // it go; the next start builds a fresh one.
 function bandStop(){
+  if(state.bandClip){state.bandClip.stop();state.bandClip=null;}
+  if(state.bandCompat){state.bandCompat=false;document.getElementById("bandstatus").textContent="";}
   const r=state.bandRig;
   if(!r)return;
   state.bandRig=null;
@@ -1490,6 +1497,31 @@ function bandBeat(when,o){
   const beatSec=60/state.bpm,t0=r.ac.currentTime+when;
   Band.beatEvents({feel:document.getElementById("groove").value,swing:state.band.swing,bass:state.band.bass,
     ride:state.band.ride,beatSec,...o}).forEach(e=>{if(!o.only||e.part===o.only)r.voices.play(e,t0+e.at*beatSec);});}
+// The band on the compatibility engine: the whole chorus, rendered with the same score
+// and started on each bar 1 by the trainer's own timer. Rendered per key, tempo, feel,
+// mix and drill; the engine keeps the last few.
+function chorusBeats(form){
+  const beatSec=60/state.bpm,feel=document.getElementById("groove").value,beats=[];
+  const fours=state.band.practice.drill==="fours";
+  for(let bar=0;bar<12;bar++){
+    if(state.dropBars.includes(bar))continue;
+    const entry=form.chords[bar],split=barSymbols(entry).length>1;
+    for(let beat=0;beat<4;beat++){
+      const c=chordInfo(symbolAt(entry,beat));
+      const events=Band.beatEvents({feel,swing:state.band.swing,bass:state.band.bass,ride:state.band.ride,beatSec,beat,
+        step:split&&beat>=2?beat-2:beat,chord:{pc:(state.key+c.root)%12,intervals:c.intervals}})
+        .filter(e=>!(fours&&bar>=4&&bar<=7)||e.part==="drums").map(e=>({...e,atSec:e.at*beatSec}));
+      beats.push({events,at:(bar*4+beat)*beatSec});}}
+  return {beats,seconds:48*beatSec+.5};}
+function playCompatChorus(){
+  const a=audio();if(!a||typeof a.clip!=="function")return;
+  if(state.bandClip)state.bandClip.stop();
+  const form=currentForm(),mix={};
+  Object.entries(state.band.mix).forEach(([p,m])=>{mix[p]=m.on?m.vol:0;});
+  const key=["band",document.getElementById("bluesform").value,state.key,state.bpm,document.getElementById("groove").value,
+    state.band.swing.toFixed(3),state.band.bass,state.band.ride,JSON.stringify(mix),state.band.practice.drill,state.dropBars.join(",")].join("|");
+  state.bandClip=a.clip(key,()=>{const {beats,seconds}=chorusBeats(form);
+    return Band.renderChorus({beats,seconds,sampleRate:a.sampleRate||22050,mix,level:BAND_LEVEL});});}
 // The tempo readout and slider, without restarting anything (the ladder changes tempo
 // mid-run; setBpm is for a person changing it).
 function showBpm(v){document.getElementById("bpm").value=v;document.getElementById("bpmv").textContent=v+" bpm";}
@@ -1680,6 +1712,7 @@ function trainerTick(when=0){const form=currentForm();
   const drop=state.dropBars.includes(bar),fours=state.band.practice.drill==="fours"&&bar>=4&&bar<=7;
   if(drop){/* the band is out: you keep time */}
   else if(state.bandRig)bandBeat(when,{beat,step:split&&beat>=2?beat-2:beat,chord,only:fours?"drums":null});
+  else if(state.bandCompat){if(bar===0&&beat===0)atBeat(when,()=>{if(state.trainerTimer&&state.bandCompat)playCompatChorus();});}
   else if(!fours)trainerSound(symbolAt(entry,beat),beat,when);
   atBeat(when,()=>{if(state.trainerTimer)renderTrainer(bar,beat);});
   state.trainerBeat++;if(state.trainerBeat===4){state.trainerBeat=0;state.trainerBar=(state.trainerBar+1)%12;}}
@@ -1857,6 +1890,7 @@ function wavEngine() {
   // a Map iterates in insertion order, so re-inserting on use and dropping the
   // first key evicts the least recently used sound.
   const SR = 22050, MAX_CACHED = 200, cache = new Map(), playing = new Set();
+  const MAX_CLIPS = 4, clips = new Map();
 
   const toBase64 = bytes => {
     let s = "";
@@ -1983,6 +2017,22 @@ function wavEngine() {
         }, 25);
       } };
     },
+    // A whole rendered passage, the band's chorus, played once. It has a cache of
+    // its own: a chorus is about a megabyte, where a note is a few kilobytes.
+    clip(key, build) {
+      let u = clips.get(key);
+      if (u) clips.delete(key); else u = toWav(build());
+      clips.set(key, u);
+      if (clips.size > MAX_CLIPS) clips.delete(clips.keys().next().value);
+      const el = new Audio(u);
+      playing.add(el);
+      el.addEventListener("ended", () => playing.delete(el));
+      const p = el.play();
+      if (p && p.catch) p.catch(() => { /* a refused play must not break the caller */ });
+      return { stop() { release(el); } };
+    },
+    clipCount: () => clips.size,
+    sampleRate: SR,
     stopAll() { [...playing].forEach(release); },
     cacheSize: () => cache.size,
   };

@@ -175,7 +175,8 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
   // a stand-in for HTMLAudioElement, which is all the compatibility engine needs
   const audioElements = [];
   class AudioEl {
-    constructor(src) { this.src = src; this.loop = false; this.volume = 1; audioElements.push(this); }
+    // firstSrc: what it was made to play (releasing an element clears its src)
+    constructor(src) { this.src = src; this.firstSrc = src; this.loop = false; this.volume = 1; audioElements.push(this); }
     play() { this.playing = true; return Promise.resolve(); }
     pause() { this.playing = false; }
     addEventListener() {}
@@ -338,7 +339,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
     setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
-    toggleRecord,stopRecording,webmWithDuration,tapTempo,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars]}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
+    toggleRecord,stopRecording,webmWithDuration,tapTempo,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
     completeSession,clearLog,readLog,baseFret,rootFret,validBoxes,boxNotes,NOTES,BOXES,LICKS,RUN_UP,RUN_DN,
@@ -3800,7 +3801,7 @@ test("the band plays through the engine's bus, so a take with backing records it
   app.toggleTrainer();
 });
 
-test("Drums + bass can be switched off, and the compatibility engine keeps the chord stabs", () => {
+test("the band can be switched off; without Web Audio or band.js there is no live band", () => {
   const off = makeRuntime();
   off.document.getElementById("bandon").click();
   assert.equal(off.app.getBand().on, false);
@@ -3813,7 +3814,7 @@ test("Drums + bass can be switched off, and the compatibility engine keeps the c
 
   const compat = makeRuntime({ audio: "wav" });
   compat.app.toggleTrainer();
-  assert.equal(compat.app.getBandRig(), null, "no Web Audio bus to play into");
+  assert.equal(compat.app.getBandRig(), null, "no Web Audio bus to play into: a rendered chorus instead (tested below)");
   compat.app.toggleTrainer();
   const missing = makeRuntime({ band: false });
   missing.app.toggleTrainer();
@@ -4029,4 +4030,54 @@ test("the 12-bar trainer opens with the band's poster, small enough to load fast
   const jpg = readFileSync(new URL("../web/assets/rats-of-chaos.jpg", import.meta.url));
   assert.deepEqual([...jpg.subarray(0, 3)], [0xFF, 0xD8, 0xFF], "a JPEG");
   assert.ok(jpg.length < 150_000, `${jpg.length} bytes`);
+});
+
+// ---------- the backing band on the compatibility engine ----------
+test("band: a rendered chorus is the score played sample by sample, with muted parts silent", () => {
+  const beatSec = 0.5, beats = [];
+  for (let b = 0; b < 8; b++) beats.push({ at: b * beatSec, events: bandBeat("shuffle", b % 4).map(e => ({ ...e, atSec: e.at * beatSec })) });
+  const all = { drums: 0.8, bass: 0.8, keys: 0.55, guitar: 0.55 };
+  const pcm = B.renderChorus({ beats, seconds: 4.5, sampleRate: 22050, mix: all, level: 0.6 });
+  assert.equal(pcm.length, Math.ceil(4.5 * 22050));
+  let peak = 0; for (const v of pcm) peak = Math.max(peak, Math.abs(v));
+  assert.ok(peak > 0.05 && peak <= 1, `audible and within range: ${peak}`);
+  const energy = (from, to) => { let e = 0; for (let i = Math.round(from * 22050); i < to * 22050; i++) e += pcm[i] ** 2; return e; };
+  assert.ok(energy(0, 0.02) > energy(0.25, 0.27) * 3, "a hit on the beat, quieter between");
+  const silent = B.renderChorus({ beats, seconds: 4.5, sampleRate: 22050, mix: { drums: 0, bass: 0, keys: 0, guitar: 0 }, level: 0.6 });
+  assert.ok(silent.every(v => v === 0), "every part muted: silence");
+});
+
+test("on the compatibility engine the band plays a rendered chorus from bar 1, says so, and caches it", () => {
+  const { app, document, advance, audioElements } = makeRuntime({ audio: "wav" });
+  app.setBpm(120);
+  app.toggleTrainer();
+  assert.equal(app.getLive().compat, true);
+  assert.match(document.getElementById("bandstatus").textContent, /^Compatibility sound: the band plays a chorus rendered in advance/);
+  const before = audioElements.length;
+  for (let i = 0; i < 4; i++) advance(0.5);                     // the count-in, with its stabs
+  const chorus = audioElements.slice(before).filter(e => e.firstSrc.length > 500000);
+  assert.equal(chorus.length, 1, "bar 1 starts one rendered chorus");
+  // 16-bit mono at 22,050 Hz: 48 beats of 0.5 s, plus half a second of tail
+  const bytes = Buffer.from(chorus[0].firstSrc.split(",")[1], "base64");
+  assert.equal(bytes.length, 44 + Math.ceil(24.5 * 22050) * 2);
+  for (let i = 0; i < 48; i++) advance(0.5);                    // into chorus 2
+  const again = audioElements.slice(before).filter(e => e.firstSrc.length > 500000);
+  assert.equal(again.length, 2, "chorus 2 starts on its bar 1");
+  assert.equal(again[1].firstSrc, again[0].firstSrc, "the same settings reuse the rendered chorus");
+  assert.equal(again[0].playing, false, "the first one was stopped when the second began");
+  app.toggleTrainer();
+  assert.equal(again[1].playing, false, "Stop stops the band");
+  assert.equal(document.getElementById("bandstatus").textContent, "");
+});
+
+test("on the compatibility engine a key change between choruses renders the new key", () => {
+  const { app, document, advance, audioElements } = makeRuntime({ audio: "wav" });
+  app.setBpm(120);
+  document.getElementById("keycycle").onchange({ target: { value: "fourth" } });
+  app.toggleTrainer();
+  for (let i = 0; i < 4 + 48 + 1; i++) advance(0.5);
+  const chorus = audioElements.filter(e => e.firstSrc.length > 500000);
+  assert.equal(chorus.length, 2);
+  assert.notEqual(chorus[1].firstSrc, chorus[0].firstSrc, "up a 4th: a different chorus");
+  app.toggleTrainer();
 });

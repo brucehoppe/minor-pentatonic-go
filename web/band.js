@@ -281,6 +281,57 @@
     };
   }
 
+  // ---------- a whole chorus, rendered (for the compatibility engine) ----------
+  // Where there is no Web Audio graph to play into, the chorus is rendered to samples
+  // once and played as a file. The same score, and the same recipes as the live
+  // voices, computed sample by sample.
+  //   beats: [{ events, at (seconds from the chorus start) }], sampleRate, seconds,
+  //   mix: { part: gain }, level: the band's overall gain.
+  function renderChorus({ beats, sampleRate, seconds, mix, level }) {
+    const sr = sampleRate;
+    const out = new Float32Array(Math.ceil(seconds * sr));
+    let seed = 22222;
+    const noise = () => { seed = (seed * 16807) % 2147483647; return seed / 1073741823.5 - 1; };
+    const add = (start, len, fn) => {
+      const i0 = Math.round(start * sr);
+      for (let i = 0; i < len && i0 + i < out.length; i++) out[i0 + i] += fn(i / sr);
+    };
+    const saw = (ph) => 2 * (ph - Math.floor(ph + 0.5));
+    function drum(voice, t, vol, g) {
+      if (voice === 'kick') {
+        let ph = 0;
+        add(t, 0.35 * sr, (x) => { ph += (45 + 105 * Math.exp(-x / 0.04)) / sr; return Math.sin(2 * Math.PI * ph) * 0.9 * vol * g * Math.exp(-x / 0.09); });
+      } else if (voice === 'snare') {
+        let last = 0;
+        add(t, 0.18 * sr, (x) => { const n = noise(), hp = n - last * 0.6; last = n;
+          return (hp * 0.35 * Math.exp(-x / 0.05) + Math.sin(2 * Math.PI * 200 * x) * 0.3 * Math.exp(-x / 0.03)) * vol * g; });
+      } else {
+        const [peak, tau, len] = voice === 'ride' ? [0.12, 0.12, 0.35] : voice === 'stick' ? [0.3, 0.008, 0.03] : [0.3, 0.015, 0.05];
+        let last = 0;
+        add(t, len * sr, (x) => { const n = noise(), hp = n - last; last = n; return hp * peak * vol * g * Math.exp(-x / tau); });
+      }
+    }
+    const tone = (t, dur, vol, g, partials) => add(t, (dur + 0.1) * sr, (x) => {
+      const a = Math.min(1, x / 0.006) * Math.exp(-x / Math.max(0.05, dur * 0.6));
+      let v = 0;
+      for (const [hz, amp, wave] of partials) v += (wave === 'saw' ? saw(hz * x) : Math.sin(2 * Math.PI * hz * x)) * amp;
+      return v * a * vol * g;
+    });
+    for (const { events, at } of beats) {
+      for (const e of events) {
+        const g = mix[e.part] ?? 0;
+        if (!g) continue;
+        const t = at + e.atSec;
+        if (e.part === 'drums') drum(e.voice, t, e.vol, g);
+        else if (e.part === 'bass') tone(t, e.dur, e.vol * 0.5, g, [[midiHz(e.midi), 1], [midiHz(e.midi) * 2, 0.18]]);
+        else if (e.part === 'keys') tone(t, e.dur, e.vol * 0.16, g, e.midis.flatMap((m) => [[midiHz(m), 1], [midiHz(m) * 2, 0.25]]));
+        else if (e.part === 'guitar') tone(t, e.dur, e.vol * 0.12, g, e.midis.map((m) => [midiHz(m), 1, 'saw']));
+      }
+    }
+    for (let i = 0; i < out.length; i++) out[i] = Math.max(-1, Math.min(1, out[i] * level));
+    return out;
+  }
+
   const PARTS = ['drums', 'bass', 'keys', 'guitar'];
-  root.Band = { PARTS, keysBase, guitarRoot, boogieFor, FEELS, SWING_MIN, SWING_TRIPLET, SWING_MAX, clampSwing, offbeat, sixteenths, walkFor, bassRoot, beatEvents, createVoices };
+  root.Band = { PARTS, renderChorus, keysBase, guitarRoot, boogieFor, FEELS, SWING_MIN, SWING_TRIPLET, SWING_MAX, clampSwing, offbeat, sixteenths, walkFor, bassRoot, beatEvents, createVoices };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

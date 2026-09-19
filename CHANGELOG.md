@@ -27,7 +27,9 @@ a second release on the same day.
   Practice modes: loop N choruses or forever, a tempo ladder (+5 bpm a chorus
   to a target, without a restart), a key cycle (up a 4th or random), drop-out
   bars and trade fours. The chord-tone overlay can follow the band's chord,
-  whatever it is (IIm7, VI7, a diminished passing chord), in every view.
+  whatever it is (IIm7, VI7, a diminished passing chord), in every view. On
+  the compatibility engine the band renders each chorus in advance, from the
+  same score, and plays it from bar 1; the status line says so.
 - A take with backing can no longer clip: the backing is mixed in 3 dB under
   the guitar, with a limiter after both and a trim for the compressor's
   built-in make-up gain. A take that peaked at 0 dB now peaks near -3 dB.
