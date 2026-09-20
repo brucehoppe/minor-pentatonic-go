@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- 12-bar trainer: chords and target tones are spelt the way a chart spells them, by
+  letter. A blues in F now shows B♭7 (it said A#7), with target tones B♭ D F A♭,
+  while the ♯IV diminished chord in A stays D♯dim7. Names that would need a double
+  accidental fall back to the plain spelling.
 - Windows: starting the app a second time reopens the running desk, as it does on
   macOS. Windows reports a taken port as `WSAEADDRINUSE`, which Go's
   `syscall.EADDRINUSE` does not equal there, so the second launch failed with a

@@ -1861,7 +1861,24 @@ function currentForm(){return BLUES_FORMS[document.getElementById("bluesform").v
 function chordInfo(symbol){const roman=symbol.match(/^[b#]?[IV]+/)[0],kind=symbol.slice(roman.length),
   roots={I:0,bII:1,II:2,bIII:3,III:4,IV:5,"#IV":6,V:7,bVI:8,VI:9,bVII:10,VII:11};
   return {symbol,root:roots[roman],kind,intervals:CHORD_KIND[kind]};}
-function chordName(symbol){const c=chordInfo(symbol);return NOTES[(state.key+c.root)%12]+c.kind;}
+// A chart spells a chord by letter, not by the nearest sharp: the IV of F is a kind of
+// B (F G A B), so B♭7, and the ♯IV of A is a kind of D, so D♯dim7. spellAs names a
+// pitch with the letter asked for; where that would take a double accidental or a
+// C♭/F♭/B♯/E♯, it gives the plain spelling a player would write instead.
+const LETTERS="CDEFGAB",NATURAL_PC=[0,2,4,5,7,9,11],ROMAN_DEGREE={I:1,II:2,III:3,IV:4,V:5,VI:6,VII:7};
+function spellAs(pc,letter){
+  let d=((pc-NATURAL_PC[letter])%12+12)%12;if(d>6)d-=12;
+  const name=LETTERS[letter]+(d>0?"♯".repeat(d):"♭".repeat(-d));
+  return Math.abs(d)>1||["C♭","F♭","B♯","E♯"].includes(name)?ROOT_NAMES[pc]:name;}
+// The chord's root, spelt from the key's letter and the numeral's degree.
+function chordRootName(symbol){
+  const c=chordInfo(symbol),degree=ROMAN_DEGREE[symbol.match(/[IV]+/)[0]];
+  return spellAs((state.key+c.root)%12,(LETTERS.indexOf(ROOT_NAMES[state.key][0])+degree-1)%7);}
+function chordName(symbol){return chordRootName(symbol)+chordInfo(symbol).kind.replace("b5","♭5");}
+// Its tones, each a third above the last (the 6 of a sixth chord is the exception).
+function chordToneNames(symbol){
+  const c=chordInfo(symbol),pc=(state.key+c.root)%12,from=LETTERS.indexOf(chordRootName(symbol)[0]);
+  return c.intervals.map((x,i)=>spellAs((pc+x)%12,(from+(c.kind==="6"&&i===3?5:i*2))%7));}
 // bar and beat default to the live position; the beat clock passes the ones being
 // drawn, because it books beats slightly before they sound.
 function renderTrainer(bar=state.trainerBar,beat=state.trainerBeat){const form=currentForm();
@@ -1870,8 +1887,8 @@ function renderTrainer(bar=state.trainerBar,beat=state.trainerBeat){const form=c
     return `<div class="bluesbar${i===bar?" now":""}${syms.length>1?" split":""}"><span>${i+1}</span>${
       syms.map(sym=>`<b>${chordName(sym)}</b>`).join("")}<span>${syms.join(" ")}</span></div>`;}).join("");
   const entry=bar<0?form.chords[0]:form.chords[bar];
-  const symbol=symbolAt(entry,bar<0?0:beat),c=chordInfo(symbol),roles=["root","3rd","5th","7th"];
-  const targets=c.intervals.map((x,i)=>`${roles[i]} (${NOTES[(state.key+c.root+x)%12]})`).join(" · ");
+  const symbol=symbolAt(entry,bar<0?0:beat),c=chordInfo(symbol),roles=["root","3rd","5th",c.kind==="6"?"6th":"7th"];
+  const targets=chordToneNames(symbol).map((name,i)=>`${roles[i]} (${name})`).join(" · ");
   document.getElementById("trainertarget").innerHTML=`Target tones for <b>${chordName(symbol)}</b>: ${targets}`;
   document.getElementById("formtip").textContent=form.tip;
   document.getElementById("formheard").textContent=form.heard;

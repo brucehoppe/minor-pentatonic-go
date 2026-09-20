@@ -1463,7 +1463,7 @@ test("12-bar trainer provides distinct classic, quick-change, minor, and jazz ha
     classic: ["A7", "D7", "E7"],
     quick: ["A7", "D7", "E7"],
     minor: ["Am7", "Dm7", "E7"],
-    jazz: ["A7", "D7", "D#dim7", "F#7", "Bm7", "E7"],
+    jazz: ["A7", "D7", "D♯dim7", "F♯7", "Bm7", "E7"],
   };
   const sequences = {};
   for (const [name, chords] of Object.entries(expected)) {
@@ -1548,10 +1548,38 @@ test("known blues forms transpose correctly into A", () => {
     ["Am7","Am7","Am7","Am7","Dm7","Dm7","Am7","Am7","F7","E7","Am7","E7"]);
   // the bebop skeleton: ii-V into IV, diminished bar 6, I-VI-ii-V turnaround
   sameShape(bars("jazz"),
-    ["A7","D7","A7","Em7/A7","D7","D#dim7","A7","F#7","Bm7","E7","A7/F#7","Bm7/E7"]);
+    ["A7","D7","A7","Em7/A7","D7","D♯dim7","A7","F♯7","Bm7","E7","A7/F♯7","Bm7/E7"]);
   // Blues for Alice changes
   sameShape(bars("bird"),
-    ["Amaj7","G#m7b5/C#7","F#m7/B7","Em7/A7","D7","Dm7/G7","C#m7/F#7","Cm7/F7","Bm7","E7","Amaj7/F#7","Bm7/E7"]);
+    ["Amaj7","G♯m7♭5/C♯7","F♯m7/B7","Em7/A7","D7","Dm7/G7","C♯m7/F♯7","Cm7/F7","Bm7","E7","Amaj7/F♯7","Bm7/E7"]);
+});
+
+// A chart spells a chord by letter: the IV of F is a kind of B, so B♭7, never A♯7;
+// the ♯IV of A is a kind of D, so D♯dim7, never E♭dim7.
+test("the trainer spells chords and target tones the way a chart does", () => {
+  const { app, document } = makeRuntime();
+  const bars = id => {
+    document.getElementById("bluesform").value = id;
+    return app.BLUES_FORMS[id].chords.map(e => app.barSymbols(e).map(app.chordName).join("/"));
+  };
+  app.setKey(5); // F
+  sameShape(bars("classic"),
+    ["F7","F7","F7","F7","B♭7","B♭7","F7","F7","C7","B♭7","F7","C7"]);
+  sameShape(bars("rock").slice(8, 10), ["E♭7","B♭7"]);
+  sameShape(bars("dim").slice(4, 7), ["B♭7","Bdim7","F7"]);
+  app.setKey(10); // B flat
+  sameShape(bars("classic").slice(3, 5), ["B♭7","E♭7"]);
+  // names that would need a double flat, or an F♭, fall back to the plain spelling
+  app.setKey(8); // A flat
+  sameShape(bars("minorbvi").slice(8, 10), ["E7","E♭7"]);
+  // the target tones are spelt from the chord: B♭7 is B♭ D F A♭
+  app.setKey(5);
+  document.getElementById("bluesform").value = "classic";
+  app.renderTrainer(4, 0);
+  const target = document.getElementById("trainertarget").innerHTML;
+  assert.match(target, /B♭7/);
+  assert.match(target, /root \(B♭\) · 3rd \(D\) · 5th \(F\) · 7th \(A♭\)/);
+  assert.doesNotMatch(target, /#/);
 });
 
 test("rhythm lab generates a 16-step phrase and loops it at subdivisions", () => {
