@@ -2379,7 +2379,8 @@ function audioOff(dead) {
     if (!b) return;
     b.disabled = dead;
     b.style.opacity = dead ? .4 : 1;
-    b.title = dead ? (state.audioFault || "Audio unavailable").replace(/<[^>]+>/g, "") : "";
+    // the fault text is plain (noAudioReason), and title is never read as HTML
+    b.title = dead ? (state.audioFault || "Audio unavailable") : "";
   });
 }
 

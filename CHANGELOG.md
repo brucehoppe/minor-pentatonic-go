@@ -5,6 +5,11 @@ a second release on the same day.
 
 ## Unreleased
 
+- Cleared the nine open CodeQL alerts. One was in the app: a regex that stripped tags
+  from the no-audio tooltip, which was never exploitable (the text is the app's own
+  and `title` is not read as HTML) and did nothing, since that text has no tags; it
+  is gone. The rest were in the tests: five `replace("#", "#")` no-ops, a
+  case-sensitive `<script>` check, and a regex escape that missed the backslash.
 - 12-bar trainer: a **landing drill**. Press *Landing drill: listen* and, while the
   band plays, the desk hears your guitar and marks every bar: the chord tone you were
   sounding on beat 1 (root, 3rd, 5th, 7th), the note you missed with, or a rest, which

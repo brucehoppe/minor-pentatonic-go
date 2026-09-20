@@ -699,7 +699,7 @@ test("major pentatonic diagonal draws every key, both dot modes, and the arrows"
     assert.equal((board.match(/class="majdot"/g) ?? []).length, 15, `${k.n}: fifteen notes`);
     // three roots: the A string anchor, then the G and high e strings above it
     assert.equal((board.match(/class="majdot" fill="var\(--pink\)"/g) ?? []).length, 3, `${k.n}: roots`);
-    assert.match(board, new RegExp(`${k.n.replace("#", "#")} major pentatonic`));
+    assert.match(board, new RegExp(`${k.n} major pentatonic`));
     assert.match(board, new RegExp(`>${k.n}<`), `${k.n}: the root note is named on the board`);
     // three arrows, one per three-note string
     assert.equal((board.match(/marker-end="url\(#majarrow\)"/g) ?? []).length, 3);
@@ -923,7 +923,7 @@ test("the note-name neck labels every position on every string", () => {
   app.renderNotes();
   const neck = document.getElementById("neck").innerHTML;
   // 6 strings x 25 frets, every one named
-  for (const name of app.NOTES) assert.match(neck, new RegExp(`>${name.replace("#", "#")}<`));
+  for (const name of app.NOTES) assert.match(neck, new RegExp(`>${name}<`));
   // 24 fret numbers (fret 0 is the nut), 6 string names, 6 x 25 positions
   assert.equal((neck.match(/<text /g) ?? []).length, 24 + 6 + 6 * 25,
     "a label for every fret number, every string name and every position");
@@ -938,7 +938,7 @@ test("the note-name neck labels every position on every string", () => {
     for (let s = 0; s < 6; s++) for (let f = 0; f <= app.MAXFRET; f++) if (app.noteAt(s, f) === pc) want++;
     assert.equal((lit.match(/fill="var\(--pink\)"/g) ?? []).length, want,
       `${app.NOTES[pc]} appears ${want} times in 24 frets`);
-    assert.match(document.getElementById("necklabel").innerHTML, new RegExp(`Every <b>${app.NOTES[pc].replace("#", "#")}</b>`));
+    assert.match(document.getElementById("necklabel").innerHTML, new RegExp(`Every <b>${app.NOTES[pc]}</b>`));
   }
   app.setNoteHL(null);
 });
@@ -1361,7 +1361,7 @@ test("all-keys chart draws landmarks, full scale, and slide path", () => {
   const { app, document } = makeRuntime();
   app.renderChart();
   const chart = document.getElementById("chart").innerHTML;
-  for (const name of app.NOTES) assert.match(chart, new RegExp(`${name.replace("#", "#")} minor`));
+  for (const name of app.NOTES) assert.match(chart, new RegExp(`${name} minor`));
   assert.equal((chart.match(/class="card strip/g) ?? []).length, 12);
   assert.match(app.keyStrip(9, { w: 46, h: 26, pad: 26, big: true }), /A minor landmark positions/);
   assert.match(chart, /tap to enlarge/);
@@ -1471,7 +1471,7 @@ test("12-bar trainer provides distinct classic, quick-change, minor, and jazz ha
     app.renderTrainer();
     const rendered = document.getElementById("bluesbars").innerHTML;
     assert.equal((rendered.match(/class="bluesbar/g) ?? []).length, 12);
-    for (const chord of chords) assert.match(rendered, new RegExp(chord.replace("#", "#")));
+    for (const chord of chords) assert.match(rendered, new RegExp(chord));
     sequences[name] = rendered;
   }
   assert.notEqual(sequences.classic, sequences.quick);
@@ -1754,7 +1754,7 @@ test("rhythm lab generates a 16-step phrase and loops it at subdivisions", () =>
 test("supplementary Seven Licks resource still renders all cards", () => {
   assert.doesNotMatch(lesson, /fonts\.googleapis\.com/);
   assert.match(lesson, /<script src="seven-licks.js"><\/script>/);
-  assert.doesNotMatch(lesson, /<script>/, "no inline script, so the CSP can forbid them");
+  assert.doesNotMatch(lesson, /<script>/i, "no inline script, so the CSP can forbid them");
   assert.equal((lessonScript.match(/n:"0[1-7]"/g) ?? []).length, 7);
   const host = new Element("licks"), win = { addEventListener() {} };
   const context = vm.createContext({ document: { getElementById: () => host }, window: win, parent: win,
@@ -2436,8 +2436,8 @@ test("audio: a browser without Web Audio disables the controls instead of dying"
     "and shown to the user");
   for (const id of ["drone", "click"]) {
     assert.equal(document.getElementById(id).disabled, true, `${id} is visibly unavailable`);
-    assert.equal(document.getElementById(id).title,
-      app.getAudioFault().replace(/<[^>]+>/g, ""), `${id} explains why, without markup`);
+    assert.equal(document.getElementById(id).title, app.getAudioFault(), `${id} explains why`);
+    assert.doesNotMatch(document.getElementById(id).title, /[<>]/, "a tooltip is plain text, so the reason carries no markup");
   }
 });
 
@@ -5174,7 +5174,7 @@ test("the layers panel plays your solo over the rhythm take, with a level and a 
   await rt.app.libOpen(solo.id);
   const box = rt.document.getElementById("takelayers");
   assert.equal(box.hidden, false);
-  assert.match(rt.document.getElementById("laynote").textContent, new RegExp(`^Over ${rhythm.name.replace(/[.]/g, "\\.")}`));
+  assert.match(rt.document.getElementById("laynote").textContent, new RegExp(`^Over ${rhythm.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   const on = (id, v) => { rt.document.getElementById(id).checked = v; rt.document.getElementById(id).onchange(); };
   const level = (id, v) => { rt.document.getElementById(id).value = String(v); rt.document.getElementById(id).oninput(); };
   on("layrhythm", true); on("laysolo", true); level("layrhythmv", 80); level("laysolov", 100);
