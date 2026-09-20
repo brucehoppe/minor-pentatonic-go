@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -247,6 +248,31 @@ func TestAppHandlerServesTheStylesheetAndScript(t *testing.T) {
 		if !strings.Contains(w.Body.String(), feature) {
 			t.Errorf("app.js does not contain %q", feature)
 		}
+	}
+}
+
+// The server names every file's type itself. Left to the mime package, Windows reads
+// the registry, where .js is sometimes text/plain, and nosniff would then stop the
+// browser running the scripts at all.
+func TestEveryEmbeddedFileHasADeclaredContentType(t *testing.T) {
+	err := fs.WalkDir(embeddedWeb(), ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		want, ok := contentTypes[path.Ext(name)]
+		if !ok {
+			t.Errorf("%s: no entry in contentTypes for %q", name, path.Ext(name))
+			return nil
+		}
+		w := httptest.NewRecorder()
+		appHandler(func() {}).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/"+name, nil))
+		if got := w.Header().Get("Content-Type"); got != want {
+			t.Errorf("/%s: Content-Type = %q, want %q", name, got, want)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

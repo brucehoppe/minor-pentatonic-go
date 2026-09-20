@@ -82,6 +82,19 @@ const contentSecurityPolicy = "default-src 'self'; script-src 'self'; " +
 const permissionsPolicy = "microphone=(self), camera=(), geolocation=(), payment=(), usb=(), " +
 	"serial=(), bluetooth=(), display-capture=(), clipboard-read=(), interest-cohort=()"
 
+// contentTypes covers every kind of file under web/. A test walks the embedded
+// files and fails if one has an extension that is missing here.
+var contentTypes = map[string]string{
+	".html":  "text/html; charset=utf-8",
+	".css":   "text/css; charset=utf-8",
+	".js":    "text/javascript; charset=utf-8",
+	".txt":   "text/plain; charset=utf-8",
+	".svg":   "image/svg+xml",
+	".png":   "image/png",
+	".jpg":   "image/jpeg",
+	".woff2": "font/woff2",
+}
+
 func appHandlerFS(stop func(), content fs.FS) http.Handler {
 	files := http.FileServer(http.FS(content))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +158,12 @@ func appHandlerFS(stop func(), content fs.FS) http.Handler {
 		if err != nil || info.IsDir() {
 			http.NotFound(w, r)
 			return
+		}
+		// Say what each file is rather than leaving it to the mime package, which on
+		// Windows reads the registry. Software there sometimes maps .js to text/plain,
+		// and with nosniff set a browser would then refuse to run the desk's scripts.
+		if ct, ok := contentTypes[path.Ext(name)]; ok {
+			w.Header().Set("Content-Type", ct)
 		}
 		// Embedded files have no modification time, so the file server cannot
 		// answer conditional requests and re-sends everything on every load. The

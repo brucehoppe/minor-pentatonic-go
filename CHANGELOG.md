@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- Windows: the server states every file's Content-Type itself. Go otherwise asks the
+  Windows registry, where `.js` is sometimes mapped to `text/plain`; with `nosniff`
+  set, a browser on such a PC would have refused the desk's scripts and shown a blank
+  page. Found by the new Windows CI job; a test walks every embedded file.
 - 5 boxes: **Chord inside each box** rings the minor chord that sits inside every
   box (the Em, Dm, Cm, Am and Gm shapes of CAGED), names the shape, where its root
   is and the chord's frets in the key on screen (A minor in Box 1 is 5 7 7 5 5 5).
