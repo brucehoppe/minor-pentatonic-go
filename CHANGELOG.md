@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- 5 boxes: **Chord inside each box** rings the minor chord that sits inside every
+  box (the Em, Dm, Cm, Am and Gm shapes of CAGED), names the shape, where its root
+  is and the chord's frets in the key on screen (A minor in Box 1 is 5 7 7 5 5 5).
+  Every chord note is one of the box's own dots; a test checks that in three keys.
 - Keys and notes are spelt the way they are written. The Key menu says B♭ minor,
   E♭ minor and G♯ minor (it said A#, D# and G#), and dot labels follow the key, so
   B♭ minor pentatonic reads B♭ D♭ E♭ F A♭. Modes spell each degree from its own

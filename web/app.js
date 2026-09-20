@@ -43,7 +43,7 @@ const BOXES=[
 const state={
   // what is on screen - key, view and the shared toolbar
   key:9, view:"path", labelMode:"name", chord:null, reg:0, chartOpen:null, boxLock:[],
-  showB5:false, blueLock:null,
+  showB5:false, blueLock:null, showCaged:false,
   // major pentatonic and modes views
   majorKey:0, majorDegrees:false, majorArrows:true,
   modeId:"dorian", lastMode:null,
@@ -384,12 +384,38 @@ function bluesMap(hl=null){
   return o+"</svg>";
 }
 
+// The minor chord inside each box, named by the open chord its shape comes from
+// (CAGED). off is a fret offset from the box's root fret for strings e B G D A E,
+// null where the string is not played. Every note is one of the box's own dots,
+// which is the point: the chord is already under your fingers.
+const CAGED={
+  1:{shape:"Em",off:[0,0,0,2,2,0],root:"on the low E string, under your first finger",note:"This is the everyday barre chord."},
+  2:{shape:"Dm",off:[3,5,4,2,null,null],root:"on the D string, under your first finger",note:"Four strings, high and bright."},
+  3:{shape:"Cm",off:[null,5,4,5,7,null],root:"on the A string, under your fourth finger",note:"The awkward one; the top three strings alone make a good small chord."},
+  4:{shape:"Am",off:[7,8,9,9,7,null],root:"on the A string, under your first finger",note:"The other everyday barre chord."},
+  5:{shape:"Gm",off:[12,12,9,9,10,12],root:"on the low E string, under your fourth finger",note:"Rarely strummed whole; its notes are where this box's phrases land."},
+};
+function cagedNotes(b,R=boxRoot(b)){
+  return CAGED[b.n].off.map((o,s)=>o===null?null:{s,f:o+R}).filter(Boolean);}
+// the chord as a player writes it: frets from the low E string up, × for a string left out
+function cagedCode(b,R=boxRoot(b)){
+  return [...CAGED[b.n].off].reverse().map(o=>o===null?"×":o+R).join(" ");}
+function ringCaged(b,R){
+  const chord=new Set(cagedNotes(b,R).map(n=>n.s+":"+n.f));
+  return boxNotes(b,R).map(n=>chord.has(n.s+":"+n.f)?{...n,ring:true}:n);}
+function cagedTip(b){
+  const c=CAGED[b.n];
+  return `<p class="tip caged"><b>${c.shape} shape</b> — the ringed dots are ${keyName()} minor, <b>${cagedCode(b)}</b>. Root ${c.root}. ${c.note}</p>`;}
 function renderBoxes(){
   const laid=[...validBoxes()].sort((x,y)=>boxSpan(x).lo-boxSpan(y).lo);
   document.getElementById("boxes").innerHTML=laid.map(b=>{
     const {R,lo,hi}=boxSpan(b);
     return `<div class="card" data-box="${b.n}" tabindex="0"><h2>Box ${b.n}<em>fret ${lo}–${hi}</em></h2>${
-      fretboard(boxNotes(b,R))}<p class="tip">${b.tip}</p>${regNote(b)}</div>`;}).join("");
+      fretboard(state.showCaged?ringCaged(b,R):boxNotes(b,R))}<p class="tip">${b.tip}</p>${state.showCaged?cagedTip(b):""}${regNote(b)}</div>`;}).join("");
+  const caged=document.getElementById("cagedtoggle");
+  caged.setAttribute("aria-pressed",state.showCaged);
+  caged.textContent=`Chord inside each box: ${state.showCaged?"on":"off"}`;
+  caged.onclick=()=>{state.showCaged=!state.showCaged;render();};
   const ord=document.getElementById("boxorder");
   if(ord)ord.innerHTML=state.reg&&laid.some((b,i)=>b.n!==i+1)
     ?`Laid out low to high on the neck: <b>${laid.map(b=>"Box "+b.n).join(" · ")}</b>. At this register the boxes no longer run in numeric order — Box 1 is a shape, not a place.`
@@ -4469,7 +4495,7 @@ function applyTools(){
   if(live.has("extras")&&state.showB5)summary.push("♭5 on");
   document.getElementById("settingssummary").textContent=summary.join(" · ");
   document.getElementById("legend").hidden=!live.has("labels");
-  document.getElementById("legendchord").hidden=!live.has("chords")||!state.chord;
+  document.getElementById("legendchord").hidden=!(live.has("chords")&&state.chord)&&!(state.view==="boxes"&&state.showCaged);
   document.getElementById("legendblue").hidden=!live.has("extras")||!state.showB5;
   document.getElementById("legendcolour").hidden=!["modes","hijaz","blues"].includes(state.view);
 }

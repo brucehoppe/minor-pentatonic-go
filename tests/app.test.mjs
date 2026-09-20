@@ -385,7 +385,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderOpen,OPEN_TUNINGS,tuningMidi,TUNING_EXAMPLES,TUNING_OPEN_CHORDS,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
-    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
+    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
@@ -1552,6 +1552,41 @@ test("known blues forms transpose correctly into A", () => {
   // Blues for Alice changes
   sameShape(bars("bird"),
     ["Amaj7","G♯m7♭5/C♯7","F♯m7/B7","Em7/A7","D7","Dm7/G7","C♯m7/F♯7","Cm7/F7","Bm7","E7","Amaj7/F♯7","Bm7/E7"]);
+});
+
+// Each pentatonic box has a minor chord shape inside it: the link between the
+// Shapes and Chords halves of the desk.
+test("every box holds a CAGED minor chord made only of the box's own dots", () => {
+  const { app, document } = makeRuntime();
+  assert.deepEqual([...app.BOXES.map(b => app.CAGED[b.n].shape)], ["Em", "Dm", "Cm", "Am", "Gm"]);
+  for (const key of [9, 4, 10]) {
+    app.setKey(key);
+    for (const b of app.BOXES) {
+      const notes = app.cagedNotes(b), R = app.boxRoot(b);
+      assert.ok(notes.length >= 4, `Box ${b.n} chord has at least four strings`);
+      const degrees = new Set();
+      for (const n of notes) {
+        assert.ok(b.off[n.s].includes(n.f - R), `Box ${b.n}: string ${n.s} fret ${n.f} is a dot in the box`);
+        const d = app.deg(app.noteAt(n.s, n.f));
+        assert.ok([0, 3, 7].includes(d), `Box ${b.n}: degree ${d} is a chord tone`);
+        degrees.add(d);
+      }
+      assert.equal(degrees.size, 3, `Box ${b.n} has root, ♭3 and 5`);
+    }
+  }
+  app.setKey(9);
+  assert.equal(app.cagedCode(app.BOXES[0]), "5 7 7 5 5 5", "the A minor barre chord at fret 5");
+  assert.equal(app.cagedCode(app.BOXES[3]), "× 12 14 14 13 12");
+  // off by default; the toggle rings the chord and names the shape on each card
+  app.setView("boxes"); app.render();
+  assert.doesNotMatch(document.getElementById("boxes").innerHTML, /Em shape/);
+  document.getElementById("cagedtoggle").onclick();
+  const cards = document.getElementById("boxes").innerHTML;
+  for (const shape of ["Em", "Dm", "Cm", "Am", "Gm"]) assert.match(cards, new RegExp(shape + " shape"));
+  assert.match(cards, /5 7 7 5 5 5/);
+  assert.equal((cards.match(/r="13.5"/g) ?? []).length, 6 + 4 + 4 + 5 + 6, "one gold ring per chord note");
+  assert.equal(document.getElementById("cagedtoggle").getAttribute("aria-pressed"), "true");
+  assert.equal(document.getElementById("legendchord").hidden, false, "the ring is explained in the legend");
 });
 
 // Players say B♭ minor, not A# minor, and its pentatonic is B♭ D♭ E♭ F A♭.
