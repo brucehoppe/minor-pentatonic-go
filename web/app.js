@@ -6,8 +6,28 @@ const NOTES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 // The same twelve as chord roots, for the views where the key selector means a
 // chord's root (Triads, Inversions): the spelling on a chord chart.
 const ROOT_NAMES=["C","C\u266f","D","E\u266d","E","F","F\u266f","G","A\u266d","A","B\u266d","B"];
-// A pitch named the way the current view names it: as a chord root, or sharps only.
-function spelled(pc){return viewCfg(state.view).key==="root"?ROOT_NAMES[pc]:NOTES[pc];}
+// The twelve minor keys as they are written: E♭ and B♭ minor, but G♯ minor (five
+// sharps) rather than A♭ minor (seven flats).
+const MINOR_KEYS=["C","C\u266f","D","E\u266d","E","F","F\u266f","G","G\u266f","A","B\u266d","B"];
+// NOTES stays sharps-only for ids and file names; what the page shows is spelt by
+// letter. spellAs names a pitch with the letter asked for; where that would take a
+// double accidental or a C♭/F♭/B♯/E♯, it gives the plain spelling a player would write.
+const LETTERS="CDEFGAB",NATURAL_PC=[0,2,4,5,7,9,11];
+function spellAs(pc,letter){
+  let d=((pc-NATURAL_PC[letter])%12+12)%12;if(d>6)d-=12;
+  const name=LETTERS[letter]+(d>0?"♯".repeat(d):"♭".repeat(-d));
+  return Math.abs(d)>1||["C♭","F♭","B♯","E♯"].includes(name)?ROOT_NAMES[pc]:name;}
+// The key on screen by name: a chord root where the view's selector means one
+// (Triads, Modes), otherwise a minor key.
+const keyName=(k=state.key)=>viewCfg(state.view).key==="root"?ROOT_NAMES[k]:MINOR_KEYS[k];
+// How many letters above the tonic each semitone sits, read as 1 ♭2 2 ♭3 3 4 ♭5 5 ♭6 6 ♭7 7.
+const DEGREE_STEP=[0,1,1,2,2,3,4,4,5,5,6,6];
+// A pitch named by its degree in the key on screen, so B♭ minor pentatonic reads
+// B♭ D♭ E♭ F A♭. step overrides the letter for scales that spell a degree their own
+// way (Lydian's ♯4 is a fourth, not a ♭5).
+function noteName(pc,step=DEGREE_STEP[((pc-state.key)%12+12)%12]){
+  return spellAs(pc,(LETTERS.indexOf(keyName()[0])+step)%7);}
+const spelled=noteName;
 const IV={0:"1",1:"♭2",2:"2",3:"♭3",4:"3",5:"4",6:"♭5",7:"5",8:"♭6",9:"6",10:"♭7",11:"7"};
 const OPEN=[4,11,7,2,9,4], SL=["e","B","G","D","A","E"];
 const BOXES=[
@@ -115,7 +135,7 @@ function dotText(n){
   if(n.ord!==undefined)return n.ord;
   if(state.labelMode==="none")return "";
   const pc=noteAt(n.s,n.f);
-  return state.labelMode==="interval"?(IV[deg(pc)]||""):NOTES[pc];
+  return state.labelMode==="interval"?(IV[deg(pc)]||""):noteName(pc);
 }
 
 // span forces the fret window instead of fitting it to the notes, so two diagrams
@@ -256,7 +276,7 @@ const STRNAME=["high e","B","G","D","A","low E"];
 const strNo=s=>s+1;                       // index 0 = high e = "string 1"
 // fret of the current key's note on string s; 12 rather than 0 so the shape is movable
 const rootOn=s=>{const f=(state.key-OPEN[s]+12)%12;return f===0?12:f;};
-const pcName=(s,f)=>NOTES[noteAt(s,f)]+"5";
+const pcName=(s,f)=>ROOT_NAMES[noteAt(s,f)]+"5";
 // two-note power chord rooted on string s at fret f
 function pc2(s,f){const o=PCPAIR[s];
   return [{s,f,kind:"root",ord:"1"},{s:s-1,f:f+o,kind:"tone",ord:o===3?"4":"3"}];}
@@ -354,13 +374,13 @@ function bluesMap(hl=null){
     if(!scale&&!blue)continue;
     const on=lit(r,f),x=xOf(f),y=pad+r*h,op=on?1:.10;
     if(blue){
-      o+=`<g class="pn" data-s="${r}" data-f="${f}" role="button" tabindex="0" aria-label="play ${NOTES[pc]} flat five, fret ${f} on the ${SL[r]} string" opacity="${op}">`
+      o+=`<g class="pn" data-s="${r}" data-f="${f}" role="button" tabindex="0" aria-label="play ${noteName(pc)} flat five, fret ${f} on the ${SL[r]} string" opacity="${op}">`
        +`<circle cx="${x}" cy="${y}" r="8.5" fill="var(--card)" stroke="var(--gold)" stroke-width="2" stroke-dasharray="3 2"/>`
-       +`<text x="${x}" y="${y+3.2}" font-size="8.5" fill="var(--ink)" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${state.labelMode==="none"?"":state.labelMode==="interval"?"♭5":NOTES[pc]}</text></g>`;
+       +`<text x="${x}" y="${y+3.2}" font-size="8.5" fill="var(--ink)" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${state.labelMode==="none"?"":state.labelMode==="interval"?"♭5":noteName(pc)}</text></g>`;
     }else{
-      o+=`<g class="pn" data-s="${r}" data-f="${f}" role="button" tabindex="0" aria-label="play ${NOTES[pc]}, fret ${f} on the ${SL[r]} string" opacity="${op}">`
+      o+=`<g class="pn" data-s="${r}" data-f="${f}" role="button" tabindex="0" aria-label="play ${noteName(pc)}, fret ${f} on the ${SL[r]} string" opacity="${op}">`
        +`<circle cx="${x}" cy="${y}" r="8.5" fill="${pc===state.key?'var(--pink)':'var(--blue)'}"/>`
-       +`<text x="${x}" y="${y+3.2}" font-size="8.5" fill="var(--card)" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${state.labelMode==="none"?"":state.labelMode==="interval"?(IV[deg(pc)]||""):NOTES[pc]}</text></g>`;}}
+       +`<text x="${x}" y="${y+3.2}" font-size="8.5" fill="var(--card)" text-anchor="middle" font-family="DM Mono,monospace" pointer-events="none">${state.labelMode==="none"?"":state.labelMode==="interval"?(IV[deg(pc)]||""):noteName(pc)}</text></g>`;}}
   return o+"</svg>";
 }
 
@@ -638,7 +658,7 @@ function formStrip(secs){
     <p class="tip" style="margin:6px 0 0;font-size:11px;opacity:.6">${total} bars — block width is bar count</p>`;}
 
 function renderPower(){
-  const c=[],k=NOTES[state.key];
+  const c=[],k=ROOT_NAMES[state.key];
   c.push(`<div class="card"><h2>What it is<em>root + 5th, and nothing else</em></h2>
     <p class="tip">A power chord is <b>two notes</b>: a root and the fifth above it. That is not a full chord —
     it has no third, and <b>the third is the note that decides major or minor</b>. Leaving it out means the
@@ -673,7 +693,7 @@ function renderPower(){
   let rows="";
   for(let i=0;i<12;i++){
     const e6=((i-OPEN[5]+12)%12),a5=((i-OPEN[4]+12)%12),d4=((i-OPEN[3]+12)%12);
-    rows+=`<tr${i===state.key?' class="me"':''}><td>${NOTES[i]}5</td><td>${e6}${e6===0?" (open)":""}</td>`
+    rows+=`<tr${i===state.key?' class="me"':''}><td>${ROOT_NAMES[i]}5</td><td>${e6}${e6===0?" (open)":""}</td>`
         +`<td>${a5}${a5===0?" (open)":""}</td><td>${d4}${d4===0?" (open)":""}</td></tr>`;}
   c.push(`<div class="card"><h2>Every power chord<em>root fret on each string</em></h2>
     <table><tr><th>Chord</th><th>Low E root</th><th>A root</th><th>D root</th></tr>${rows}</table>
@@ -682,7 +702,7 @@ function renderPower(){
 
   PCPROG.forEach(pg=>{
     const ch=pg.d.map(d=>{const pcs=(state.key+d)%12,f=(pcs-OPEN[5]+12)%12;
-      return {nm:NOTES[pcs]+"5",f:f===0?12:f};});
+      return {nm:ROOT_NAMES[pcs]+"5",f:f===0?12:f};});
     c.push(`<div class="card"><h2>${pg.t}<em>${pg.e}</em></h2>
       <p class="tip" style="font-size:15px;margin:0 0 8px"><b>${ch.map(x=>x.nm).join("  –  ")}</b></p>
       <pre>low E root:  ${ch.map(x=>"fret "+x.f).join("   →   ")}</pre>
@@ -855,7 +875,7 @@ function tab(n,R=fitRoot(n.map(e=>e[1]))){const rows=SL.map(l=>l+"|-");
     for(let i=0;i<6;i++)rows[i]+=(i===s?cell:"-".repeat(cell.length))+"--";});
   return rows.map(r=>r+"|").join("\n");}
 function renderLicks(){
-  const R=groupRoot(BOXES[0],BOXES[1]),k=NOTES[state.key];
+  const R=groupRoot(BOXES[0],BOXES[1]),k=keyName();
   // root reference for the two boxes the guide works in
   const rootCard=`<div class="card wide"><h2>Roots in Box 1 and Box 2<em>${k} minor · what you are aiming at</em></h2>
     ${fretboard((()=>{const m=new Map();
@@ -871,7 +891,7 @@ function renderLicks(){
     belongs to <b>both</b>, which is why it is the natural place to change position. Box 1 has three roots,
     Box 2 has two. <b>Identify them without looking at the diagram</b> before moving on.</p>
     <div class="row" style="margin-top:10px"><span class="lbl">Guide keys</span>${
-      GUIDEKEYS.map(i=>`<button class="guidekey" data-k="${i}"${i===state.key?' aria-pressed="true"':''}>${NOTES[i]}m</button>`).join("")}</div></div>`;
+      GUIDEKEYS.map(i=>`<button class="guidekey" data-k="${i}"${i===state.key?' aria-pressed="true"':''}>${MINOR_KEYS[i]}m</button>`).join("")}</div></div>`;
   document.getElementById("licks").innerHTML=rootCard+LICKS.map(l=>{
     const LR=fitRoot(l.n.map(e=>e[1])),map=new Map();
     l.n.forEach(([s,o],i)=>{const k=s+":"+o;
@@ -1005,7 +1025,7 @@ function wireGoto(sel){
 
 // ---------- over a song ----------
 function renderSong(){
-  const rel=NOTES[(state.key+3)%12], k=NOTES[state.key];
+  const rel=noteName((state.key+3)%12), k=keyName();
   const steps=[
    {n:"1",t:"Find the home note",
     b:`Play the song and hum the note it keeps wanting to settle on — usually the chord it starts and ends on. Now find that note on the low E string. That's your root, and everything else follows from it. <b>Test it:</b> hold that one note through the whole progression. If it sounds settled and at rest, you're right. If it fights the chords, try the note a fret or two either side until one stops fighting.`},
@@ -1080,7 +1100,7 @@ const PHRASE=[[1,3],[0,0],[0,3,"~"],[1,10],[1,8],[2,9,"~"]];
 function renderLand(){
   // Box 1 and Box 4 are taught as a pair and the slide runs travel between them,
   // so the whole view sits at the lowest position that holds both shapes.
-  const R=groupRoot(BOXES[0],BOXES[3]),k=NOTES[state.key],host=document.getElementById("land");
+  const R=groupRoot(BOXES[0],BOXES[3]),k=keyName(),host=document.getElementById("land");
   const c=[];
   c.push(`<div class="card"><h2>Box 1 — landmark A<em>fret ${R}\u2013${R+3}</em></h2>
     ${fretboard(boxNotes(BOXES[0],R))}
@@ -1134,7 +1154,7 @@ function renderLand(){
   let rows="";
   for(let i=0;i<12;i++){
     const base=((i-OPEN[5]+12)%12)||12, low=base-12;
-    rows+=`<tr${i===state.key?' class="me"':''}><td>${NOTES[i]}m</td><td>${base}\u2013${base+3}</td>`
+    rows+=`<tr${i===state.key?' class="me"':''}><td>${MINOR_KEYS[i]}m</td><td>${base}\u2013${base+3}</td>`
         +`<td>${base+7}\u2013${base+10}</td>`
         +`<td>${low>=0?`${low}\u2013${low+3}`:"\u2014"}</td>`
         +`<td>${low+7>=0?`${low+7}\u2013${low+10}`:"\u2014"}</td></tr>`;}
@@ -1171,7 +1191,7 @@ function keyStrip(ki,{w=25,h=11,pad=16,last=22,big=false}={}){
     for(let sh=-24;sh<=24;sh+=12){
       const R=base+sh, fl=BOXES[bi].off.flat();
       if(Math.min(...fl)+R>=0&&Math.max(...fl)+R<=last)posns.push({bi,tag,R});}});
-  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${NOTES[ki]} minor landmark positions">`;
+  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${MINOR_KEYS[ki]} minor landmark positions">`;
   // fret grid
   for(let i=0;i<=last+1;i++){const x=pad+i*w;
     o+=`<line x1="${x}" y1="${pad}" x2="${x}" y2="${pad+5*h}" stroke="${i===0?"var(--ink)":CH_GRID}" stroke-width="${i===0?3:.9}"/>`;}
@@ -1282,7 +1302,7 @@ function newQuiz(){
   state.quiz={box:b,target:t,total:notes.filter(n=>deg(noteAt(n.s,n.f))===t).length,found:0,wrong:0,notes};
   document.getElementById("quizboard").innerHTML=fretboard(notes,{w:46,quiz:true});
   document.getElementById("quizstatus").innerHTML=
-    `Box ${b.n}, key ${NOTES[state.key]} minor — tap every <b>${IV[t]}</b> (${NOTES[(state.key+t)%12]}). 0 of ${state.quiz.total}.`;
+    `Box ${b.n}, key ${keyName()} minor — tap every <b>${IV[t]}</b> (${noteName((state.key+t)%12)}). 0 of ${state.quiz.total}.`;
   document.querySelectorAll("#quizboard .qn").forEach(g=>{
     const hit=()=>answer(g);
     g.addEventListener("click",hit);
@@ -1295,7 +1315,7 @@ function answer(g){
     g.dataset.done=1;state.quiz.found++;c.setAttribute("fill","var(--pink)");t.textContent=IV[state.quiz.target];
     st.innerHTML=state.quiz.found===state.quiz.total
       ? `All ${state.quiz.total} found${state.quiz.wrong?` with ${state.quiz.wrong} miss${state.quiz.wrong>1?"es":""}`:" clean"}. Now play them, lowest to highest, saying <b>${IV[state.quiz.target]}</b> out loud.`
-      : `Tap every <b>${IV[state.quiz.target]}</b> (${NOTES[(state.key+state.quiz.target)%12]}). ${state.quiz.found} of ${state.quiz.total}.`;
+      : `Tap every <b>${IV[state.quiz.target]}</b> (${noteName((state.key+state.quiz.target)%12)}). ${state.quiz.found} of ${state.quiz.total}.`;
   }else{
     state.quiz.wrong++;c.setAttribute("fill","var(--gold)");
     setTimeout(()=>c.setAttribute("fill","var(--blue)"),320);
@@ -1310,7 +1330,7 @@ const POOL=[...BOXES.map(b=>`<b>Box ${b.n}</b> — two notes per string, up and 
 function newSession(){
   const p=[...POOL].sort(()=>Math.random()-.5).slice(0,3);
   document.getElementById("session").innerHTML=
-    [`Warm up: root drone on, ${NOTES[state.key]} minor, wander for 3 min`,...p.map(x=>x+" — 5 min"),
+    [`Warm up: root drone on, ${keyName()} minor, wander for 3 min`,...p.map(x=>x+" — 5 min"),
      "Interleave: cycle back through all three once more, 4 min",
      "Record one take over the drone. Listen once. Stop."].map(x=>`<li>${x}</li>`).join("");
 }
@@ -1373,7 +1393,7 @@ function readChecks(){try{const v=JSON.parse(window.localStorage.getItem(CHECK_K
 function writeChecks(v){try{window.localStorage.setItem(CHECK_KEY,JSON.stringify(v));}catch(e){}}
 
 function renderGuide(){
-  const k=NOTES[state.key],done=readChecks();
+  const k=keyName(),done=readChecks();
   const g=[];
   g.push(`<div class="card"><h2>Song project<em>the point of all of it</em></h2>
     <p class="tip" style="font-size:15px;margin:0 0 6px"><b>${SONGPROJ.t}</b></p>
@@ -1384,7 +1404,7 @@ function renderGuide(){
   g.push(`<div class="card"><h2>Long-term focus<em>where this is going</em></h2>
     <ol>${FOCUS.map(f=>`<li>${f}</li>`).join("")}</ol>
     <div class="row" style="margin-top:10px"><span class="lbl">Work in</span>${
-      GUIDEKEYS.map(i=>`<button class="guidekey" data-k="${i}"${i===state.key?' aria-pressed="true"':''}>${NOTES[i]}m</button>`).join("")}</div>
+      GUIDEKEYS.map(i=>`<button class="guidekey" data-k="${i}"${i===state.key?' aria-pressed="true"':''}>${MINOR_KEYS[i]}m</button>`).join("")}</div>
     <p class="tip">The exercises below are written relative to the root, so they move with the key. Set the
     key to <b>Em</b> and the tabs read exactly as the guide has them, at the 12th fret.</p></div>`);
   ROUTINES.forEach(r=>{
@@ -1475,8 +1495,8 @@ function renderLog(){const log=readLog(),host=document.getElementById("loglist")
 // Log entries come back from localStorage, which anything on this origin can write.
 function escapeHTML(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);}
 function completeSession(){const log=readLog(),date=new Date().toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
-  log.unshift({date,key:NOTES[state.key],bpm:state.bpm});writeLog(log.slice(0,30));markToday();renderLog();renderToday();
-  document.getElementById("logsummary").innerHTML=`Logged today’s <b>${NOTES[state.key]} minor</b> session at ${state.bpm} bpm.`;}
+  log.unshift({date,key:keyName(),bpm:state.bpm});writeLog(log.slice(0,30));markToday();renderLog();renderToday();
+  document.getElementById("logsummary").innerHTML=`Logged today’s <b>${keyName()} minor</b> session at ${state.bpm} bpm.`;}
 function clearLog(){writeLog([]);renderLog();}
 
 
@@ -1543,7 +1563,7 @@ function earAnswer(d){
   stats[state.ear.degree][1]++;if(right)stats[state.ear.degree][0]++;
   writeEar(stats);markToday();state.ear.done=true;
   const name=EAR_DEGREES.find(x=>x[0]===state.ear.degree);
-  const note=NOTES[(state.key+state.ear.degree)%12];
+  const note=noteName((state.key+state.ear.degree)%12);
   document.getElementById("earstatus").innerHTML=right
     ?`Yes: <b>${name[1]}</b>, ${note}. Now find it on your guitar.`
     :`It was <b>${name[1]}</b> (${name[2]}), ${note}. Hear it again, then find it on your guitar.`;
@@ -1862,14 +1882,8 @@ function chordInfo(symbol){const roman=symbol.match(/^[b#]?[IV]+/)[0],kind=symbo
   roots={I:0,bII:1,II:2,bIII:3,III:4,IV:5,"#IV":6,V:7,bVI:8,VI:9,bVII:10,VII:11};
   return {symbol,root:roots[roman],kind,intervals:CHORD_KIND[kind]};}
 // A chart spells a chord by letter, not by the nearest sharp: the IV of F is a kind of
-// B (F G A B), so B♭7, and the ♯IV of A is a kind of D, so D♯dim7. spellAs names a
-// pitch with the letter asked for; where that would take a double accidental or a
-// C♭/F♭/B♯/E♯, it gives the plain spelling a player would write instead.
-const LETTERS="CDEFGAB",NATURAL_PC=[0,2,4,5,7,9,11],ROMAN_DEGREE={I:1,II:2,III:3,IV:4,V:5,VI:6,VII:7};
-function spellAs(pc,letter){
-  let d=((pc-NATURAL_PC[letter])%12+12)%12;if(d>6)d-=12;
-  const name=LETTERS[letter]+(d>0?"♯".repeat(d):"♭".repeat(-d));
-  return Math.abs(d)>1||["C♭","F♭","B♯","E♯"].includes(name)?ROOT_NAMES[pc]:name;}
+// B (F G A B), so B♭7, and the ♯IV of A is a kind of D, so D♯dim7 (see spellAs).
+const ROMAN_DEGREE={I:1,II:2,III:3,IV:4,V:5,VI:6,VII:7};
 // The chord's root, spelt from the key's letter and the numeral's degree.
 function chordRootName(symbol){
   const c=chordInfo(symbol),degree=ROMAN_DEGREE[symbol.match(/[IV]+/)[0]];
@@ -1941,7 +1955,7 @@ function generateRhythm(){stopRhythm();const density=document.getElementById("de
 function renderRhythm(now=state.rhythmStep){const syllables=["1","e","&","a","2","e","&","a","3","e","&","a","4","e","&","a"];
   document.getElementById("beatgrid").innerHTML=state.rhythm.map((hit,i)=>`<div class="beat${hit?" hit":""}${state.rhythmTimer&&i===now?" now":""}">${hit?syllables[i]:"·"}</div>`).join("");
   const hits=state.rhythm.reduce((a,b)=>a+b,0);document.getElementById("rhythmcount").innerHTML=`${hits} attacks · ${16-hits} rests · <b>count the rests too</b>`;
-  document.getElementById("rhythmroot").textContent=NOTES[state.key];document.getElementById("rhythmtip").innerHTML=
+  document.getElementById("rhythmroot").textContent=keyName();document.getElementById("rhythmtip").innerHTML=
     `At ${state.bpm} bpm, one loop lasts ${(240/state.bpm).toFixed(1)} seconds. Accent beats 2 and 4 without changing the written rhythm.`;}
 function rhythmSound(accent,when=0){const a=audio();if(!a)return;a.blip(accent?1100:720,{when,dur:.045,vol:.16});}
 function rhythmTick(when=0){const step=state.rhythmStep;
@@ -3551,9 +3565,11 @@ const currentMode=()=>modeById(state.modeId);
 
 // A mode note carries its own label, because a mode spells its degrees its own way:
 // the raised fourth is #4 in lydian, not the ♭5 the pentatonic table would call it.
+// The i-th note of a mode, its letter taken from the degree's own number.
+function modeNoteName(mode,i){return noteName((state.key+mode.offs[i])%12,+mode.degs[i].replace(/\D/g,"")-1);}
 function modeLabel(mode,i,pc){
   if(state.labelMode==="none")return "";
-  return state.labelMode==="interval"?mode.degs[i]:NOTES[pc];
+  return state.labelMode==="interval"?mode.degs[i]:modeNoteName(mode,i);
 }
 // Every note of the mode inside one fret window, across all six strings. The windows
 // are the five pentatonic box neighbourhoods, so the shapes land where the hand
@@ -3589,7 +3605,7 @@ function modeOrigins(mode){
 function modeMap(mode,moved=false){
   const w=36,h=23,pad=30,cols=MAXFRET,W=pad+cols*w+14,H=pad+5*h+24;
   const from=modeOrigins(mode), anim=moved?" anim":"";
-  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${NOTES[state.key]} ${mode.name} across the neck">`;
+  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${keyName()} ${mode.name} across the neck">`;
   for(let i=0;i<=cols;i++){const x=pad+i*w;
     o+=`<line x1="${x}" y1="${pad}" x2="${x}" y2="${pad+5*h}" stroke="var(--ink)" stroke-width="${i===0?4:1.1}" opacity="${i===0?1:.32}"/>`;
     if(i>0)o+=`<text x="${x-w/2}" y="${pad+5*h+17}" font-size="10" fill="var(--ink)" opacity=".45" text-anchor="middle" font-family="DM Mono,monospace">${i}</text>`;}
@@ -3608,13 +3624,13 @@ function modeMap(mode,moved=false){
   return o+"</svg>";
 }
 function renderModes(){
-  const mode=currentMode(),root=NOTES[state.key];
+  const mode=currentMode(),root=keyName();
   const moved=state.lastMode!==null&&state.lastMode!==mode.id;   // a redraw is not a change
   state.lastMode=mode.id;
   const origins=modeOrigins(mode);
   document.querySelectorAll("#modes button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===state.modeId));
-  const spelled=mode.offs.map((d,i)=>`${mode.degs[i]} <b>${NOTES[(state.key+d)%12]}</b>`).join(" · ");
-  const colours=mode.colour.map(d=>`${mode.degs[mode.offs.indexOf(d)]} (${NOTES[(state.key+d)%12]})`).join(" and ");
+  const spelled=mode.offs.map((d,i)=>`${mode.degs[i]} <b>${modeNoteName(mode,i)}</b>`).join(" · ");
+  const colours=mode.colour.map(d=>`${mode.degs[mode.offs.indexOf(d)]} (${modeNoteName(mode,mode.offs.indexOf(d))})`).join(" and ");
   document.getElementById("modesummary").innerHTML=
     `<div class="card wide"><h2>${root} ${mode.name}<em>${mode.sub}</em></h2>
       <p class="tip" style="font-size:13px">${spelled}</p>
@@ -4209,7 +4225,7 @@ const PD_OFFSETS=[0,1,4,5,7,8,10], PD_DEGREES=["1","♭2","3","4","5","♭6","�
 // Spell by letter and scale degree, so A's flat second is B-flat, not A-sharp.
 function pdName(offset,degree){
   const letters="CDEFGAB",natural=[0,2,4,5,7,9,11];
-  const idx=(letters.indexOf(NOTES[state.key][0])+degree-1)%7;
+  const idx=(letters.indexOf(ROOT_NAMES[state.key][0])+degree-1)%7;
   let delta=((state.key+offset-natural[idx])%12+12)%12;
   if(delta>6)delta-=12;
   return letters[idx]+(delta>0?"♯".repeat(delta):"♭".repeat(-delta));
@@ -4462,7 +4478,7 @@ function applyKeyNames(){
   const asRoot=viewCfg(state.view).key==="root",select=document.getElementById("keyselect");
   document.getElementById("keylbl").textContent=asRoot?"Root":"Key";
   select.setAttribute("aria-label",asRoot?"Root":"Key");
-  Array.from(select.children).forEach((option,k)=>{option.textContent=asRoot?ROOT_NAMES[k]:NOTES[k]+" minor";});
+  Array.from(select.children).forEach((option,k)=>{option.textContent=asRoot?ROOT_NAMES[k]:MINOR_KEYS[k]+" minor";});
   select.value=String(state.key);
 }
 let shellView=null;
@@ -4509,7 +4525,7 @@ const mk=(host,data,txt,fn)=>{const b=document.createElement("button");
   Object.entries(data).forEach(([k,v])=>b.dataset[k]=v);b.textContent=txt;b.onclick=fn;
   (typeof host==="string"?document.getElementById(host):host).appendChild(b);};
 NOTES.forEach((n,i)=>{const option=document.createElement("option");
-  option.value=String(i);option.textContent=n+" minor";document.getElementById("keyselect").appendChild(option);});
+  option.value=String(i);option.textContent=MINOR_KEYS[i]+" minor";document.getElementById("keyselect").appendChild(option);});
 document.getElementById("keyselect").addEventListener("change",e=>{
   const key=Number(e.target.value);
   if(e.target.disabled||!Number.isInteger(key)||key<0||key>11)return;

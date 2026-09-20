@@ -385,7 +385,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderOpen,OPEN_TUNINGS,tuningMidi,TUNING_EXAMPLES,TUNING_OPEN_CHORDS,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
-    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,
+    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
@@ -1552,6 +1552,33 @@ test("known blues forms transpose correctly into A", () => {
   // Blues for Alice changes
   sameShape(bars("bird"),
     ["Amaj7","G♯m7♭5/C♯7","F♯m7/B7","Em7/A7","D7","Dm7/G7","C♯m7/F♯7","Cm7/F7","Bm7","E7","Amaj7/F♯7","Bm7/E7"]);
+});
+
+// Players say B♭ minor, not A# minor, and its pentatonic is B♭ D♭ E♭ F A♭.
+test("keys and dot labels are spelt the way they are written", () => {
+  const { app, document } = makeRuntime();
+  assert.deepEqual([...app.MINOR_KEYS], ["C","C♯","D","E♭","E","F","F♯","G","G♯","A","B♭","B"]);
+  const penta = k => { app.setKey(k); return [0,3,5,7,10].map(d => app.noteName((k + d) % 12)).join(" "); };
+  assert.equal(penta(10), "B♭ D♭ E♭ F A♭");
+  assert.equal(penta(5), "F A♭ B♭ C E♭");
+  assert.equal(penta(8), "G♯ B C♯ D♯ F♯");
+  assert.equal(penta(9), "A C D E G");
+  app.setKey(5);
+  assert.equal(app.noteName(11), "B", "the blue note of F minor is the plain B, not C♭");
+  // the key menu, and a diagram's dots
+  assert.equal(document.getElementById("keyselect").children[10].textContent, "B♭ minor");
+  app.setKey(10); app.setView("boxes"); app.render();
+  const boxes = document.getElementById("boxes").innerHTML;
+  assert.match(boxes, />B♭</, "the root dots are labelled B♭");
+  assert.match(boxes, />D♭</);
+  assert.doesNotMatch(boxes, />[A-G]#</);
+  // a mode spells a degree its own way: Lydian's raised fourth is a fourth
+  app.setKey(5); app.setView("modes");
+  const lydian = app.modeById("lydian");
+  assert.equal(lydian.offs.map((_, i) => app.modeNoteName(lydian, i)).join(" "), "F G A B C D E");
+  app.setKey(3);
+  const dorian = app.modeById("dorian");
+  assert.equal(dorian.offs.map((_, i) => app.modeNoteName(dorian, i)).join(" "), "E♭ F G♭ A♭ B♭ C D♭");
 });
 
 // A chart spells a chord by letter: the IV of F is a kind of B, so B♭7, never A♯7;
@@ -3697,7 +3724,7 @@ test("the Inversions view mounts its explorer once, driven by the toolbar's Root
   assert.match(infoText(el), /^E♭ major/);
   assert.equal(document.getElementById("keyselect").children[3].textContent, "E♭");
   navButton(document, "boxes").click();
-  assert.equal(document.getElementById("keyselect").children[3].textContent, "D# minor", "minor keys keep their spelling");
+  assert.equal(document.getElementById("keyselect").children[3].textContent, "E♭ minor", "minor keys are named as they are written");
   navButton(document, "inv").click();
   assert.equal(findAll(el, e => (e.attributes.class || "") === "cx").length, 1, "not mounted twice");
 });

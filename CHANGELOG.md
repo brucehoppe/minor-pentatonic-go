@@ -5,6 +5,12 @@ a second release on the same day.
 
 ## Unreleased
 
+- Keys and notes are spelt the way they are written. The Key menu says B♭ minor,
+  E♭ minor and G♯ minor (it said A#, D# and G#), and dot labels follow the key, so
+  B♭ minor pentatonic reads B♭ D♭ E♭ F A♭. Modes spell each degree from its own
+  number (F Lydian's raised fourth is B, E♭ Dorian is E♭ F G♭ A♭ B♭ C D♭), power
+  chords are B♭5 and E♭5, and Phrygian dominant on B♭ no longer starts from A♯. The
+  Note names view stays a sharps-between-naturals reference, and file names stay ASCII.
 - CI runs the Go tests on Windows too, so the listen tests meet the real Windows
   port-in-use error.
 - 12-bar trainer: chords and target tones are spelt the way a chart spells them, by
