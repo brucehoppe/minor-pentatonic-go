@@ -43,7 +43,7 @@ const BOXES=[
 const state={
   // what is on screen - key, view and the shared toolbar
   key:9, view:"path", labelMode:"name", chord:null, reg:0, chartOpen:null, boxLock:[],
-  showB5:false, blueLock:null, showCaged:false,
+  showB5:false, blueLock:null, showCaged:false, cagedQuality:"maj", cagedShape:null,
   // major pentatonic and modes views
   majorKey:0, majorDegrees:false, majorArrows:true,
   modeId:"dorian", lastMode:null,
@@ -387,14 +387,10 @@ function bluesMap(hl=null){
 // The minor chord inside each box, named by the open chord its shape comes from
 // (CAGED). off is a fret offset from the box's root fret for strings e B G D A E,
 // null where the string is not played. Every note is one of the box's own dots,
-// which is the point: the chord is already under your fingers.
-const CAGED={
-  1:{shape:"Em",off:[0,0,0,2,2,0],root:"on the low E string, under your first finger",note:"This is the everyday barre chord."},
-  2:{shape:"Dm",off:[3,5,4,2,null,null],root:"on the D string, under your first finger",note:"Four strings, high and bright."},
-  3:{shape:"Cm",off:[null,5,4,5,7,null],root:"on the A string, under your fourth finger",note:"The awkward one; the top three strings alone make a good small chord."},
-  4:{shape:"Am",off:[7,8,9,9,7,null],root:"on the A string, under your first finger",note:"The other everyday barre chord."},
-  5:{shape:"Gm",off:[12,12,9,9,10,12],root:"on the low E string, under your fourth finger",note:"Rarely strummed whole; its notes are where this box's phrases land."},
-};
+// which is the point: the chord is already under your fingers. The shapes themselves
+// are the minor row of CAGED_SHAPES (web/caged.js), box n being the n-th of them.
+const CAGED=Object.fromEntries(CAGED_SHAPES.min.map((c,i)=>[i+1,
+  {shape:c.id+"m",off:c.off,root:`on the ${c.string} string, under your ${c.finger} finger`,note:c.tip}]));
 function cagedNotes(b,R=boxRoot(b)){
   return CAGED[b.n].off.map((o,s)=>o===null?null:{s,f:o+R}).filter(Boolean);}
 // the chord as a player writes it: frets from the low E string up, × for a string left out
@@ -405,7 +401,7 @@ function ringCaged(b,R){
   return boxNotes(b,R).map(n=>chord.has(n.s+":"+n.f)?{...n,ring:true}:n);}
 function cagedTip(b){
   const c=CAGED[b.n];
-  return `<p class="tip caged"><b>${c.shape} shape</b> — the ringed dots are ${keyName()} minor, <b>${cagedCode(b)}</b>. Root ${c.root}. ${c.note}</p>`;}
+  return `<p class="tip caged"><b>${c.shape} shape</b> — the ringed dots are ${keyName()} minor, <b>${cagedCode(b)}</b>. Root ${c.root}. ${c.note} All five linked up the neck: <b>Chords → CAGED</b>.</p>`;}
 function renderBoxes(){
   const laid=[...validBoxes()].sort((x,y)=>boxSpan(x).lo-boxSpan(y).lo);
   document.getElementById("boxes").innerHTML=laid.map(b=>{
@@ -4491,6 +4487,7 @@ const VIEWS=[
   ["triads",  "Triads",           renderTriads,     {band:"Chords",tools:"keys labels",key:"root"}],
   ["inv",     "Inversions",       renderInversions, {band:"Chords",tools:"keys labels",key:"root"}],
   ["power",   "Power chords",     renderPower,      {band:"Chords",tools:"keys"}],
+  ["caged",   "CAGED",            renderCaged,      {band:"Chords",tools:"keys labels",key:"root"}],
 
   ["hijaz",   "Phrygian dominant", renderHijaz,     {band:"Playing",tools:"keys labels regs",key:"root"}],
   ["open",    "Open tunings",      renderOpen,       {band:"Playing"}],

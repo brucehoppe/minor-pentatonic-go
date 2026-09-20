@@ -27,7 +27,7 @@ const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-
   .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
 const analysisScript = readFileSync(new URL("../web/analysis.js", import.meta.url), "utf8");
-const pitchScripts = ["pitch.js", "tune.js", "changes.js", "landing.js"].map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
+const pitchScripts = ["pitch.js", "tune.js", "changes.js", "landing.js", "caged.js"].map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const songsScript = readFileSync(new URL("../web/songs.js", import.meta.url), "utf8");
 const libraryScript = readFileSync(new URL("../web/library.js", import.meta.url), "utf8");
 const looperScript = readFileSync(new URL("../web/looper.js", import.meta.url), "utf8");
@@ -385,7 +385,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderOpen,OPEN_TUNINGS,tuningMidi,TUNING_EXAMPLES,TUNING_OPEN_CHORDS,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
-    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,landingJudge,landingToggle,landingStop,readLanding,getLanding:()=>state.landing,LICKS,lickCheck,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
+    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,CAGED_SHAPES,cagedInstances,cagedShared,cagedPosition,cagedFrets,getCaged:()=>({quality:state.cagedQuality,shape:state.cagedShape}),setCagedQuality:q=>{state.cagedQuality=q},landingJudge,landingToggle,landingStop,readLanding,getLanding:()=>state.landing,LICKS,lickCheck,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
@@ -464,7 +464,7 @@ test("song count-in can be cancelled and invalid loops never play", async () => 
 
 test("all revised navigation views render", () => {
   const { app, document } = makeRuntime();
-  const views = ["hijaz","open","path","tune","song","songs","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","form","licks","trainer","rhythm","theory","practice"];
+  const views = ["hijaz","open","path","tune","song","songs","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","caged","form","licks","trainer","rhythm","theory","practice"];
   for (const view of views) {
     navButton(document, view).click();
     assert.equal(app.getState().view, view);
@@ -1639,6 +1639,91 @@ test("licks with a bend or vibrato open the bend check already set up", () => {
   assert.equal(document.getElementById("bendfret").value, "7");
   assert.equal(document.getElementById("bendamt").value, "2");
   assert.match(document.getElementById("bendwhat").innerHTML, /fret 7/);
+});
+
+// ---- the CAGED view ----
+const CAGED_TONES = { maj: [0, 4, 7], min: [0, 3, 7] };
+
+test("CAGED: five shapes of one chord tile the neck in order, each inside its pentatonic position", () => {
+  const { app } = makeRuntime();
+  for (const quality of ["maj", "min"]) {
+    app.setCagedQuality(quality);
+    assert.equal(app.CAGED_SHAPES[quality].map(x => x.id).join(""), "EDCAG", "neck order from the E shape");
+    for (const key of [9, 4, 10, 0]) {
+      app.setKey(key);
+      const all = app.cagedInstances();
+      assert.ok(all.length >= 6, "at least one of every shape between the nut and fret 17");
+      // low to high, and the letters run round the word CAGED
+      for (let i = 1; i < all.length; i++) {
+        assert.ok(all[i].lo >= all[i - 1].lo, "sorted up the neck");
+        assert.equal("CAGED".indexOf(all[i].id), ("CAGED".indexOf(all[i - 1].id) + 1) % 5, `${all[i - 1].id} is followed by ${all[i].id}`);
+        const mine = new Set(all[i].notes.map(n => n.s + ":" + n.f));
+        assert.ok(all[i - 1].notes.some(n => mine.has(n.s + ":" + n.f)), `${all[i - 1].id} and ${all[i].id} share a note`);
+      }
+      for (const inst of all) {
+        const degrees = new Set(inst.notes.map(n => app.deg(app.noteAt(n.s, n.f))));
+        assert.deepEqual([...degrees].sort((a, b) => a - b), CAGED_TONES[quality], `${quality} ${inst.id} shape in key ${key} is exactly that chord`);
+        assert.ok(inst.notes.length >= 4);
+        assert.ok(inst.lo >= 0 && inst.hi <= 17);
+        const scale = new Set(app.cagedPosition(inst).map(n => n.s + ":" + n.f));
+        for (const n of inst.notes) assert.ok(scale.has(n.s + ":" + n.f), `${quality} ${inst.id}: string ${n.s} fret ${n.f} is a dot in its pentatonic position`);
+      }
+    }
+  }
+  // the word itself: from the nut, C major runs C, A, G, E, D
+  app.setCagedQuality("maj"); app.setKey(0);
+  assert.equal(app.cagedInstances().map(x => x.id).join(" "), "C A G E D C A");
+  assert.equal(app.cagedFrets(app.cagedInstances()[0]), "× 3 2 0 1 0", "the open C chord");
+  app.setKey(9);
+  assert.equal(app.cagedInstances().map(x => x.id).join(" "), "A G E D C A G");
+  assert.equal(app.cagedFrets(app.cagedInstances()[0]), "× 0 2 2 2 0", "the open A chord");
+  assert.equal(app.cagedFrets(app.cagedInstances()[2]), "5 7 7 6 5 5", "the A barre chord, E shape");
+  const shared = app.cagedShared(app.cagedInstances());
+  assert.ok(shared.has("3:7"), "the E and D shapes meet on the D string, fret 7");
+});
+
+test("CAGED view: a map, five cards, major and minor, one shape at a time, and a strum", () => {
+  const { app, document, audio } = makeRuntime();
+  app.setKey(9);
+  navButton(document, "caged").click();
+  assert.equal(app.getState().view, "caged");
+  assert.equal(document.getElementById("keylbl").textContent, "Root", "the key menu names a chord here");
+  assert.match(document.getElementById("cagedintro").innerHTML, /C, A, G, E and D/);
+  const map = () => document.getElementById("cagedmap").innerHTML;
+  for (const id of "CAGED") assert.match(map(), new RegExp(`>${id} shape<`));
+  assert.match(document.getElementById("cagedmaplabel").textContent, /A major/);
+  const cards = () => document.getElementById("cagedcards").innerHTML;
+  assert.equal((cards().match(/class="card/g) ?? []).length, 5);
+  assert.match(cards(), /5 7 7 6 5 5/);
+  assert.match(cards(), /× 0 2 2 2 0/, "each card shows the shape at its lowest place, so A is the open chord");
+  assert.match(cards(), /the open A chord itself/);
+  assert.match(map(), /r="12.5" fill="none" stroke="var\(--gold\)"/, "a root two shapes share wears a gold ring");
+  // minor
+  findAll(document.getElementById("cagedquality"), e => e.dataset?.q === "min")[0].click();
+  assert.equal(app.getCaged().quality, "min");
+  assert.match(map(), />Em shape</);
+  assert.match(cards(), /5 7 7 5 5 5/);
+  assert.match(cards(), /Box 1/, "the minor shapes are the ones inside the five boxes");
+  // one shape at a time
+  findAll(document.getElementById("cagedshapes"), e => e.dataset?.cs === "E")[0].click();
+  assert.equal(app.getCaged().shape, "E");
+  assert.match(map(), /opacity="0?\.15"/, "the other shapes fade");
+  findAll(document.getElementById("cagedshapes"), e => e.dataset?.cs === "E")[0].click();
+  assert.equal(app.getCaged().shape, null, "pressing it again shows them all");
+  // strum
+  const before = audio.starts;
+  document.getElementById("cagedcards").onclick({ target: { dataset: { strum: "0" } } });
+  assert.ok(audio.starts > before, "the chord sounds");
+});
+
+test("the 5 boxes chord toggle and the CAGED view read the same minor shapes", () => {
+  const { app } = makeRuntime();
+  app.setKey(9); app.setCagedQuality("min");
+  const byId = Object.fromEntries(app.cagedInstances().filter(x => x.lo >= 5 && x.lo < 17).map(x => [x.id, x]));
+  for (const b of app.BOXES) {
+    const shape = app.CAGED[b.n].shape[0];
+    assert.equal(app.cagedCode(b), app.cagedFrets(byId[shape]), `Box ${b.n} and the ${shape}m shape are one chord`);
+  }
 });
 
 // Each pentatonic box has a minor chord shape inside it: the link between the
@@ -3952,7 +4037,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="pitch\.js" defer><\/script>\s*<script src="tune\.js" defer><\/script>\s*<script src="changes\.js" defer><\/script>\s*<script src="landing\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="pitch\.js" defer><\/script>\s*<script src="tune\.js" defer><\/script>\s*<script src="changes\.js" defer><\/script>\s*<script src="landing\.js" defer><\/script>\s*<script src="caged\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {

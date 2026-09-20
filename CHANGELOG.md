@@ -5,6 +5,20 @@ a second release on the same day.
 
 ## Unreleased
 
+- **CAGED**, a new view under Chords. One chord in five places: it explains the name
+  (the open chords C, A, G, E and D, made movable), then draws the chosen chord in
+  every shape from the nut to fret 17, each shape bracketed and named, reading in the
+  order of the word (C major runs C → A → G → E → D from the open C chord). Notes that
+  two neighbouring shapes share, the doors between them, are gold, or a gold ring
+  round a shared root. Major or minor; show one shape at a time; five cards, each the
+  shape at its lowest place inside the pentatonic position it lives in (chord solid,
+  scale dashed), with its frets as a player writes them, where the root is, and a
+  Strum button; and a five-step practice order ending over the 12-bar trainer. The
+  minor shapes are the ones **Chord inside each box** rings on the 5 boxes view, and
+  both now read one table (`web/caged.js`). Tests check, in four keys and both
+  qualities, that every shape is exactly the chord, sits inside its pentatonic
+  position, follows the word's order and shares a note with the next. Checked in
+  Chrome at desktop and phone widths with no console errors.
 - Cleared the nine open CodeQL alerts. One was in the app: a regex that stripped tags
   from the no-audio tooltip, which was never exploitable (the text is the app's own
   and `title` is not read as HTML) and did nothing, since that text has no tags; it
