@@ -5,6 +5,15 @@ a second release on the same day.
 
 ## Unreleased
 
+- 12-bar trainer: a **landing drill**. Press *Landing drill: listen* and, while the
+  band plays, the desk hears your guitar and marks every bar: the chord tone you were
+  sounding on beat 1 (root, 3rd, 5th, 7th), the note you missed with, or a rest, which
+  is not counted as a miss. The line under the bars scores the chorus ("chord tones on
+  beat 1, 10 of 12 · on the changes, 5 of 7"), counting separately the bars that start
+  on a new chord, keeps the last chorus in view and remembers your best. Your latency
+  calibration is applied, whole choruses are kept on this device, and stopping the
+  trainer lets go of the input. It is `web/landing.js`; the judging is a pure function,
+  tested with a held A over a blues in A (the root of A7, the 5th of D7, not in E7).
 - Licks: a lick with a bend has **Check this bend**, and one that ends on a held note
   **Check this vibrato**. It opens Tuner & bends with the string, fret and bend
   already set for the key and register on screen, and the lick's card shows how the

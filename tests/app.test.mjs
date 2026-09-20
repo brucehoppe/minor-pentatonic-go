@@ -27,7 +27,7 @@ const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-
   .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
 const analysisScript = readFileSync(new URL("../web/analysis.js", import.meta.url), "utf8");
-const pitchScripts = ["pitch.js", "tune.js", "changes.js"].map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
+const pitchScripts = ["pitch.js", "tune.js", "changes.js", "landing.js"].map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const songsScript = readFileSync(new URL("../web/songs.js", import.meta.url), "utf8");
 const libraryScript = readFileSync(new URL("../web/library.js", import.meta.url), "utf8");
 const looperScript = readFileSync(new URL("../web/looper.js", import.meta.url), "utf8");
@@ -385,7 +385,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderOpen,OPEN_TUNINGS,tuningMidi,TUNING_EXAMPLES,TUNING_OPEN_CHORDS,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
-    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,LICKS,lickCheck,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
+    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,landingJudge,landingToggle,landingStop,readLanding,getLanding:()=>state.landing,LICKS,lickCheck,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
@@ -1552,6 +1552,62 @@ test("known blues forms transpose correctly into A", () => {
   // Blues for Alice changes
   sameShape(bars("bird"),
     ["Amaj7","G♯m7♭5/C♯7","F♯m7/B7","Em7/A7","D7","Dm7/G7","C♯m7/F♯7","Cm7/F7","Bm7","E7","Amaj7/F♯7","Bm7/E7"]);
+});
+
+// The landing drill: what were you sounding on beat 1, and is it in the chord?
+test("landingJudge names the chord tone sounding on the downbeat", () => {
+  const { app } = makeRuntime();
+  const A7 = { pc: 9, intervals: [0, 4, 7, 10] };
+  const held = (midi, from, to) => { const r = []; for (let t = from; t < to; t += 0.025) r.push({ t, midi }); return r; };
+  assert.deepEqual({ ...app.landingJudge(held(61, 9.9, 10.5), 10, A7) }, { pc: 1, tone: "3rd", hit: true });
+  assert.deepEqual({ ...app.landingJudge(held(67.2, 9.9, 10.5), 10, A7) }, { pc: 7, tone: "7th", hit: true }, "a little sharp is still G");
+  assert.deepEqual({ ...app.landingJudge(held(62, 9.9, 10.5), 10, A7) }, { pc: 2, tone: null, hit: false });
+  assert.equal(app.landingJudge(held(61, 10.6, 11), 10, A7).silent, true, "a note that came after the beat is not a landing");
+  assert.equal(app.landingJudge([{ t: 10, midi: 61 }], 10, A7).silent, true, "one stray reading is not a note");
+  // the note you arrive on counts, not the one you left: most of the window wins
+  const slide = [...held(62, 9.93, 10.0), ...held(61, 10.0, 10.35)];
+  assert.equal(app.landingJudge(slide, 10, A7).tone, "3rd");
+});
+
+test("the landing drill marks every bar of a chorus and scores the changes", async () => {
+  const { app, context, document, advance } = makeRuntime({ media: true });
+  navButton(document, "trainer").click();
+  app.setKey(9); app.setBpm(120);
+  document.getElementById("bluesform").value = "classic";
+  // Hold an A throughout: the root of A7, the 5th of D7, and not in E7 (bars 9 and 12).
+  context.detectPitch = () => ({ hz: 220, clarity: 0.96 });
+  document.getElementById("landingtoggle").click();
+  await settle();
+  assert.equal(document.getElementById("landingtoggle").getAttribute("aria-pressed"), "true");
+  app.toggleTrainer();
+  for (let t = 0; t < (4 + 48 + 2) * 0.5; t += 0.025) advance(0.025);   // count-in, a chorus, into the next
+  const kept = app.readLanding();
+  assert.equal(kept.length, 1, "one finished chorus is kept");
+  assert.equal(kept[0].hit, 10); assert.equal(kept[0].of, 12);
+  assert.equal(kept[0].chHit, 5); assert.equal(kept[0].chOf, 7, "bars 1, 5, 7, 9, 10, 11 and 12 start on a new chord");
+  const status = document.getElementById("landingstatus").innerHTML;
+  assert.match(status, /<b>10 of 12<\/b>/); assert.match(status, /5 of 7/);
+  app.toggleTrainer();   // the Stop button
+  assert.equal(app.getLanding(), null, "stopping the trainer lets go of the input");
+  assert.equal(document.getElementById("landingtoggle").getAttribute("aria-pressed"), "false");
+});
+
+test("the landing drill draws its marks on the bars, and silence is not a miss", async () => {
+  const { app, context, document, advance } = makeRuntime({ media: true });
+  navButton(document, "trainer").click();
+  app.setKey(9); app.setBpm(120);
+  let hz = 220;
+  context.detectPitch = () => hz ? ({ hz, clarity: 0.96 }) : null;
+  document.getElementById("landingtoggle").click();
+  await settle();
+  app.toggleTrainer();
+  for (let t = 0; t < (4 + 4) * 0.5 + 0.5; t += 0.025) advance(0.025);   // bar 1, and on into bar 2
+  hz = 0;
+  for (let t = 0; t < 4 * 0.5; t += 0.025) advance(0.025);               // bar 2 in silence, into bar 3
+  const bars = document.getElementById("bluesbars").innerHTML;
+  assert.match(bars, /class="land hit">root</);
+  assert.match(bars, /class="land rest">rest</);
+  assert.doesNotMatch(bars, /class="land miss"/);
 });
 
 // A lick's bend or held note opens the bend check already set to it, in the key on
@@ -3896,7 +3952,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="pitch\.js" defer><\/script>\s*<script src="tune\.js" defer><\/script>\s*<script src="changes\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="pitch\.js" defer><\/script>\s*<script src="tune\.js" defer><\/script>\s*<script src="changes\.js" defer><\/script>\s*<script src="landing\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {

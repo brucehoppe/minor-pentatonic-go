@@ -318,6 +318,11 @@
   .bluesbar b{display:block;font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:18px;color:var(--blue)}
   .bluesbar.now{background:var(--blue);color:var(--paper);border-color:var(--blue)}
   .bluesbar.now b{color:var(--paper)}
+  .bluesbar .land{display:block;margin-top:4px;font-style:normal;font-size:10.5px;line-height:1.2}
+  .bluesbar .land.hit{color:var(--blue);font-weight:600}
+  .bluesbar .land.miss{color:var(--pink);font-weight:600}
+  .bluesbar .land.rest{opacity:.55}
+  .bluesbar.now .land{color:var(--paper)}
   .rot{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 4px}
   .rot>div{min-width:0}
   .rotname{font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.6;margin-bottom:6px;text-align:center}

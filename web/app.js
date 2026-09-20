@@ -67,7 +67,7 @@ const state={
   engine:null, audioFault:null, clickTimer:null, droneHandle:null, bpm:90,
   // recorder - the take in progress (its phase, input and MediaRecorder), the chosen
   // input device, and the last finished take with its blob URLs
-  rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null, checking:false, meter:null, savedList:[],
+  landing:null, rec:null, recDevice:"", recChannel:-1, recTake:null, monitor:null, inputHeld:null, checking:false, meter:null, savedList:[],
   takeDB:null, workletFor:null, wavBits:16, mp3Quality:"standard", cal:null, calRun:null,
   // note names, triads, inversions and open tunings views
   noteHL:null, noteString:null,
@@ -1952,7 +1952,8 @@ function renderTrainer(bar=state.trainerBar,beat=state.trainerBeat){const form=c
   document.getElementById("bluesbars").innerHTML=form.chords.map((entry,i)=>{
     const syms=barSymbols(entry);
     return `<div class="bluesbar${i===bar?" now":""}${syms.length>1?" split":""}"><span>${i+1}</span>${
-      syms.map(sym=>`<b>${chordName(sym)}</b>`).join("")}<span>${syms.join(" ")}</span></div>`;}).join("");
+      syms.map(sym=>`<b>${chordName(sym)}</b>`).join("")}<span>${syms.join(" ")}</span>${
+      typeof landingMark==="function"?landingMark(i):""}</div>`;}).join("");
   const entry=bar<0?form.chords[0]:form.chords[bar];
   const symbol=symbolAt(entry,bar<0?0:beat),c=chordInfo(symbol),roles=["root","3rd","5th",c.kind==="6"?"6th":"7th"];
   const targets=chordToneNames(symbol).map((name,i)=>`${roles[i]} (${name})`).join(" · ");
@@ -1985,6 +1986,7 @@ function trainerTick(when=0){const form=currentForm();
   if(chordKey!==state.liveChordKey){
     state.liveChordKey=chordKey;
     atBeat(when,()=>{state.liveChord=chord;if(state.chord==="band"&&state.view!=="trainer")render();});}
+  if(beat===0&&typeof landingBar==="function")landingBar(bar,chord,when);
   const drop=state.dropBars.includes(bar),fours=state.band.practice.drill==="fours"&&bar>=4&&bar<=7;
   if(drop){/* the band is out: you keep time */}
   else if(state.bandRig)bandBeat(when,{beat,step:split&&beat>=2?beat-2:beat,chord,only:fours?"drums":null});
@@ -1994,6 +1996,7 @@ function trainerTick(when=0){const form=currentForm();
   state.trainerBeat++;if(state.trainerBeat===4){state.trainerBeat=0;state.trainerBar=(state.trainerBar+1)%12;}}
 function stopTrainer(){if(state.trainerTimer){clearInterval(state.trainerTimer);state.trainerTimer=null;}
   bandStop();state.trainerEnding=false;state.liveChordKey="";
+  if(typeof landingStop==="function")landingStop();
   if(state.rec&&state.rec.fromTrainer)stopRecording();const b=document.getElementById("toggletrainer");
   if(b){b.textContent="Start with count-in";b.setAttribute("aria-pressed",false);}}
 function toggleTrainer(){if(state.trainerTimer){stopTrainer();return;}state.trainerCount=4;state.trainerBar=-1;state.trainerBeat=0;
@@ -2660,12 +2663,13 @@ function releaseInput(){
   state.inputHeld=null;clearTimeout(h.idle);
   meterDetach();
   if(state.pitch&&typeof pitchStop==="function")pitchStop();
+  if(state.landing&&typeof landingStop==="function")landingStop();
   if(state.checking){state.checking=false;checkButton();}
   h.stream.getTracks().forEach(t=>t.stop());}
 // Called whenever the recorder, the monitor or Check input lets go of the input.
 function inputIdle(){
   const h=state.inputHeld;
-  if(!h||state.monitor||state.rec||state.checking||state.pitch)return;
+  if(!h||state.monitor||state.rec||state.checking||state.pitch||state.landing)return;
   clearTimeout(h.idle);h.idle=setTimeout(releaseInput,INPUT_IDLE_MS);}
 // The input as a Web Audio source, with the chosen channel split out. link(node)
 // connects it onward; one splitter output is mono, which a stereo node spreads to
@@ -4675,6 +4679,8 @@ document.getElementById("earroot").onclick=()=>pluck(48+state.key,0,.9,.5);
 document.getElementById("earnext").onclick=earNew;
 document.getElementById("toggletrainer").onclick=toggleTrainer;
 document.getElementById("resettrainer").onclick=resetTrainer;
+if(typeof landingToggle==="function"){document.getElementById("landingtoggle").onclick=landingToggle;
+  document.getElementById("landingstatus").innerHTML=landingBest();}
 document.getElementById("groove").onchange=()=>{renderTrainer();renderBandControls();};
 readBand();
 document.getElementById("swing").oninput=e=>{state.band.swing=Math.min(.75,Math.max(.5,(+e.target.value)/100));
