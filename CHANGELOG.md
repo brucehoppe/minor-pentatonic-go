@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- Licks: a lick with a bend has **Check this bend**, and one that ends on a held note
+  **Check this vibrato**. It opens Tuner & bends with the string, fret and bend
+  already set for the key and register on screen, and the lick's card shows how the
+  last check of that same bend went ("Last check: flat by 22 cents").
 - Windows: the server states every file's Content-Type itself. Go otherwise asks the
   Windows registry, where `.js` is sometimes mapped to `text/plain`; with `nosniff`
   set, a browser on such a PC would have refused the desk's scripts and shown a blank

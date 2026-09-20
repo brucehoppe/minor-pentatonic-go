@@ -900,6 +900,32 @@ function tab(n,R=fitRoot(n.map(e=>e[1]))){const rows=SL.map(l=>l+"|-");
   n.forEach(([s,o,tk])=>{const cell=String(o+R)+(tk||"");
     for(let i=0;i<6;i++)rows[i]+=(i===s?cell:"-".repeat(cell.length))+"--";});
   return rows.map(r=>r+"|").join("\n");}
+// The one note of a lick worth checking by ear: its bend (a whole step unless the
+// lick says otherwise with by), or else the note it holds with vibrato. Placed in the
+// key and register on screen; null when the lick has neither, or the note falls
+// outside the frets the bend check covers.
+function lickCheck(l){
+  const n=l.n.find(e=>e[2]==="b")||l.n.find(e=>e[2]==="~");
+  if(!n)return null;
+  const f=n[1]+fitRoot(l.n.map(e=>e[1]));
+  return f<1||f>22?null:{s:n[0],f,by:n[2]==="b"?(l.by||2):0};}
+function lickCheckLine(l,i){
+  const c=lickCheck(l);if(!c)return "";
+  const last=typeof readBends==="function"?readBends().find(x=>x.s===c.s&&x.f===c.f&&x.by===c.by):null;
+  const was=!last?"":c.by
+    ?` Last check: <b>${escapeHTML(last.verdict)}</b>${last.cents!==null&&last.verdict!=="in tune"&&last.verdict!=="not reached"?` by ${Math.abs(last.cents)} cents`:""}.`
+    :` Last check: ${last.rate?`<b>${last.rate} a second</b>, ${last.steady?"even":"uneven"}`:"<b>no vibrato heard</b>"}.`;
+  return `<p class="tip"><button data-bend="${i}">Check this ${c.by?"bend":"vibrato"}</button> String ${c.s+1}, fret ${c.f}: the tuner listens and tells you ${
+    c.by?"where the bend landed":"how fast and even it was"}.${was}</p>`;}
+// Opens Tuner & bends with that note dialled in.
+function openLickCheck(i){
+  const c=LICKS[i]&&lickCheck(LICKS[i]);if(!c)return;
+  goToView("tune");
+  document.getElementById("bendstring").value=String(c.s);
+  document.getElementById("bendfret").value=String(c.f);
+  document.getElementById("bendamt").value=String(c.by);
+  if(typeof bendReset==="function")bendReset();
+  if(typeof renderBendWhat==="function")renderBendWhat();}
 function renderLicks(){
   const R=groupRoot(BOXES[0],BOXES[1]),k=keyName();
   // root reference for the two boxes the guide works in
@@ -926,7 +952,7 @@ function renderLicks(){
     return `<div class="card${l.g?" fromguide":""}"><h2>${l.t}<em>${l.e}</em></h2>${
       l.g?`<p class="badge">Practice guide</p>`:""}${fretboard([...map.values()],{w:44})}<pre>${tab(l.n,LR)}</pre>
       <p class="tip">${l.tip.replace(/\$\{K\}/g,k)}</p>
-      <p class="tip"><button data-hear="${LICKS.indexOf(l)}">Hear the model</button> then press Record in the Play along bar and play it back to yourself.</p>
+      <p class="tip"><button data-hear="${LICKS.indexOf(l)}">Hear the model</button> then press Record in the Play along bar and play it back to yourself.</p>${lickCheckLine(l,LICKS.indexOf(l))}
       <p class="tip licktempo" id="licktempo-${LICKS.indexOf(l)}">${lickTempoLine(l)}</p>
       <div class="row"><button data-clean="${LICKS.indexOf(l)}">Played it clean at this tempo</button>${
         (r=>r.length?`<button data-bpm="${Math.max(40,r[0].bpm-5)}">Warm up at ${Math.max(40,r[0].bpm-5)}</button><button data-bpm="${Math.min(220,r[0].bpm+5)}">Try ${Math.min(220,r[0].bpm+5)}</button>`:"")(readLickTempos()[l.t]||[])}</div></div>`;}).join("");
@@ -934,6 +960,7 @@ function renderLicks(){
     if(d.hear!==undefined)hearLick(+d.hear);
     else if(d.clean!==undefined){saveLickTempo(+d.clean);renderLicks();
       const t=document.getElementById("licktempo-"+d.clean);if(t)t.innerHTML=`Saved: clean at <b>${state.bpm} bpm</b>. Next time, start here.`;}
+    else if(d.bend!==undefined)openLickCheck(+d.bend);
     else if(d.bpm!==undefined)setBpm(+d.bpm);};
   document.querySelectorAll(".guidekey").forEach(b=>b.onclick=()=>{
     state.key=+b.dataset.k;stopDrone();state.blueLock=null;

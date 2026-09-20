@@ -385,7 +385,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderOpen,OPEN_TUNINGS,tuningMidi,TUNING_EXAMPLES,TUNING_OPEN_CHORDS,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
-    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
+    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,LICKS,lickCheck,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
@@ -1552,6 +1552,37 @@ test("known blues forms transpose correctly into A", () => {
   // Blues for Alice changes
   sameShape(bars("bird"),
     ["Amaj7","G♯m7♭5/C♯7","F♯m7/B7","Em7/A7","D7","Dm7/G7","C♯m7/F♯7","Cm7/F7","Bm7","E7","Amaj7/F♯7","Bm7/E7"]);
+});
+
+// A lick's bend or held note opens the bend check already set to it, in the key on
+// screen, and the card shows how the last check of that same bend went.
+test("licks with a bend or vibrato open the bend check already set up", () => {
+  const seed = { "minor-pentatonic-bends-v1": JSON.stringify([
+    { d: "2026-09-19", by: 2, s: 2, f: 7, verdict: "flat", cents: -22, rate: null, width: null, steady: null },
+    { d: "2026-09-18", by: 2, s: 2, f: 7, verdict: "in tune", cents: 4, rate: 5.5, width: 20, steady: true },
+  ]) };
+  const { app, document } = makeRuntime({ stored: seed });
+  const find = t => app.LICKS.findIndex(l => l.t === t);
+  app.setKey(9); app.setView("licks"); app.render();
+  assert.deepEqual({ ...app.lickCheck(app.LICKS[find("Bend and answer")]) }, { s: 2, f: 7, by: 2 });
+  assert.deepEqual({ ...app.lickCheck(app.LICKS[find("Albert King bend")]) }, { s: 0, f: 10, by: 2 });
+  assert.deepEqual({ ...app.lickCheck(app.LICKS[find("B.B. descent")]) }, { s: 1, f: 10, by: 0 }, "a held note is a vibrato check");
+  assert.equal(app.lickCheck(app.LICKS[find("Descending cascade")]), null, "no bend, no check");
+  app.setKey(4); // E: the same bend moves with the key
+  assert.deepEqual({ ...app.lickCheck(app.LICKS[find("Bend and answer")]) }, { s: 2, f: 14, by: 2 });
+  app.setKey(9); app.render();
+  const cards = document.getElementById("licks").innerHTML;
+  assert.match(cards, new RegExp(`data-bend="${find("Bend and answer")}"[^>]*>Check this bend<`));
+  assert.match(cards, new RegExp(`data-bend="${find("B.B. descent")}"[^>]*>Check this vibrato<`));
+  assert.equal((cards.match(/data-bend=/g) ?? []).length, app.LICKS.filter(l => app.lickCheck(l)).length);
+  assert.match(cards, /Last check: <b>flat<\/b> by 22 cents/, "the newest result for this string, fret and bend");
+  // pressing it opens Tuner & bends with the bend dialled in
+  document.getElementById("licks").onclick({ target: { dataset: { bend: String(find("Bend and answer")) } } });
+  assert.equal(app.getState().view, "tune");
+  assert.equal(document.getElementById("bendstring").value, "2");
+  assert.equal(document.getElementById("bendfret").value, "7");
+  assert.equal(document.getElementById("bendamt").value, "2");
+  assert.match(document.getElementById("bendwhat").innerHTML, /fret 7/);
 });
 
 // Each pentatonic box has a minor chord shape inside it: the link between the
