@@ -395,7 +395,8 @@ node --test tests/app.test.mjs tests/pitch.test.mjs
 
 CI (`.github/workflows/ci.yml`) runs `gofmt`, `go vet`, `go test -race` and the
 frontend suite on Linux and macOS, across Go 1.26.8 and the latest Go and Node 24
-and 26. Two more jobs build real release packages and install, run and uninstall
+and 26, and the Go tests again on Windows, where the port-in-use error differs.
+Two more jobs build real release packages and install, run and uninstall
 them with `install.ps1` on Windows (under Windows PowerShell 5.1) and `install.sh`
 on macOS, and check that a tampered download is refused. Dependabot keeps the
 pinned actions current.

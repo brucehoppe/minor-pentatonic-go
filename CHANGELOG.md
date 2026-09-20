@@ -5,6 +5,8 @@ a second release on the same day.
 
 ## Unreleased
 
+- CI runs the Go tests on Windows too, so the listen tests meet the real Windows
+  port-in-use error.
 - 12-bar trainer: chords and target tones are spelt the way a chart spells them, by
   letter. A blues in F now shows B♭7 (it said A#7), with target tones B♭ D F A♭,
   while the ♯IV diminished chord in A stays D♯dim7. Names that would need a double
