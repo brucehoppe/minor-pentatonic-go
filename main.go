@@ -209,6 +209,21 @@ func alreadyServing(url string) bool {
 	return resp.StatusCode == http.StatusOK && strings.Contains(string(body), appName)
 }
 
+// wsaeaddrinuse is what Windows reports when a port is taken. Go's syscall.EADDRINUSE
+// is an invented number there and never equals it, so errors.Is alone would miss it
+// and a second launch on Windows would fail instead of reopening the first.
+const wsaeaddrinuse = syscall.Errno(10048)
+
+// addrInUse reports whether a listen error means "something already holds that port".
+// goos is a parameter so the Windows reading can be tested from any platform.
+func addrInUse(goos string, err error) bool {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	var errno syscall.Errno
+	return goos == "windows" && errors.As(err, &errno) && errno == wsaeaddrinuse
+}
+
 // listen binds addr, falling back sensibly when the port is taken.
 // A nil listener with a nil error means our app is already running at the
 // returned URL and this process should just reopen it and exit.
@@ -217,7 +232,7 @@ func listen(addr string) (net.Listener, string, error) {
 	if err == nil {
 		return l, "http://" + l.Addr().String(), nil
 	}
-	if !errors.Is(err, syscall.EADDRINUSE) {
+	if !addrInUse(runtime.GOOS, err) {
 		return nil, "", fmt.Errorf("listen: %w", err)
 	}
 	if url := "http://" + addr; alreadyServing(url) {

@@ -5,6 +5,10 @@ a second release on the same day.
 
 ## Unreleased
 
+- Windows: starting the app a second time reopens the running desk, as it does on
+  macOS. Windows reports a taken port as `WSAEADDRINUSE`, which Go's
+  `syscall.EADDRINUSE` does not equal there, so the second launch failed with a
+  "listen" error instead. A test covers the Windows reading from any platform.
 - The 12-bar trainer poster is now the Rats of Chaos of Grid Lock kangaroo-rat graphic; the front-page kaiju stays.
 - README: the Rats of Chaos of Grid Lock banner sits on the front page, captioned "Your backing band: Rats of Chaos of Grid Lock" and saying they are your fictional band (a 1600 px JPEG of about 400 kB under `docs/`).
 - README: says that Rats of Chaos of Grid Lock, the 12-bar trainer's backing band, is your fictional band.

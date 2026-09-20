@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -485,6 +486,27 @@ func TestListenBindsAFreePort(t *testing.T) {
 	defer l.Close()
 	if !strings.HasPrefix(url, "http://127.0.0.1:") {
 		t.Fatalf("url = %q", url)
+	}
+}
+
+// Windows reports a taken port as WSAEADDRINUSE (10048), which Go's syscall.EADDRINUSE
+// does not equal there. A second launch has to recognise it, or it fails instead of
+// reopening the first. The error is built the way net.Listen wraps it.
+func TestAddrInUseRecognisesTheWindowsError(t *testing.T) {
+	wrap := func(errno syscall.Errno) error {
+		return &net.OpError{Op: "listen", Net: "tcp", Err: os.NewSyscallError("bind", errno)}
+	}
+	if !addrInUse("windows", wrap(wsaeaddrinuse)) {
+		t.Error("WSAEADDRINUSE on Windows was not read as address in use")
+	}
+	if addrInUse("darwin", wrap(wsaeaddrinuse)) {
+		t.Error("errno 10048 means something else off Windows")
+	}
+	if !addrInUse(runtime.GOOS, wrap(syscall.EADDRINUSE)) {
+		t.Error("EADDRINUSE was not read as address in use")
+	}
+	if addrInUse("windows", wrap(syscall.EACCES)) {
+		t.Error("a permissions error was read as address in use")
 	}
 }
 
