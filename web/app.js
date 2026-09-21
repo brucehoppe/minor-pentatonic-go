@@ -4487,6 +4487,7 @@ const VIEWS=[
   ["triads",  "Triads",           renderTriads,     {band:"Chords",tools:"keys labels",key:"root"}],
   ["inv",     "Inversions",       renderInversions, {band:"Chords",tools:"keys labels",key:"root"}],
   ["power",   "Power chords",     renderPower,      {band:"Chords",tools:"keys"}],
+  ["chords",  "Chord chart",      renderChords,     {band:"Chords",tools:"keys labels",key:"root"}],
   ["caged",   "CAGED",            renderCaged,      {band:"Chords",tools:"keys labels",key:"root"}],
 
   ["hijaz",   "Phrygian dominant", renderHijaz,     {band:"Playing",tools:"keys labels regs",key:"root"}],

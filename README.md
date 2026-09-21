@@ -195,6 +195,7 @@ web/tune.js          the Tuner & bends view: listens to the input and draws the 
 web/changes.js       one-minute chord changes
 web/landing.js       the 12-bar trainer's landing drill: did beat 1 land on a chord tone
 web/caged.js         the CAGED view, and the chord shapes the 5 boxes view rings
+web/chords.js        the Chord chart view: every root in eight chord kinds, 96 diagrams
 web/band.js          the synthesised backing band
 web/analysis.js      note onsets and timing against the beat
 web/library.js       the take library; web/songs.js your songs; web/looper.js the looper

@@ -479,3 +479,5 @@ button:focus-visible,summary:focus-visible,select:focus-visible,a:focus-visible{
 #recmsg:empty,#recsaved:empty{display:none}
 .lesson-title{scroll-margin-top:20px}
 @media(max-width:740px){.lesson-index{max-height:none;overflow:visible}.lesson-context{flex-wrap:wrap}button{min-height:44px}.nav-group summary{padding:10px 0}}
+  .chordroot{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:22px;margin:26px 0 10px;border-top:2px solid var(--rule);padding-top:12px}
+  .chordrow{grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr))}

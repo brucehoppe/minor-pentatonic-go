@@ -27,7 +27,7 @@ const explorerScripts = ["chord-explorer.js", "triads-explorer.js", "inversions-
   .map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const bandScript = readFileSync(new URL("../web/band.js", import.meta.url), "utf8");
 const analysisScript = readFileSync(new URL("../web/analysis.js", import.meta.url), "utf8");
-const pitchScripts = ["pitch.js", "tune.js", "changes.js", "landing.js", "caged.js"].map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
+const pitchScripts = ["pitch.js", "tune.js", "changes.js", "landing.js", "caged.js", "chords.js"].map(f => readFileSync(new URL("../web/" + f, import.meta.url), "utf8"));
 const songsScript = readFileSync(new URL("../web/songs.js", import.meta.url), "utf8");
 const libraryScript = readFileSync(new URL("../web/library.js", import.meta.url), "utf8");
 const looperScript = readFileSync(new URL("../web/looper.js", import.meta.url), "utf8");
@@ -385,7 +385,7 @@ function makeRuntime({ audio: audioMode = "web", deterministic = false, demo = f
     renderHijaz,pdBox,pdName,PD_OFFSETS,PD_DEGREES,renderOpen,OPEN_TUNINGS,tuningMidi,TUNING_EXAMPLES,TUNING_OPEN_CHORDS,renderPower,renderForm,pcTab,pc2,pc3,rootOn,PCPAIR,PCSHAPES,PCPROG,PCSONG,SONGKEY,FORMS,SECTIONS,SECCOL,formStrip,
     renderBlues,bluesMap,boxesAt,fitsNeck,midiAt,midiFreq,pluck,playRun,REGS,MAXFRET,ZONES,withB5,b5Notes,noteAt,deg,isB5,
     setKey:k=>{state.key=k},setReg:r=>{state.reg=r},setB5:v=>{state.showB5=v},setBlueLock:z=>{state.blueLock=z},
-    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,CAGED_SHAPES,cagedInstances,cagedShared,cagedPosition,cagedFrets,getCaged:()=>({quality:state.cagedQuality,shape:state.cagedShape}),setCagedQuality:q=>{state.cagedQuality=q},landingJudge,landingToggle,landingStop,readLanding,getLanding:()=>state.landing,LICKS,lickCheck,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},
+    setLabelMode:v=>{state.labelMode=v},setChord:v=>{state.chord=v},viewCfg,CAGED_SHAPES,cagedInstances,cagedShared,cagedPosition,cagedFrets,getCaged:()=>({quality:state.cagedQuality,shape:state.cagedShape}),setCagedQuality:q=>{state.cagedQuality=q},landingJudge,landingToggle,landingStop,readLanding,getLanding:()=>state.landing,LICKS,lickCheck,CAGED,cagedNotes,cagedCode,setCaged:v=>{state.showCaged=v},BOXES,boxRoot,keyName,noteName,spellAs,MINOR_KEYS,modeNoteName,modeById,setView:v=>{state.view=v},chartVoicing,chartNotes,chartName,CHART_TYPES,
     toggleRecord,stopRecording,webmWithDuration,tapTempo,REC_ROW,isChordTone,getLive:()=>({chord:state.liveChord,chorus:state.trainerChorus,drop:[...state.dropBars],compat:state.bandCompat}),getBand:()=>state.band,getBandRig:()=>state.bandRig,toggleCheck,getMeter:()=>state.meter,getChannel:()=>state.recChannel,toggleMonitor,getMonitor:()=>state.monitor,silenceEverything,recMime,recExt,takeName,fileSize,wavBytes,getRec:()=>state.rec,getTake:()=>state.recTake,
     setBpm:v=>{state.bpm=v},
     renderTrainer,toggleTrainer,resetTrainer,trainerTick,chordName,currentForm,BLUES_FORMS,barSymbols,symbolAt,chordInfo,CHORD_KIND,generateRhythm,renderRhythm,toggleRhythm,stopRhythm,
@@ -464,7 +464,7 @@ test("song count-in can be cancelled and invalid loops never play", async () => 
 
 test("all revised navigation views render", () => {
   const { app, document } = makeRuntime();
-  const views = ["hijaz","open","path","tune","song","songs","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","caged","form","licks","trainer","rhythm","theory","practice"];
+  const views = ["hijaz","open","path","tune","song","songs","melody","boxes","solo","connect","land","major","modes","notes","triads","inv","chart","cross","blues","power","chords","caged","form","licks","trainer","rhythm","theory","practice"];
   for (const view of views) {
     navButton(document, view).click();
     assert.equal(app.getState().view, view);
@@ -4037,7 +4037,7 @@ test("the existing Triads and Inversions content stays below the explorers, spel
   assert.match(html, /<h3 class="cx-more">Why it matters<\/h3>/);
   assert.ok(html.indexOf('id="triads-explorer"') < html.indexOf('id="triadkinds"'), "explorer first, the detail below");
   assert.ok(html.indexOf('id="inversions-explorer"') < html.indexOf('id="invdemo"'));
-  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="pitch\.js" defer><\/script>\s*<script src="tune\.js" defer><\/script>\s*<script src="changes\.js" defer><\/script>\s*<script src="landing\.js" defer><\/script>\s*<script src="caged\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
+  assert.match(html, /<script src="chord-explorer\.js" defer><\/script>\s*<script src="triads-explorer\.js" defer><\/script>\s*<script src="inversions-explorer\.js" defer><\/script>\s*<script src="band\.js" defer><\/script>\s*<script src="analysis\.js" defer><\/script>\s*<script src="pitch\.js" defer><\/script>\s*<script src="tune\.js" defer><\/script>\s*<script src="changes\.js" defer><\/script>\s*<script src="landing\.js" defer><\/script>\s*<script src="caged\.js" defer><\/script>\s*<script src="chords\.js" defer><\/script>\s*<script src="library\.js" defer><\/script>\s*<script src="looper\.js" defer><\/script>\s*<script src="songs\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/, "the helper loads first, app.js last");
 });
 
 test("without the explorer scripts, both views still render their existing content", () => {
@@ -6151,4 +6151,23 @@ test("a kept take can be downloaded again from Songs → Your takes", async () =
   assert.equal(link.download, t.name);
   assert.match(link.download, /\.webm$/);
   assert.match(document.getElementById("recmsg").textContent, /Downloaded practice-.*\.webm/);
+});
+
+test("the chord chart: all 96 chords spell what they say, root lowest", () => {
+  const { app, document } = makeRuntime();
+  const midi = s => [64, 59, 55, 50, 45, 40][s];
+  for (let pc = 0; pc < 12; pc++) for (const t of app.CHART_TYPES) {
+    const v = app.chartVoicing(pc, t.id), name = app.chartName(pc, t.id), notes = app.chartNotes(v);
+    const pcs = new Set(notes.map(n => (midi(n.s) + n.f) % 12));
+    for (const p of pcs) assert.ok(t.iv.map(i => (pc + i) % 12).includes(p), `${name}: stray note ${p}`);
+    for (const i of t.iv.filter(i => i !== 7 || t.iv.length === 3)) assert.ok(pcs.has((pc + i) % 12), `${name}: missing chord tone ${i}`); // the fifth is the one note a four-note chord may leave out (open C7 does)
+    const low = notes.reduce((a, b) => midi(b.s) + b.f < midi(a.s) + a.f ? b : a);
+    assert.equal((midi(low.s) + low.f) % 12, pc, `${name}: root is the lowest note`);
+    assert.ok(Math.max(...v.frets.filter(f => f !== null)) <= 15, `${name}: within reach`);
+  }
+  assert.equal(app.chartVoicing(0, "maj").frets.map(f => f === null ? "x" : f).join(""), "x32010");
+  navButton(document, "chords").click();
+  assert.match(document.getElementById("chordcards").innerHTML, /Strum it/);
+  document.getElementById("chordsall").click();
+  assert.equal((document.getElementById("chordcards").innerHTML.match(/class="card"/g) || []).length, 96);
 });
