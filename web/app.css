@@ -133,6 +133,7 @@
   .strip.open{grid-column:1/-1;border-color:var(--blue);border-width:2px}
   #boxes .card{cursor:pointer}
   #boxes .card.now{border-color:var(--pink);border-width:2px}
+  #boxes .card svg{width:80%;margin-left:auto;margin-right:auto}
   .strip.now{border-color:var(--pink);border-width:2px}
   .strip h2 em{opacity:.4}
   tr.me td{border-color:var(--blue)}
