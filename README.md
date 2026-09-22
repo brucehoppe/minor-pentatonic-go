@@ -16,6 +16,51 @@ It is one small program with the whole app built in. It runs on your own compute
 
 **Your backing band: Rats of Chaos of Grid Lock.** They are your fictional band, the one that plays along on the 12-bar trainer: no real group, recording or song is involved.
 
+The Rats also write. Their one published work, a beatnik cut-up they read over the shuffle in Box 1, is reproduced below.
+
+![Rats of Chaos of Grid Lock: a beatnik cut-up poem pasted over a wreck of tyres, gears and a dead radiator](docs/rats-of-chaos-beatnik-poetry.jpg)
+
+<details>
+<summary><b>Read the poem</b> (for the words, not the wreckage)</summary>
+
+> **RATS OF CHAOS OF GRID LOCK**
+>
+> STAGNATION.  
+> Bumper-to-bumper… teeth.  
+> The horizon is a flatline.  
+> The asphalt is a scab that won't  
+> CLANK.  
+> A radiator's death rattle.  
+> Green spit on the curb.  
+> The "Walk" sign is a  
+> skeleton dancing in the smog.  
+> Don't walk.  
+> Don't breathe.  
+> Just… sit.  
+>
+> We are the Rats.  
+> The twitching-whisker-clutch-pedal-freaks.  
+> Gnashing at the upholstery.  
+> Clawing at the glass cage.  
+> The chaos isn't moving. It's solid.  
+> It's a mountain of cold iron and hot tempers.  
+>
+> Grid lock.  
+> Brain lock.  
+> Soul… pop.  
+>
+> SPARK!  
+> But the plug is fouled.  
+> The oil is black bile.  
+> We're just hair and bone trapped in a chrome coffin.  
+> Waiting for a green light that's  
+> NEVER.  
+> COMING.  
+
+Play it in A minor, slow shuffle, and lean on the flat five at "NEVER."
+
+</details>
+
 ![The practice desk: compact risograph masthead, lesson index and current practice stage](docs/screenshots/home.png)
 
 ## Install
