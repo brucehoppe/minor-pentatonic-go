@@ -61,7 +61,7 @@ Play it in A minor, slow shuffle, and lean on the flat five at "NEVER."
 
 </details>
 
-The Rats also tell a story. It is about a ship with three tuning systems and a woman whose job is to keep them from killing each other. It is the only thing they have ever finished, and they say the 12-bar trainer was written to keep it company.
+The Rats of Chaos of Grid Lock also tell a story. It is about a ship with three tuning systems and a woman whose job is to keep them from killing each other. It is the only thing they have ever finished, and they say the 12-bar trainer was written to keep it company.
 
 <details>
 <summary><b>Read <i>The Tuner of the Meridian Verse</i></b> (eleven chapters, about forty minutes)</summary>
