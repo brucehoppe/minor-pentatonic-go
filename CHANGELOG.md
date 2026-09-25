@@ -5,6 +5,9 @@ a second release on the same day.
 
 ## Unreleased
 
+- Rats of Chaos of Grid Lock are a real band now, on Bandcamp. The README and the 12-bar
+  trainer's poster caption link to https://ratsofchaosofgridlock.bandcamp.com and to their
+  track, instead of calling them fictional.
 - **CAGED**, a new view under Chords. One chord in five places: it explains the name
   (the open chords C, A, G, E and D, made movable), then draws the chosen chord in
   every shape from the nut to fret 17, each shape bracketed and named, reading in the
